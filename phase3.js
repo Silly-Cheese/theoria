@@ -2261,13 +2261,14 @@ document.addEventListener("click",async e=>{
   if(a==="publish")return setStatus("Published");
   if(a==="close")return setStatus("Closed");
   if(a==="reopen")return setStatus("Published");
+  if(a==="student-assessment-details")return studentAssessmentDetails(b.dataset.id);
+  if(a==="student-assessment-results")return studentAssessmentResults(b.dataset.id);
   if(a==="start-exam")return startExam(b.dataset.id);
   if(a==="receipt")return receipt(b.dataset.id);
   if(a==="save-pathway")return savePathway();
   if(a==="accommodations")return accommodationsModal(b.dataset.student);
   if(a==="create-evaluation")return createEvaluation(b.dataset.student);
   if(a==="grade-candidate")return gradeCandidate(b.dataset.student);
-  if(a==="toggle-release")return toggleRelease(b.dataset.student);
   if(a==="auto-score")return autoScore();
   if(a==="horizontal-grade")return horizontalGrade(b.dataset.question);
   if(a==="exam-jump"){if(P3.exam&&(P3.exam.assessment.backtracking!==false||Number(b.dataset.index)>P3.exam.index)){P3.exam.index=Number(b.dataset.index);scheduleSave();renderExam();}return;}
