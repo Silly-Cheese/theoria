@@ -595,7 +595,14 @@ async function loadSectionData(section){
       return at-bt || String(a.title||"").localeCompare(String(b.title||""));
     });
 
-  const assignments=assignmentSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(a.dueDate||"").localeCompare(String(b.dueDate||"")));
+  const assignments=assignmentSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>{
+    const ad=String(a.dueDate||""),bd=String(b.dueDate||"");
+    if(ad&&bd&&ad!==bd)return ad.localeCompare(bd);
+    if(ad&&!bd)return -1;
+    if(!ad&&bd)return 1;
+    const ao=Number(a.unitSequence||9999),bo=Number(b.unitSequence||9999);
+    return ao-bo||String(a.title||"").localeCompare(String(b.title||""));
+  });
   let assignmentSubmissions=[];
   if(state.role==="student"){
     for(const assignment of assignments){
@@ -658,7 +665,10 @@ function renderAssignments(){
     const due=assignmentDueState(a),submission=submissionMap.get(a.id),grade=gradeMap.get(a.id);
     const studentStatus=grade?"Graded":submission?.status==="submitted"?"Submitted":submission?.status==="draft"?"Draft saved":due.late?"Late / Not submitted":"Not started";
     const statusClass=grade?"live":submission?.status==="submitted"?"live":submission?.status==="draft"?"gold":due.late?"danger":"";
-    return '<div class="assignment-row coursework-card"><div><div class="card-kicker">'+esc(a.type||"Assignment")+'</div><h4>'+esc(a.title)+'</h4>'+(a.description?'<p>'+esc(a.description)+'</p>':'')+
+    return '<div class="assignment-row coursework-card"><div><div class="card-kicker">'+esc(a.type||"Assignment")+
+      (a.unitTitle?' • Unit '+esc(a.unitNumber||"")+': '+esc(a.unitTitle):'')+
+      (a.topicNumber?' • Topic '+esc(a.topicNumber):'')+
+      '</div><h4>'+esc(a.title)+'</h4>'+(a.description?'<p>'+esc(a.description)+'</p>':'')+
       (a.instructionSteps?.length?'<div class="assignment-step-preview">'+a.instructionSteps.slice(0,3).map((step,i)=>'<div><span>'+String(i+1).padStart(2,"0")+'</span>'+esc(step)+'</div>').join("")+(a.instructionSteps.length>3?'<small>+'+(a.instructionSteps.length-3)+' more step'+(a.instructionSteps.length-3===1?"":"s")+'</small>':'')+'</div>':'')+
       '<div class="assignment-meta"><span>'+esc(a.points||0)+' points</span><span class="'+(due.late&&!submission?"late-text":"")+'">'+esc(due.label)+'</span>'+(a.requirements?.length?'<span>'+a.requirements.length+' requirement'+(a.requirements.length===1?"":"s")+'</span>':'')+'<span>'+esc(a.submissionMode||"Text + Link")+'</span>'+(state.role==="instructor"?'<span class="badge '+(a.status==="Published"?'live':'gold')+'">'+esc(a.status||"Published")+'</span>':'<span class="badge '+statusClass+'">'+esc(studentStatus)+'</span>')+'</div>'+
       (grade&&state.role==="student"?'<div class="assignment-grade-preview"><strong>'+esc(grade.score)+' / '+esc(a.points||0)+'</strong>'+(grade.comment?'<span>'+esc(grade.comment)+'</span>':'')+'</div>':'')+
