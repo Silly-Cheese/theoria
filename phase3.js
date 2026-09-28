@@ -155,7 +155,7 @@ async function renderItemBank(){
   if(!el||state()?.role!=="instructor")return;
   await loadItems();
   if(!state().courses.length){
-    el.innerHTML='<div class="empty-state"><div class="empty-symbol">I</div><h3>Create a course first.</h3><p>The Item Bank belongs to reusable course frameworks.</p></div>';
+    el.innerHTML='<div class="empty-state"><div class="empty-symbol">I</div><h3>Create a course first.</h3><p>The Question Bank belongs to reusable course frameworks.</p></div>';
     return;
   }
   el.innerHTML='<div class="assessment-toolbar"><div class="filter-row">'+
@@ -176,7 +176,7 @@ async function renderItemBank(){
 
 async function itemModal(existing){
   const s=state();
-  if(!s?.courses?.length)return toast("Create a course before creating assessment items.");
+  if(!s?.courses?.length)return toast("Create a course before creating assessment questions.");
   let courseId=existing?.courseId||s.courses[0].id;
   let fw=await framework(courseId);
   const types=["Multiple Choice","Multiple Select","Short Response","Essay","Passage Analysis","Primary Source Analysis","Argument Analysis","Oral Prompt","Disputation Prompt"];
@@ -184,7 +184,7 @@ async function itemModal(existing){
   const typeTiles=types.map((type,i)=>'<label class="type-tile '+(currentType===type?'selected':'')+'"><input type="radio" name="type" value="'+esc(type)+'" '+(currentType===type?'checked':'')+'><span class="type-tile-mark">'+String(i+1).padStart(2,"0")+'</span><span>'+esc(type)+'</span></label>').join("");
 
   const modal=core().openModal({
-    eyebrow:"Item Bank",
+    eyebrow:"Question Bank",
     title:existing?"Edit Assessment Item":"Create Assessment Item",
     wide:true,
     body:'<form id="itemForm" class="academic-form">'+
@@ -358,7 +358,11 @@ async function renderAssessments(){
     return;
   }
   if(s.role==="instructor"){
-    el.innerHTML='<div class="assessment-grid">'+P3.assessments.map(a=>'<article class="assessment-card"><div class="assessment-type">'+esc(a.type)+'</div><h3>'+esc(a.title)+'</h3><p>'+esc(a.courseCode||"")+' • '+esc(a.sectionName||"")+'</p><div class="assessment-card-stats"><span><strong>'+esc(a.questionCount||0)+'</strong> items</span><span><strong>'+esc(a.totalPoints||0)+'</strong> points</span><span>'+esc(availability(a))+'</span></div><div class="card-actions"><button class="secondary-btn small-btn" data-phase3-action="open-assessment" data-id="'+a.id+'">Open Builder</button></div></article>').join("")+'</div>';
+    const templates=P3.assessments.filter(a=>!a.sectionId);
+    const assigned=P3.assessments.filter(a=>!!a.sectionId);
+    const card=a=>'<article class="assessment-card"><div class="assessment-type">'+esc(a.type)+'</div><h3>'+esc(a.title)+'</h3><p>'+esc(a.courseCode||"")+' • '+(a.sectionId?esc(a.sectionName||"Assigned Section"):'Reusable assessment template')+'</p><div class="assessment-card-stats"><span><strong>'+esc(a.questionCount||0)+'</strong> questions</span><span><strong>'+esc(a.totalPoints||0)+'</strong> points</span><span>'+esc(a.sectionId?availability(a):"Template")+'</span></div><div class="card-actions">'+(!a.sectionId?'<button class="primary-btn small-btn" data-phase3-action="assign-assessment" data-id="'+a.id+'">Assign to Section</button>':'')+'<button class="secondary-btn small-btn" data-phase3-action="open-assessment" data-id="'+a.id+'">Open Builder</button></div></article>';
+    el.innerHTML=(templates.length?'<div class="assessment-library-group"><div class="page-head compact-head"><div><div class="panel-title">Assessment Templates</div><p class="page-subtitle">Build once from the Question Bank, then assign to one or more sections.</p></div></div><div class="assessment-grid">'+templates.map(card).join("")+'</div></div>':'')+
+      (assigned.length?'<div class="assessment-library-group"><div class="page-head compact-head"><div><div class="panel-title">Assigned Assessments</div><p class="page-subtitle">Live section copies with their own schedule, submissions, and grading.</p></div></div><div class="assessment-grid">'+assigned.map(card).join("")+'</div></div>':'');
     return;
   }
   const cards=[];
@@ -377,37 +381,38 @@ async function renderAssessments(){
 }
 
 async function assessmentModal(existing){
-  const s=state();if(!s?.sections?.length)return toast("Create a section before creating an assessment.");
+  const s=state();if(!s?.courses?.length)return toast("Create a course before creating an assessment.");
   const types=["Academic Exercise","Unit Evaluation","Semester I Examination","Comprehensive Final Examination","Oral Examination","Disputation"];
-  let selectedSection=existing?(s.sections.find(x=>x.id===existing.sectionId)||s.currentSection):s.sections[0];
-  let fw=await framework(selectedSection.courseId);
+  let selectedCourse=s.courses.find(c=>c.id===existing?.courseId)||s.courses[0];
+  let fw=await framework(selectedCourse.id);
   const currentType=existing?.type||"Unit Evaluation";
   const typeTiles=types.map((type,i)=>'<label class="type-tile '+(currentType===type?'selected':'')+'"><input type="radio" name="type" value="'+esc(type)+'" '+(currentType===type?'checked':'')+'><span class="type-tile-mark">'+String(i+1).padStart(2,"0")+'</span><span>'+esc(type)+'</span></label>').join("");
   const initialInstructions=Array.isArray(existing?.instructionSteps)&&existing.instructionSteps.length?existing.instructionSteps:(existing?.instructions?[existing.instructions]:[""]);
 
   const modal=core().openModal({
-    eyebrow:"Assessment Builder",
-    title:existing?"Edit Assessment":"Create Assessment",
+    eyebrow:existing?.sectionId?"Assigned Assessment":"Assessment Template",
+    title:existing?"Edit Assessment":"Create Assessment Template",
     wide:true,
     body:'<form id="assessmentForm" class="academic-form">'+
-      '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Assessment Identity</h3><p>Choose the section, title, and kind of evaluation.</p></div></div>'+
-        '<div class="field"><label>Section</label><select name="sectionId" id="assessmentSection" '+(existing?'disabled':'')+'>'+s.sections.map(x=>'<option value="'+x.id+'">'+esc(x.courseCode+" — "+x.sectionName+" • "+x.term)+'</option>').join("")+'</select></div>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Assessment Identity</h3><p>Assessments belong to a course and are assembled from its Question Bank.</p></div></div>'+
+        '<div class="field"><label>Course</label><select name="courseId" id="assessmentCourse" '+(existing?'disabled':'')+'>'+s.courses.map(x=>'<option value="'+x.id+'">'+esc(x.code+" — "+x.title)+'</option>').join("")+'</select></div>'+
+        (existing?.sectionId?'<div class="assignment-context"><span>Assigned to</span><strong>'+esc(existing.sectionName||"Section")+'</strong></div>':'')+
         '<div class="field"><label>Assessment Title</label><input class="title-input" name="title" value="'+esc(existing?.title||"")+'" placeholder="e.g. Semester I Examination" required></div>'+
         '<div class="field"><label>Assessment Type</label><div class="type-tile-grid compact">'+typeTiles+'</div></div>'+
       '</section>'+
-      '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Administration</h3><p>Schedule the window and configure the testing experience.</p></div></div>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Administration Defaults</h3><p>These settings are copied when the template is assigned and can be adjusted for the section.</p></div></div>'+
         '<div class="compact-field-grid"><div class="field"><label>Duration</label><div class="input-with-suffix"><input name="durationMinutes" type="number" min="0" value="'+esc(existing?.durationMinutes??60)+'"><span>min</span></div></div><div class="field"><label>Opens</label><input name="opensAt" type="datetime-local" value="'+esc(localDateTime(existing?.opensAt))+'"></div><div class="field"><label>Closes</label><input name="closesAt" type="datetime-local" value="'+esc(localDateTime(existing?.closesAt))+'"></div></div>'+
-        '<div class="policy-card-grid"><label class="policy-card"><input type="checkbox" name="anonymousGrading" '+(existing?.anonymousGrading!==false?'checked':'')+'><div><strong>Anonymous Grading</strong><span>Use candidate numbers while evaluating.</span></div></label><label class="policy-card"><input type="checkbox" name="backtracking" '+(existing?.backtracking!==false?'checked':'')+'><div><strong>Allow Backtracking</strong><span>Students may revisit earlier items.</span></div></label><label class="policy-card"><input type="checkbox" name="randomizeQuestions" '+(existing?.randomizeQuestions?'checked':'')+'><div><strong>Randomize Questions</strong><span>Each attempt receives a randomized order.</span></div></label></div>'+
+        '<div class="policy-card-grid"><label class="policy-card"><input type="checkbox" name="anonymousGrading" '+(existing?.anonymousGrading!==false?'checked':'')+'><div><strong>Anonymous Grading</strong><span>Use candidate numbers while evaluating.</span></div></label><label class="policy-card"><input type="checkbox" name="backtracking" '+(existing?.backtracking!==false?'checked':'')+'><div><strong>Allow Backtracking</strong><span>Students may revisit earlier questions.</span></div></label><label class="policy-card"><input type="checkbox" name="randomizeQuestions" '+(existing?.randomizeQuestions?'checked':'')+'><div><strong>Randomize Questions</strong><span>Each attempt receives a randomized order.</span></div></label></div>'+
         '<div class="field"><label>Result Release</label><select name="feedbackPolicy"><option value="manual">Instructor releases results manually</option><option value="score_only">Score only when released</option></select></div>'+
       '</section>'+
       '<section class="form-section"><div class="form-section-head"><div><span>03</span><h3>Student Instructions</h3><p>Add concise instructions one line at a time.</p></div><button type="button" class="secondary-btn small-btn" id="addAssessmentInstruction">+ Add Instruction</button></div><div id="assessmentInstructions" class="structured-list"></div></section>'+
       '<section class="form-section"><div class="form-section-head"><div><span>04</span><h3>Content Blueprint</h3><p>Choose course units and assign their intended share of the assessment.</p></div><div class="inline-actions"><button type="button" class="secondary-btn small-btn" id="balanceContentBlueprint">Balance</button><button type="button" class="secondary-btn small-btn" id="addContentBlueprint">+ Add Target</button></div></div><div id="contentBlueprintRows" class="blueprint-builder"></div><div class="builder-total"><span>Total</span><strong id="contentBlueprintTotal">0%</strong></div></section>'+
-      '<section class="form-section"><div class="form-section-head"><div><span>05</span><h3>Competency Blueprint</h3><p>Define the academic skills the assessment is intended to measure.</p></div><div class="inline-actions"><button type="button" class="secondary-btn small-btn" id="balanceCompetencyBlueprint">Balance</button><button type="button" class="secondary-btn small-btn" id="addCompetencyBlueprint">+ Add Target</button></div></div><div id="competencyBlueprintRows" class="blueprint-builder"></div><div class="builder-total"><span>Total</span><strong id="competencyBlueprintTotal">0%</strong></div></section>'+
-      '<div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">'+(existing?"Save Assessment":"Create Draft")+'</button></div></form>'
+      '<section class="form-section"><div class="form-section-head"><div><span>05</span><h3>Competency Blueprint</h3><p>Define the academic competencies this assessment is intended to measure.</p></div><div class="inline-actions"><button type="button" class="secondary-btn small-btn" id="balanceCompetencyBlueprint">Balance</button><button type="button" class="secondary-btn small-btn" id="addCompetencyBlueprint">+ Add Target</button></div></div><div id="competencyBlueprintRows" class="blueprint-builder"></div><div class="builder-total"><span>Total</span><strong id="competencyBlueprintTotal">0%</strong></div></section>'+
+      '<div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">'+(existing?"Save Assessment":"Create Template")+'</button></div></form>'
   });
 
   const form=modal.querySelector("#assessmentForm");
-  form.sectionId.value=existing?.sectionId||selectedSection.id;
+  form.courseId.value=selectedCourse.id;
   form.feedbackPolicy.value=existing?.feedbackPolicy||"manual";
 
   const instructionBox=modal.querySelector("#assessmentInstructions");
@@ -417,99 +422,77 @@ async function assessmentModal(existing){
     row.querySelector(".row-remove").onclick=()=>{row.remove();[...instructionBox.children].forEach((x,i)=>x.querySelector(".structured-index").textContent=String(i+1).padStart(2,"0"));};
     instructionBox.appendChild(row);
   };
-  initialInstructions.forEach(addInstruction);
-  modal.querySelector("#addAssessmentInstruction").onclick=()=>addInstruction();
+  initialInstructions.forEach(addInstruction);modal.querySelector("#addAssessmentInstruction").onclick=()=>addInstruction();
 
   const contentBox=modal.querySelector("#contentBlueprintRows"),competencyBox=modal.querySelector("#competencyBlueprintRows");
-  const targetOptions=(kind)=>{
-    if(kind==="content")return fw.units.map(u=>({id:u.id,label:"Unit "+(u.order||"")+" — "+u.title}));
-    return fw.competencies.map(c=>({id:c.id,label:c.code+" — "+c.name}));
-  };
-  const updateTotal=(kind)=>{
+  const targetOptions=kind=>kind==="content"?fw.units.map(u=>({id:u.id,label:"Unit "+(u.order||"")+" — "+u.title})):fw.competencies.map(c=>({id:c.id,label:c.code+" — "+c.name}));
+  const roundBlueprint=n=>Math.round(n*10)/10;
+  const updateTotal=kind=>{
     const box=kind==="content"?contentBox:competencyBox,totalEl=modal.querySelector(kind==="content"?"#contentBlueprintTotal":"#competencyBlueprintTotal");
     const total=[...box.querySelectorAll(".blueprint-weight")].reduce((n,x)=>n+Number(x.value||0),0);
-    totalEl.textContent=roundBlueprint(total)+"%";
-    totalEl.className=total===100?"complete":"";
+    totalEl.textContent=roundBlueprint(total)+"%";totalEl.className=roundBlueprint(total)===100?"complete":"";
   };
-  const roundBlueprint=n=>Math.round(n*10)/10;
   const addBlueprintRow=(kind,rowData={})=>{
-    const box=kind==="content"?contentBox:competencyBox,opts=targetOptions(kind);
-    const row=document.createElement("div");row.className="blueprint-edit-row";row.dataset.kind=kind;
-    let selectOptions=opts.map(o=>'<option value="'+esc(o.id)+'" data-label="'+esc(o.label)+'">'+esc(o.label)+'</option>').join("");
+    const box=kind==="content"?contentBox:competencyBox,opts=targetOptions(kind),row=document.createElement("div");row.className="blueprint-edit-row";
+    let options=opts.map(o=>'<option value="'+esc(o.id)+'" data-label="'+esc(o.label)+'">'+esc(o.label)+'</option>').join("");
     const match=opts.find(o=>o.id===rowData.id||o.label===rowData.label);
-    if(rowData.label&&!match)selectOptions='<option value="'+esc(rowData.id||rowData.label)+'" data-label="'+esc(rowData.label)+'">'+esc(rowData.label)+'</option>'+selectOptions;
-    row.innerHTML='<select class="blueprint-target">'+selectOptions+'</select><div class="input-with-suffix mini"><input class="blueprint-weight" type="number" min="0" max="100" step="0.5" value="'+esc(rowData.weight??0)+'"><span>%</span></div><button type="button" class="row-remove" aria-label="Remove">×</button>';
+    if(rowData.label&&!match)options='<option value="'+esc(rowData.id||rowData.label)+'" data-label="'+esc(rowData.label)+'">'+esc(rowData.label)+'</option>'+options;
+    row.innerHTML='<select class="blueprint-target">'+options+'</select><div class="input-with-suffix mini"><input class="blueprint-weight" type="number" min="0" max="100" step="0.5" value="'+esc(rowData.weight??0)+'"><span>%</span></div><button type="button" class="row-remove" aria-label="Remove">×</button>';
     if(rowData.id)row.querySelector(".blueprint-target").value=match?.id||rowData.id;
-    row.querySelector(".blueprint-weight").addEventListener("input",()=>updateTotal(kind));
-    row.querySelector(".row-remove").onclick=()=>{row.remove();updateTotal(kind);};
-    box.appendChild(row);updateTotal(kind);
+    row.querySelector(".blueprint-weight").oninput=()=>updateTotal(kind);row.querySelector(".row-remove").onclick=()=>{row.remove();updateTotal(kind);};box.appendChild(row);updateTotal(kind);
   };
-  const rebuildBlueprints=()=>{
+  const buildDefaults=()=>{
     contentBox.innerHTML="";competencyBox.innerHTML="";
-    const contentRows=existing?.contentBlueprint?.length?existing.contentBlueprint:targetOptions("content").slice(0,Math.min(4,targetOptions("content").length)).map(x=>({...x,weight:0}));
-    const competencyRows=existing?.competencyBlueprint?.length?existing.competencyBlueprint:targetOptions("competency").slice(0,Math.min(4,targetOptions("competency").length)).map(x=>({...x,weight:0}));
-    contentRows.forEach(x=>addBlueprintRow("content",x));competencyRows.forEach(x=>addBlueprintRow("competency",x));
+    const content=existing?.contentBlueprint?.length?existing.contentBlueprint:targetOptions("content").slice(0,Math.min(4,targetOptions("content").length)).map(x=>({...x,weight:0}));
+    const comps=existing?.competencyBlueprint?.length?existing.competencyBlueprint:targetOptions("competency").slice(0,Math.min(4,targetOptions("competency").length)).map(x=>({...x,weight:0}));
+    content.forEach(x=>addBlueprintRow("content",x));comps.forEach(x=>addBlueprintRow("competency",x));
   };
-  rebuildBlueprints();
-
-  const balance=(kind)=>{
-    const box=kind==="content"?contentBox:competencyBox,rows=[...box.querySelectorAll(".blueprint-edit-row")];
-    if(!rows.length)return toast("Add at least one blueprint target.");
-    const base=Math.floor((100/rows.length)*10)/10;
-    let used=0;
-    rows.forEach((row,i)=>{const val=i===rows.length-1?roundBlueprint(100-used):base;row.querySelector(".blueprint-weight").value=val;used+=val;});
-    updateTotal(kind);
+  buildDefaults();
+  const balance=kind=>{
+    const box=kind==="content"?contentBox:competencyBox,rows=[...box.querySelectorAll(".blueprint-edit-row")];if(!rows.length)return toast("Add at least one blueprint target.");
+    const base=Math.floor((100/rows.length)*10)/10;let used=0;
+    rows.forEach((row,i)=>{const value=i===rows.length-1?roundBlueprint(100-used):base;row.querySelector(".blueprint-weight").value=value;used+=value;});updateTotal(kind);
   };
   modal.querySelector("#addContentBlueprint").onclick=()=>addBlueprintRow("content");
   modal.querySelector("#addCompetencyBlueprint").onclick=()=>addBlueprintRow("competency");
   modal.querySelector("#balanceContentBlueprint").onclick=()=>balance("content");
   modal.querySelector("#balanceCompetencyBlueprint").onclick=()=>balance("competency");
+  modal.querySelectorAll('input[name="type"]').forEach(input=>input.onchange=()=>modal.querySelectorAll(".type-tile").forEach(tile=>tile.classList.toggle("selected",tile.querySelector("input").checked)));
 
-  modal.querySelectorAll('input[name="type"]').forEach(input=>input.addEventListener("change",()=>modal.querySelectorAll(".type-tile").forEach(tile=>tile.classList.toggle("selected",tile.querySelector("input").checked))));
-
-  if(!existing)form.querySelector("#assessmentSection").addEventListener("change",async e=>{
-    selectedSection=s.sections.find(x=>x.id===e.target.value);
-    fw=await framework(selectedSection.courseId);
+  if(!existing)form.querySelector("#assessmentCourse").onchange=async e=>{
+    selectedCourse=s.courses.find(x=>x.id===e.target.value);fw=await framework(selectedCourse.id);
     contentBox.innerHTML="";competencyBox.innerHTML="";
     targetOptions("content").slice(0,Math.min(4,targetOptions("content").length)).forEach(x=>addBlueprintRow("content",{...x,weight:0}));
     targetOptions("competency").slice(0,Math.min(4,targetOptions("competency").length)).forEach(x=>addBlueprintRow("competency",{...x,weight:0}));
-  });
+  };
 
   const readBlueprint=kind=>{
     const box=kind==="content"?contentBox:competencyBox;
-    return [...box.querySelectorAll(".blueprint-edit-row")].map(row=>{
-      const select=row.querySelector(".blueprint-target"),option=select.options[select.selectedIndex];
-      return {id:select.value,label:option?.dataset.label||option?.textContent||select.value,weight:Number(row.querySelector(".blueprint-weight").value||0)};
-    }).filter(x=>x.id);
+    return [...box.querySelectorAll(".blueprint-edit-row")].map(row=>{const select=row.querySelector(".blueprint-target"),option=select.options[select.selectedIndex];return {id:select.value,label:option?.dataset.label||option?.textContent||select.value,weight:Number(row.querySelector(".blueprint-weight").value||0)};}).filter(x=>x.id);
   };
 
-  form.addEventListener("submit",async e=>{
-    e.preventDefault();
-    const fd=new FormData(form);
-    const section=existing?(s.sections.find(x=>x.id===existing.sectionId)||s.currentSection):s.sections.find(x=>x.id===String(fd.get("sectionId")));
-    const type=form.querySelector('input[name="type"]:checked')?.value||"Unit Evaluation";
-    const contentBlueprint=readBlueprint("content"),competencyBlueprint=readBlueprint("competency");
+  form.onsubmit=async e=>{
+    e.preventDefault();const fd=new FormData(form),course=s.courses.find(x=>x.id===(existing?.courseId||String(fd.get("courseId"))))||selectedCourse;
+    const type=form.querySelector('input[name="type"]:checked')?.value||"Unit Evaluation",contentBlueprint=readBlueprint("content"),competencyBlueprint=readBlueprint("competency");
     if(contentBlueprint.length&&roundBlueprint(totalWeight(contentBlueprint))!==100)return toast("Content blueprint must total 100%.");
     if(competencyBlueprint.length&&roundBlueprint(totalWeight(competencyBlueprint))!==100)return toast("Competency blueprint must total 100%.");
     const instructionSteps=[...instructionBox.querySelectorAll(".structured-input")].map(x=>x.value.trim()).filter(Boolean);
     const data={
-      ownerId:s.user.uid,sectionId:section.id,sectionName:section.sectionName,courseId:section.courseId,courseCode:section.courseCode,courseTitle:section.courseTitle,
+      ownerId:s.user.uid,courseId:course.id,courseCode:course.code,courseTitle:course.title,
+      sectionId:existing?.sectionId||"",sectionName:existing?.sectionName||"",templateSourceId:existing?.templateSourceId||"",
       title:String(fd.get("title")).trim(),type,mode:type==="Oral Examination"?"oral":type==="Disputation"?"disputation":"written",
-      status:existing?.status||"Draft",durationMinutes:Number(fd.get("durationMinutes")||0),
-      opensAt:timestampFrom(fd.get("opensAt")),closesAt:timestampFrom(fd.get("closesAt")),
-      instructions:instructionSteps.join("\n"),instructionSteps,
-      anonymousGrading:form.elements.anonymousGrading.checked,backtracking:form.elements.backtracking.checked,randomizeQuestions:form.elements.randomizeQuestions.checked,
-      feedbackPolicy:String(fd.get("feedbackPolicy")),contentBlueprint,competencyBlueprint,
-      parts:existing?.parts?.length?existing.parts:defaultParts(type),questionIds:existing?.questionIds||[],
-      questionCount:Number(existing?.questionCount||0),totalPoints:Number(existing?.totalPoints||0),updatedAt:serverTimestamp()
+      status:existing?.status||"Draft",durationMinutes:Number(fd.get("durationMinutes")||0),opensAt:timestampFrom(fd.get("opensAt")),closesAt:timestampFrom(fd.get("closesAt")),
+      instructions:instructionSteps.join("\n"),instructionSteps,anonymousGrading:form.elements.anonymousGrading.checked,backtracking:form.elements.backtracking.checked,randomizeQuestions:form.elements.randomizeQuestions.checked,
+      feedbackPolicy:String(fd.get("feedbackPolicy")),contentBlueprint,competencyBlueprint,parts:existing?.parts?.length?existing.parts:defaultParts(type),
+      questionIds:existing?.questionIds||[],questionCount:Number(existing?.questionCount||0),totalPoints:Number(existing?.totalPoints||0),updatedAt:serverTimestamp()
     };
     try{
       let id=existing?.id;
       if(existing)await updateDoc(doc(db,"assessments",id),data);
-      else{id=(await addDoc(collection(db,"assessments"),{...data,createdAt:serverTimestamp()})).id;}
-      core().closeModal();await openAssessment(id);toast(existing?"Assessment updated.":"Assessment draft created.");
+      else id=(await addDoc(collection(db,"assessments"),{...data,createdAt:serverTimestamp()})).id;
+      core().closeModal();await openAssessment(id);toast(existing?"Assessment updated.":"Assessment template created. Add questions from the Question Bank, then assign it to a section.");
     }catch(err){toast(err.message||"Unable to save assessment.");}
-  });
+  };
 }
 
 async function loadAssessment(id){
@@ -520,16 +503,18 @@ async function loadAssessment(id){
   const questions=q.docs.map(d=>({id:d.id,...d.data()})).sort((x,y)=>Number(x.order||99)-Number(y.order||99));
   let keys=[],submissions=[],results=[],members=[];
   if(state().role==="instructor"){
-    const [k,s,r,m]=await Promise.all([
+    const [k,s,r]=await Promise.all([
       getDocs(collection(db,"assessments",id,"keys")),
-      getDocs(collection(db,"assessments",id,"submissions")),
-      getDocs(collection(db,"assessments",id,"results")),
-      getDocs(collection(db,"sections",assessment.sectionId,"members"))
+      assessment.sectionId?getDocs(collection(db,"assessments",id,"submissions")):Promise.resolve({docs:[]}),
+      assessment.sectionId?getDocs(collection(db,"assessments",id,"results")):Promise.resolve({docs:[]})
     ]);
     keys=k.docs.map(d=>({id:d.id,...d.data()}));
     submissions=s.docs.map(d=>({id:d.id,...d.data()}));
     results=r.docs.map(d=>({id:d.id,...d.data()}));
-    members=m.docs.map(d=>({id:d.id,...d.data()})).sort((x,y)=>String(x.displayName||"").localeCompare(String(y.displayName||"")));
+    if(assessment.sectionId){
+      const m=await getDocs(collection(db,"sections",assessment.sectionId,"members"));
+      members=m.docs.map(d=>({id:d.id,...d.data()})).sort((x,y)=>String(x.displayName||"").localeCompare(String(y.displayName||"")));
+    }
   }
   return {assessment,questions,keys,submissions,results,members};
 }
@@ -544,7 +529,8 @@ async function openAssessment(id,tab="overview"){
 }
 
 function assessmentTabs(active){
-  return '<div class="tabs">'+[["overview","Overview"],["items","Items"],["candidates","Candidates"],["grading","Grading"]].map(([id,label])=>'<button class="tab-btn '+(active===id?'active':'')+'" data-phase3-action="assessment-tab" data-tab="'+id+'">'+label+'</button>').join("")+'</div>';
+  const tabs=P3.current?.sectionId?[["overview","Overview"],["items","Questions"],["candidates","Candidates"],["grading","Grading"]]:[["overview","Overview"],["items","Questions"]];
+  return '<div class="tabs">'+tabs.map(([id,label])=>'<button class="tab-btn '+(active===id?'active':'')+'" data-phase3-action="assessment-tab" data-tab="'+id+'">'+label+'</button>').join("")+'</div>';
 }
 
 function blueprintPanel(title,rows){
@@ -561,9 +547,9 @@ function overviewView(){
 
 function itemsView(){
   const a=P3.current,q=P3.detail.questions;
-  return '<div class="page-head" style="margin-bottom:16px"><div><div class="panel-title">Assessment Assembly</div><p class="page-subtitle">Students never receive answer-key documents.</p></div><button class="primary-btn small-btn" data-phase3-action="add-items">Add from Item Bank</button></div>'+
+  return '<div class="page-head" style="margin-bottom:16px"><div><div class="panel-title">Assessment Assembly</div><p class="page-subtitle">Students never receive answer-key documents.</p></div><button class="primary-btn small-btn" data-phase3-action="add-items">Add from Question Bank</button></div>'+
     (q.length?'<div class="assessment-builder-list">'+q.map((x,i)=>'<div class="builder-item"><div class="builder-order">'+(i+1)+'</div><div class="builder-copy"><div class="card-kicker">'+esc((a.parts||[]).find(p=>p.id===x.partId)?.title||"Main")+' • '+esc(x.type)+'</div><h4>'+esc(x.prompt)+'</h4><div class="item-tags"><span>'+esc(x.points)+' pts</span><span>'+esc(x.topicNumber||"No topic")+'</span>'+(x.competencyCodes||[]).map(c=>'<span>'+esc(c)+'</span>').join("")+'</div></div><div class="inline-actions"><button class="text-btn" data-phase3-action="configure-item" data-id="'+x.id+'">Configure</button><button class="danger-btn" data-phase3-action="remove-item" data-id="'+x.id+'">Remove</button></div></div>').join("")+'</div>':
-    '<div class="empty-state"><div class="empty-symbol">I</div><h3>No assessment items yet.</h3><p>Add reusable items from the course Item Bank.</p><button class="primary-btn" data-phase3-action="add-items">Add Items</button></div>');
+    '<div class="empty-state"><div class="empty-symbol">I</div><h3>No assessment questions yet.</h3><p>Add reusable items from the course Question Bank.</p><button class="primary-btn" data-phase3-action="add-items">Add Items</button></div>');
 }
 
 function candidatesView(){
@@ -588,20 +574,27 @@ function gradingView(){
 
 function renderAssessment(tab="overview"){
   const a=P3.current;if(!a)return;
+  const template=!a.sectionId;
+  if(template&&(tab==="candidates"||tab==="grading"))tab="overview";
   const body=tab==="items"?itemsView():tab==="candidates"?candidatesView():tab==="grading"?gradingView():overviewView();
-  const statusButton=a.status==="Draft"?'<button class="primary-btn small-btn" data-phase3-action="publish">Publish</button>':a.status==="Published"?'<button class="secondary-btn small-btn" data-phase3-action="close">Close</button>':'<button class="secondary-btn small-btn" data-phase3-action="reopen">Reopen</button>';
+  let statusButton="";
+  if(template)statusButton='<button class="primary-btn small-btn" data-phase3-action="assign-assessment" data-id="'+a.id+'">Assign to Section</button>';
+  else if(a.status==="Draft")statusButton='<button class="primary-btn small-btn" data-phase3-action="publish">Publish to Students</button>';
+  else if(a.status==="Published")statusButton='<button class="secondary-btn small-btn" data-phase3-action="close">Close</button>';
+  else statusButton='<button class="secondary-btn small-btn" data-phase3-action="reopen">Reopen</button>';
   $("#assessmentDetail").innerHTML='<button class="text-btn" data-phase3-action="back-assessments">← Assessments</button>'+
-    '<div class="detail-hero"><div class="detail-top"><div><div class="eyebrow">'+esc(a.courseCode)+' • '+esc(a.type)+'</div><h1 class="detail-title">'+esc(a.title)+'</h1><div class="detail-meta"><span>'+esc(a.sectionName)+'</span><span>'+esc(a.status)+'</span><span>'+esc(dateText(a.opensAt))+'</span></div></div><div class="inline-actions"><button class="secondary-btn small-btn" data-phase3-action="edit-assessment">Edit</button>'+statusButton+'</div></div>'+(a.instructions?'<p class="page-subtitle" style="margin-top:16px">'+esc(a.instructions)+'</p>':'')+'</div>'+
+    '<div class="detail-hero"><div class="detail-top"><div><div class="eyebrow">'+esc(a.courseCode)+' • '+esc(a.type)+'</div><h1 class="detail-title">'+esc(a.title)+'</h1><div class="detail-meta"><span>'+(template?'Reusable Template':esc(a.sectionName||"Assigned Section"))+'</span><span>'+esc(template?"Template":a.status)+'</span>'+(template?'':'<span>'+esc(dateText(a.opensAt))+'</span>')+'</div></div><div class="inline-actions"><button class="secondary-btn small-btn" data-phase3-action="edit-assessment">Edit</button>'+statusButton+'</div></div>'+(a.instructions?'<p class="page-subtitle" style="margin-top:16px">'+esc(a.instructions)+'</p>':'')+'</div>'+
+    (template?'<div class="workflow-strip"><div class="done"><span>1</span><strong>Template</strong></div><div class="'+(a.questionCount?"done":"current")+'"><span>2</span><strong>Question Bank</strong></div><div class="'+(a.questionCount?"current":"")+'"><span>3</span><strong>Assign</strong></div><div><span>4</span><strong>Publish</strong></div></div>':'')+
     assessmentTabs(tab)+'<div>'+body+'</div>';
 }
 
 async function addItemsModal(){
   await loadItems();
   const a=P3.current,available=P3.items.filter(x=>x.courseId===a.courseId&&!P3.detail.questions.some(q=>q.itemId===x.id));
-  if(!available.length)return toast("No unused Item Bank items are available for this course.");
+  if(!available.length)return toast("No unused Question Bank items are available for this course.");
   const modal=core().openModal({
     eyebrow:"Assessment Assembly",
-    title:"Add Items from Item Bank",
+    title:"Add Items from Question Bank",
     wide:true,
     body:'<form id="addItemsForm"><div class="field"><label>Examination Part</label><select name="partId">'+(a.parts||[]).map(p=>'<option value="'+p.id+'">'+esc(p.title)+'</option>').join("")+'</select></div>'+
       '<div class="item-select-list">'+available.map(x=>'<label class="item-select-row"><input type="checkbox" name="item" value="'+x.id+'"><div><strong>'+esc(x.type)+' • '+esc(x.topicNumber||"No topic")+'</strong><p>'+esc(x.prompt)+'</p><span>'+esc(x.pointsDefault||1)+' pts • '+esc(x.difficulty||"Moderate")+'</span></div></label>').join("")+'</div>'+
@@ -618,7 +611,7 @@ async function addItemsModal(){
       batch.set(doc(db,"assessments",a.id,"keys",ref.id),{itemId:item.id,correctAnswer:item.correctAnswer??"",explanation:item.explanation||"",rubric:item.rubric||[],createdAt:serverTimestamp()});
     }
     batch.update(doc(db,"assessments",a.id),{questionIds,questionCount:order,totalPoints:total,updatedAt:serverTimestamp()});
-    try{await batch.commit();core().closeModal();await openAssessment(a.id,"items");toast("Items added.");}catch(err){toast(err.message||"Unable to add items.");}
+    try{await batch.commit();core().closeModal();await openAssessment(a.id,"items");toast("questions added.");}catch(err){toast(err.message||"Unable to add items.");}
   });
 }
 
@@ -640,7 +633,7 @@ function configureItemModal(id){
 
 async function removeItem(id){
   const q=P3.detail.questions.find(x=>x.id===id),a=P3.current;if(!q)return;
-  if(!confirm("Remove this item from the assessment? The Item Bank copy remains."))return;
+  if(!confirm("Remove this item from the assessment? The Question Bank copy remains."))return;
   const batch=writeBatch(db);
   batch.delete(doc(db,"assessments",a.id,"questions",id));
   batch.delete(doc(db,"assessments",a.id,"keys",id));
@@ -648,9 +641,54 @@ async function removeItem(id){
   try{await batch.commit();await openAssessment(a.id,"items");}catch(err){toast(err.message||"Unable to remove item.");}
 }
 
+async function assignAssessmentModal(assessmentId){
+  if(!P3.current || P3.current.id!==assessmentId) await openAssessment(assessmentId);
+  const a=P3.current,d=P3.detail,s=state();
+  if(a.sectionId)return toast("This assessment is already assigned to a section.");
+  if(!d.questions.length)return toast("Add questions from the Question Bank before assigning this assessment.");
+  const sections=s.sections.filter(sec=>sec.courseId===a.courseId);
+  if(!sections.length)return toast("Create a teaching section for "+(a.courseCode||"this course")+" before assigning the assessment.");
+  const modal=core().openModal({
+    eyebrow:"Assign Assessment",
+    title:a.title,
+    wide:true,
+    body:'<form id="assignAssessmentForm" class="academic-form"><section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Choose Section</h3><p>A reusable copy will be created for this section. The original template remains unchanged.</p></div></div><div class="field"><label>Section</label><select name="sectionId">'+sections.map(sec=>'<option value="'+sec.id+'">'+esc(sec.courseCode+" — "+sec.sectionName+" • "+sec.term)+'</option>').join("")+'</select></div><div class="field"><label>Assigned Title</label><input class="title-input" name="title" value="'+esc(a.title)+'" required></div></section><section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Section Schedule</h3><p>Adjust these dates for this specific class.</p></div></div><div class="compact-field-grid"><div class="field"><label>Duration</label><div class="input-with-suffix"><input name="durationMinutes" type="number" min="0" value="'+esc(a.durationMinutes||60)+'"><span>min</span></div></div><div class="field"><label>Opens</label><input name="opensAt" type="datetime-local" value="'+esc(localDateTime(a.opensAt))+'"></div><div class="field"><label>Closes</label><input name="closesAt" type="datetime-local" value="'+esc(localDateTime(a.closesAt))+'"></div></div></section><div class="notice">The assigned copy begins as a draft. Review it, then publish it when students should receive access.</div><div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Create Assigned Copy</button></div></form>'
+  });
+  modal.querySelector("#assignAssessmentForm").onsubmit=async e=>{
+    e.preventDefault();const fd=new FormData(e.currentTarget),section=sections.find(sec=>sec.id===String(fd.get("sectionId")));
+    const ref=doc(collection(db,"assessments"));
+    const clone={
+      ...Object.fromEntries(Object.entries(a).filter(([k])=>!["id","createdAt","updatedAt"].includes(k))),
+      ownerId:s.user.uid,sectionId:section.id,sectionName:section.sectionName,templateSourceId:a.id,
+      title:String(fd.get("title")).trim(),status:"Draft",durationMinutes:Number(fd.get("durationMinutes")||0),
+      opensAt:timestampFrom(fd.get("opensAt")),closesAt:timestampFrom(fd.get("closesAt")),
+      questionIds:d.questions.map(q=>q.id),questionCount:d.questions.length,totalPoints:d.questions.reduce((n,q)=>n+Number(q.points||0),0),
+      createdAt:serverTimestamp(),updatedAt:serverTimestamp()
+    };
+    try{
+      await setDoc(ref,clone);
+      for(let i=0;i<d.questions.length;i+=180){
+        const batch=writeBatch(db),chunk=d.questions.slice(i,i+180);
+        for(const q of chunk){
+          const cleanQ=Object.fromEntries(Object.entries(q).filter(([k])=>k!=="id"));
+          batch.set(doc(db,"assessments",ref.id,"questions",q.id),{...cleanQ,clonedAt:serverTimestamp()});
+          const key=d.keys.find(k=>k.id===q.id);
+          if(key){
+            const cleanK=Object.fromEntries(Object.entries(key).filter(([k])=>k!=="id"));
+            batch.set(doc(db,"assessments",ref.id,"keys",q.id),{...cleanK,clonedAt:serverTimestamp()});
+          }
+        }
+        await batch.commit();
+      }
+      core().closeModal();await loadAssessments();await openAssessment(ref.id);toast("Assessment assigned as a section draft. Review it, then publish when ready.");
+    }catch(err){toast(err.message||"Unable to assign assessment.");}
+  };
+}
+
 async function setStatus(status){
   const a=P3.current;
-  if(status==="Published"&&!P3.detail.questions.length)return toast("Add at least one item or evaluation prompt before publishing.");
+  if(status==="Published"&&!a.sectionId)return toast("Assign this assessment template to a section before publishing.");
+  if(status==="Published"&&!P3.detail.questions.length)return toast("Add at least one Question Bank question or evaluation prompt before publishing.");
   if(status==="Published"&&totalWeight(a.parts)!==100)return toast("Examination parts must total 100%.");
   const batch=writeBatch(db);
   batch.update(doc(db,"assessments",a.id),{status,questionIds:P3.detail.questions.map(q=>q.id),updatedAt:serverTimestamp()});
@@ -1004,6 +1042,7 @@ document.addEventListener("click",async e=>{
   const b=e.target.closest("[data-phase3-action]");if(!b)return;
   const a=b.dataset.phase3Action;
   if(a==="new-assessment")return assessmentModal();
+  if(a==="assign-assessment")return assignAssessmentModal(b.dataset.id);
   if(a==="edit-item")return itemModal(P3.items.find(x=>x.id===b.dataset.id&&x.courseId===b.dataset.course));
   if(a==="open-assessment")return openAssessment(b.dataset.id);
   if(a==="back-assessments"){clearInterval(P3.timer);P3.exam=null;core().setPage("assessments");return renderAssessments();}
