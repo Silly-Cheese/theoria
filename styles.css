@@ -1383,3 +1383,19 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .student-results-actions{flex-direction:column}
   .student-results-actions .primary-btn,.student-results-actions .secondary-btn{width:100%}
 }
+
+
+/* Theoria system course catalog */
+.catalog-banner{margin-bottom:20px}
+.catalog-course-section{margin-top:20px}
+.catalog-course-section+.catalog-course-section{padding-top:20px;border-top:1px solid var(--line)}
+.catalog-course-title-row{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.catalog-course-title-row h3{margin-right:auto}
+.catalog-course-card .card-meta{flex-wrap:wrap}
+.custom-course-section{opacity:.95}
+.question-bank-catalog-banner{margin-bottom:14px}
+.question-bank-catalog-banner h3{margin-bottom:5px}
+
+@media(max-width:650px){
+  .catalog-course-title-row{flex-direction:column}
+}
