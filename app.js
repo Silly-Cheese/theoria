@@ -434,9 +434,430 @@ function renderCourseDetail(){
 
   $("#courseDetail").innerHTML =
     '<button class="text-btn" data-action="back-courses">← Courses</button>'+
-    '<div class="detail-hero"><div class="detail-top"><div><div class="eyebrow">'+esc(c.code||"Course")+'</div><h1 class="detail-title">'+esc(c.title)+'</h1><div class="detail-meta"><span>'+esc(c.discipline||"Theology")+'</span><span>'+esc(c.level||"Advanced")+'</span><span>'+esc(c.status||"Active")+'</span></div></div>'+(instructor?'<div class="inline-actions"><button class="secondary-btn small-btn" data-action="edit-course">Edit Course</button><button class="primary-btn small-btn" data-action="add-unit">Add Unit</button></div>':'')+'</div>'+(c.description?'<p class="page-subtitle" style="margin-top:16px">'+esc(c.description)+'</p>':'')+'</div>'+
+    '<div class="detail-hero"><div class="detail-top"><div><div class="eyebrow">'+esc(c.code||"Course")+'</div><h1 class="detail-title">'+esc(c.title)+'</h1><div class="detail-meta"><span>'+esc(c.discipline||"Theology")+'</span><span>'+esc(c.level||"Advanced")+'</span><span>'+esc(c.status||"Active")+'</span></div></div>'+(instructor?'<div class="inline-actions"><button class="secondary-btn small-btn" data-action="edit-course">Edit Course</button><button class="secondary-btn small-btn" data-action="bulk-import-framework" data-course="'+c.id+'">Bulk Import Framework</button><button class="primary-btn small-btn" data-action="add-unit">Add Unit</button></div>':'')+'</div>'+(c.description?'<p class="page-subtitle" style="margin-top:16px">'+esc(c.description)+'</p>':'')+'</div>'+
     '<div class="framework-layout"><div><div class="panel-head" style="padding-left:0;border:0"><div class="panel-title">Course Framework</div></div><div class="unit-list">'+units+'</div></div>'+
     '<aside><div class="panel"><div class="panel-head"><div class="panel-title">Academic Competencies</div>'+(instructor?'<button class="panel-link" data-action="add-competency">+ Add</button>':'')+'</div><div class="panel-body"><div class="competency-list">'+competencies+'</div></div></div></aside></div>';
+}
+
+
+function stripFrameworkJsonFence(text){
+  let value=String(text||"").trim();
+  value=value.replace(/^\s*```(?:json)?\s*/i,"").replace(/\s*```\s*$/,"").trim();
+  const firstObject=value.indexOf("{"),lastObject=value.lastIndexOf("}");
+  if(firstObject>=0&&lastObject>firstObject)return value.slice(firstObject,lastObject+1);
+  return value;
+}
+
+function frameworkPromptForCourse(course,framework){
+  const existingCompetencies=(framework.competencies||[]).map(c=>c.code+" — "+c.name);
+  const existingUnits=(framework.units||[]).map(unit=>{
+    const topicText=(unit.topics||[]).map(t=>(t.number||"")+" — "+t.title).join("; ");
+    return "Unit "+(unit.order||"")+" — "+unit.title+(topicText?" | Existing topics: "+topicText:"");
+  });
+
+  return [
+    "Create or extend a complete Course Framework for Theoria.",
+    "",
+    "Course: "+(course.code||"")+" — "+(course.title||""),
+    "Discipline: "+(course.discipline||"Theology"),
+    "Academic Level: "+(course.level||"Advanced"),
+    course.description?"Course Description: "+course.description:"",
+    "",
+    "Return ONLY valid JSON. Do not use Markdown fences, commentary, headings, or explanatory prose.",
+    "Return one JSON object. The object may contain a competencies array, a units array, or both.",
+    "",
+    "Use this structure:",
+    "{",
+    '  "competencies": [',
+    '    {',
+    '      "code": "EXE-1",',
+    '      "name": "Biblical Exegesis",',
+    '      "description": "What successful performance demonstrates.",',
+    '      "order": 1',
+    "    }",
+    "  ],",
+    '  "units": [',
+    "    {",
+    '      "order": 1,',
+    '      "title": "Foundations of Rational Faith",',
+    '      "description": "Unit scope and purpose.",',
+    '      "topics": [',
+    "        {",
+    '          "number": "1.1",',
+    '          "title": "Faith and Reason",',
+    '          "learningObjective": "What students should understand, analyze, or evaluate.",',
+    '          "essentialKnowledge": "The core knowledge students should retain.",',
+    '          "competencyCodes": ["EXE-1", "ARG-2"],',
+    '          "order": 1',
+    "        }",
+    "      ]",
+    "    }",
+    "  ]",
+    "}",
+    "",
+    "Rules:",
+    "- Build a coherent advanced theological course framework, not a loose outline.",
+    "- Competency codes must be concise, stable, and unique.",
+    "- Unit order numbers must be unique positive integers.",
+    "- Topic numbers should follow the unit, such as 1.1, 1.2, 2.1.",
+    "- Topic numbers must be unique across the course.",
+    "- learningObjective should state what the student should be able to understand, analyze, evaluate, synthesize, or defend.",
+    "- essentialKnowledge should identify concrete theological, biblical, historical, hermeneutical, or philosophical knowledge.",
+    "- competencyCodes on topics may reference competencies you create in this same JSON OR existing competency codes listed below.",
+    "- Do not recreate existing units/topics/competencies unless the course genuinely needs additional entries.",
+    "- Theoria will safely merge this import and skip existing matching entries rather than overwrite them.",
+    "",
+    "EXISTING COMPETENCIES:",
+    ...(existingCompetencies.length?existingCompetencies:["None yet."]),
+    "",
+    "EXISTING COURSE FRAMEWORK:",
+    ...(existingUnits.length?existingUnits:["No units or topics exist yet."])
+  ].filter(Boolean).join("\n");
+}
+
+function normalizeFrameworkImport(payload,framework){
+  const errors=[],warnings=[];
+  if(!payload||typeof payload!=="object"||Array.isArray(payload)){
+    return {errors:["Framework import must be one JSON object."],warnings:[],competencies:[],units:[],summary:{newCompetencies:0,newUnits:0,newTopics:0,reusedCompetencies:0,reusedUnits:0,skippedTopics:0}};
+  }
+
+  const existingCompByCode=new Map((framework.competencies||[]).map(c=>[String(c.code||"").trim().toUpperCase(),c]));
+  const existingUnitByOrder=new Map((framework.units||[]).map(u=>[Number(u.order),u]));
+  const existingTopicByNumber=new Map();
+  for(const unit of framework.units||[]){
+    for(const topic of unit.topics||[]){
+      const num=String(topic.number||"").trim().toLowerCase();
+      if(num)existingTopicByNumber.set(num,{...topic,unitId:unit.id,unitOrder:unit.order,unitTitle:unit.title});
+    }
+  }
+
+  const rawCompetencies=Array.isArray(payload.competencies)?payload.competencies:[];
+  const rawUnits=Array.isArray(payload.units)?payload.units:[];
+  if(!rawCompetencies.length&&!rawUnits.length)errors.push("The JSON must contain at least one competency or unit.");
+
+  const seenCompCodes=new Set();
+  const normalizedCompetencies=[];
+  rawCompetencies.forEach((raw,index)=>{
+    if(!raw||typeof raw!=="object"||Array.isArray(raw)){
+      normalizedCompetencies.push({index,errors:["Competency is not an object."],warnings:[],data:null,status:"invalid"});return;
+    }
+    const rowErrors=[],rowWarnings=[];
+    const code=String(raw.code||"").trim().toUpperCase();
+    const name=String(raw.name||"").trim();
+    if(!code)rowErrors.push("Competency code is required.");
+    if(!name)rowErrors.push("Competency name is required.");
+    if(code&&seenCompCodes.has(code))rowErrors.push("Duplicate competency code in import: "+code);
+    if(code)seenCompCodes.add(code);
+
+    const orderRaw=Number(raw.order??index+1);
+    const order=Number.isFinite(orderRaw)&&orderRaw>0?orderRaw:index+1;
+    if(!Number.isFinite(orderRaw)||orderRaw<=0)rowWarnings.push("Competency order defaulted to "+(index+1)+".");
+
+    const existing=code?existingCompByCode.get(code):null;
+    if(existing)rowWarnings.push("Competency "+code+" already exists and will be reused.");
+
+    normalizedCompetencies.push({
+      index,errors:rowErrors,warnings:rowWarnings,status:rowErrors.length?"invalid":existing?"reuse":"new",
+      existing,
+      data:rowErrors.length?null:{code,name,description:String(raw.description||"").trim(),order}
+    });
+  });
+
+  const importedCompCodes=new Set(normalizedCompetencies.filter(r=>r.data).map(r=>r.data.code));
+  const allowedCompCodes=new Set([...existingCompByCode.keys(),...importedCompCodes]);
+
+  const seenUnitOrders=new Set();
+  const seenTopicNumbers=new Set();
+  const normalizedUnits=[];
+
+  rawUnits.forEach((raw,index)=>{
+    if(!raw||typeof raw!=="object"||Array.isArray(raw)){
+      normalizedUnits.push({index,errors:["Unit is not an object."],warnings:[],data:null,status:"invalid",topics:[]});return;
+    }
+    const rowErrors=[],rowWarnings=[];
+    const orderRaw=Number(raw.order??index+1);
+    const order=Number.isFinite(orderRaw)&&Number.isInteger(orderRaw)&&orderRaw>0?orderRaw:null;
+    const title=String(raw.title||"").trim();
+    if(!order)rowErrors.push("Unit order must be a positive integer.");
+    if(!title)rowErrors.push("Unit title is required.");
+    if(order&&seenUnitOrders.has(order))rowErrors.push("Duplicate unit order in import: "+order);
+    if(order)seenUnitOrders.add(order);
+
+    const existing=order?existingUnitByOrder.get(order):null;
+    if(existing){
+      rowWarnings.push("Unit "+order+" already exists and will be reused.");
+      if(title&&String(existing.title||"").trim().toLowerCase()!==title.toLowerCase()){
+        rowWarnings.push("Imported title differs from the existing Unit "+order+" title; the existing unit will not be renamed.");
+      }
+    }
+
+    const topics=[];
+    const rawTopics=Array.isArray(raw.topics)?raw.topics:[];
+    rawTopics.forEach((topicRaw,topicIndex)=>{
+      if(!topicRaw||typeof topicRaw!=="object"||Array.isArray(topicRaw)){
+        topics.push({index:topicIndex,errors:["Topic is not an object."],warnings:[],data:null,status:"invalid"});return;
+      }
+      const tErrors=[],tWarnings=[];
+      const number=String(topicRaw.number||"").trim();
+      const tTitle=String(topicRaw.title||"").trim();
+      if(!number)tErrors.push("Topic number is required.");
+      if(!tTitle)tErrors.push("Topic title is required.");
+      const numberKey=number.toLowerCase();
+      if(number&&seenTopicNumbers.has(numberKey))tErrors.push("Duplicate topic number in import: "+number);
+      if(number)seenTopicNumbers.add(numberKey);
+
+      const expectedPrefix=order?String(order)+".":"";
+      if(number&&order&&!number.startsWith(expectedPrefix))tWarnings.push("Topic number "+number+" does not begin with Unit "+order+".");
+
+      const existingTopic=number?existingTopicByNumber.get(numberKey):null;
+      if(existingTopic)tWarnings.push("Topic "+number+" already exists and will be skipped.");
+
+      let competencyCodes=Array.isArray(topicRaw.competencyCodes)?topicRaw.competencyCodes:String(topicRaw.competencyCodes||"").split(",");
+      competencyCodes=[...new Set(competencyCodes.map(x=>String(x).trim().toUpperCase()).filter(Boolean))];
+      const unknownCodes=competencyCodes.filter(code=>!allowedCompCodes.has(code));
+      if(unknownCodes.length)tWarnings.push("Unknown competency codes will be ignored: "+unknownCodes.join(", "));
+      competencyCodes=competencyCodes.filter(code=>allowedCompCodes.has(code));
+
+      const topicOrderRaw=Number(topicRaw.order??String(number).split(".").pop()??topicIndex+1);
+      const topicOrder=Number.isFinite(topicOrderRaw)&&topicOrderRaw>0?topicOrderRaw:topicIndex+1;
+
+      topics.push({
+        index:topicIndex,errors:tErrors,warnings:tWarnings,status:tErrors.length?"invalid":existingTopic?"skip":"new",
+        existing:existingTopic,
+        data:tErrors.length?null:{
+          number,tTitle,
+          title:tTitle,
+          learningObjective:String(topicRaw.learningObjective||topicRaw.objective||"").trim(),
+          essentialKnowledge:String(topicRaw.essentialKnowledge||"").trim(),
+          competencyCodes,
+          order:topicOrder
+        }
+      });
+    });
+
+    normalizedUnits.push({
+      index,errors:rowErrors,warnings:rowWarnings,status:rowErrors.length?"invalid":existing?"reuse":"new",
+      existing,
+      data:rowErrors.length?null:{order,title,description:String(raw.description||"").trim()},
+      topics
+    });
+  });
+
+  const allRows=[
+    ...normalizedCompetencies,
+    ...normalizedUnits,
+    ...normalizedUnits.flatMap(u=>u.topics||[])
+  ];
+  allRows.forEach(r=>{errors.push(...r.errors);warnings.push(...r.warnings);});
+
+  const summary={
+    newCompetencies:normalizedCompetencies.filter(r=>r.status==="new").length,
+    reusedCompetencies:normalizedCompetencies.filter(r=>r.status==="reuse").length,
+    newUnits:normalizedUnits.filter(r=>r.status==="new").length,
+    reusedUnits:normalizedUnits.filter(r=>r.status==="reuse").length,
+    newTopics:normalizedUnits.flatMap(u=>u.topics||[]).filter(r=>r.status==="new").length,
+    skippedTopics:normalizedUnits.flatMap(u=>u.topics||[]).filter(r=>r.status==="skip").length,
+    invalid:allRows.filter(r=>r.status==="invalid").length
+  };
+
+  return {errors,warnings,competencies:normalizedCompetencies,units:normalizedUnits,summary};
+}
+
+async function bulkImportFrameworkModal(courseId=state.currentCourse?.id||state.currentSection?.courseId){
+  if(state.role!=="instructor"||!courseId)return;
+  const course=state.courses.find(c=>c.id===courseId)||state.currentCourse||state.sectionData?.course;
+  if(!course)return showToast("Course not found.");
+
+  let framework=await loadCourseFramework(courseId);
+  let normalized=null;
+
+  const modal=openModal({
+    eyebrow:"Course Architecture",
+    title:"Bulk Import Framework",
+    wide:true,
+    body:'<div class="academic-form">'+
+      '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Framework Context</h3><p>Import competencies, units, and topics together. Existing matching entries are safely reused or skipped.</p></div></div>'+
+        '<div class="framework-import-summary"><div><span>Course</span><strong>'+esc(course.code||"")+' — '+esc(course.title||"")+'</strong></div><div><span>Existing Units</span><strong>'+framework.units.length+'</strong></div><div><span>Existing Topics</span><strong>'+framework.units.reduce((n,u)=>n+(u.topics?.length||0),0)+'</strong></div><div><span>Competencies</span><strong>'+framework.competencies.length+'</strong></div></div>'+
+        '<div class="bulk-import-prompt-row"><div><strong>Generate or extend the framework in ChatGPT</strong><span>The prompt includes the current course and tells ChatGPT how to avoid recreating existing structure.</span></div><button type="button" class="secondary-btn" id="copyFrameworkPrompt">Copy ChatGPT Framework Prompt</button></div>'+
+      '</section>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Add Framework JSON</h3><p>Paste the complete JSON response once or upload a .json file. You may import only competencies, only units/topics, or all three together.</p></div></div>'+
+        '<div class="compact-field-grid"><div class="field"><label>JSON File</label><input id="bulkFrameworkFile" type="file" accept=".json,application/json"></div><div class="field"><label>Merge Mode</label><div class="static-field">Safe merge — existing entries are never overwritten</div></div></div>'+
+        '<div class="field"><label>Paste Course Framework</label><textarea id="bulkFrameworkJson" class="bulk-json-editor" spellcheck="false" placeholder="Paste the complete JSON framework here"></textarea></div>'+
+        '<button type="button" class="primary-btn" id="previewBulkFramework">Validate & Preview</button>'+
+      '</section>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>03</span><h3>Import Preview</h3><p>Review new, reused, skipped, and invalid framework records before writing anything.</p></div><div id="bulkFrameworkSummary"></div></div><div id="bulkFrameworkResults"><div class="empty-mini">Paste or upload a framework, then validate it.</div></div></section>'+
+      '<div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button type="button" class="primary-btn" id="importBulkFramework" disabled>Import Framework</button></div>'+
+    '</div>'
+  });
+
+  const textarea=modal.querySelector("#bulkFrameworkJson");
+  const fileInput=modal.querySelector("#bulkFrameworkFile");
+  const summary=modal.querySelector("#bulkFrameworkSummary");
+  const results=modal.querySelector("#bulkFrameworkResults");
+  const importButton=modal.querySelector("#importBulkFramework");
+
+  const resetPreview=()=>{
+    normalized=null;summary.innerHTML="";
+    results.innerHTML='<div class="empty-mini">Validate the current framework JSON before importing.</div>';
+    importButton.disabled=true;importButton.textContent="Import Framework";
+  };
+
+  modal.querySelector("#copyFrameworkPrompt").addEventListener("click",async()=>{
+    const prompt=frameworkPromptForCourse(course,framework);
+    try{
+      await navigator.clipboard.writeText(prompt);
+      showToast("Course Framework prompt copied for ChatGPT.");
+    }catch(_){
+      textarea.value=prompt;
+      showToast("Clipboard access was unavailable, so the prompt was placed in the editor.");
+    }
+  });
+
+  fileInput.addEventListener("change",async()=>{
+    const file=fileInput.files?.[0];if(!file)return;
+    try{textarea.value=await file.text();resetPreview();}catch(_){showToast("The JSON file could not be read.");}
+  });
+
+  modal.querySelector("#previewBulkFramework").addEventListener("click",()=>{
+    let payload;
+    try{
+      payload=JSON.parse(stripFrameworkJsonFence(textarea.value));
+    }catch(error){
+      normalized=null;
+      summary.innerHTML='<span class="badge danger">Invalid JSON</span>';
+      results.innerHTML='<div class="notice danger-notice">'+esc(error.message||"The Course Framework is not valid JSON.")+'</div>';
+      importButton.disabled=true;return;
+    }
+
+    normalized=normalizeFrameworkImport(payload,framework);
+    const s=normalized.summary;
+    summary.innerHTML='<div class="bulk-preview-counts">'+
+      '<span><strong>'+s.newUnits+'</strong> new units</span>'+
+      '<span><strong>'+s.newTopics+'</strong> new topics</span>'+
+      '<span><strong>'+s.newCompetencies+'</strong> new competencies</span>'+
+      '<span><strong>'+s.invalid+'</strong> invalid</span>'+
+      '</div>';
+
+    const competencyRows=normalized.competencies.length
+      ? '<div class="framework-preview-group"><div class="framework-preview-group-title">Competencies</div>'+normalized.competencies.map(row=>
+          '<div class="bulk-preview-row '+(row.status==="invalid"?'invalid':row.status==="reuse"?'warning':'valid')+'"><div class="bulk-preview-number">C</div><div><strong>'+esc(row.data?.code||"Invalid competency")+(row.data?.name?' — '+esc(row.data.name):'')+'</strong><span>'+(row.status==="new"?"Create new competency":row.status==="reuse"?"Reuse existing competency":"Invalid")+'</span>'+
+          (row.errors.length?'<div class="bulk-messages errors">'+row.errors.map(x=>'<div>✕ '+esc(x)+'</div>').join("")+'</div>':'')+
+          (row.warnings.length?'<div class="bulk-messages warnings">'+row.warnings.map(x=>'<div>! '+esc(x)+'</div>').join("")+'</div>':'')+
+          '</div></div>'
+        ).join("")+'</div>'
+      : '';
+
+    const unitRows=normalized.units.length
+      ? '<div class="framework-preview-group"><div class="framework-preview-group-title">Units & Topics</div>'+normalized.units.map(unit=>{
+          const unitRow='<div class="bulk-preview-row '+(unit.status==="invalid"?'invalid':unit.status==="reuse"?'warning':'valid')+'"><div class="bulk-preview-number">U'+esc(unit.data?.order||"?")+'</div><div><strong>'+esc(unit.data?.title||"Invalid unit")+'</strong><span>'+(unit.status==="new"?"Create new unit":unit.status==="reuse"?"Reuse existing unit":"Invalid")+'</span>'+
+            (unit.errors.length?'<div class="bulk-messages errors">'+unit.errors.map(x=>'<div>✕ '+esc(x)+'</div>').join("")+'</div>':'')+
+            (unit.warnings.length?'<div class="bulk-messages warnings">'+unit.warnings.map(x=>'<div>! '+esc(x)+'</div>').join("")+'</div>':'')+
+            '</div></div>';
+          const topicRows=(unit.topics||[]).map(topic=>
+            '<div class="bulk-preview-row framework-topic-row '+(topic.status==="invalid"?'invalid':topic.status==="skip"?'warning':'valid')+'"><div class="bulk-preview-number">T</div><div><strong>'+esc(topic.data?.number||"Invalid")+' — '+esc(topic.data?.title||"Topic")+'</strong><span>'+(topic.status==="new"?"Create topic":topic.status==="skip"?"Already exists — skip":"Invalid")+(topic.data?.competencyCodes?.length?' • '+esc(topic.data.competencyCodes.join(", ")):'')+'</span>'+
+            (topic.errors.length?'<div class="bulk-messages errors">'+topic.errors.map(x=>'<div>✕ '+esc(x)+'</div>').join("")+'</div>':'')+
+            (topic.warnings.length?'<div class="bulk-messages warnings">'+topic.warnings.map(x=>'<div>! '+esc(x)+'</div>').join("")+'</div>':'')+
+            '</div></div>'
+          ).join("");
+          return unitRow+topicRows;
+        }).join("")+'</div>'
+      : '';
+
+    results.innerHTML=(competencyRows+unitRows)||'<div class="empty-mini">No framework records were found.</div>';
+
+    const creatable=s.newCompetencies+s.newUnits+s.newTopics;
+    importButton.disabled=!creatable||s.invalid>0;
+    importButton.textContent=s.invalid>0?"Fix Invalid Records":"Import "+creatable+" New Record"+(creatable===1?"":"s");
+  });
+
+  importButton.addEventListener("click",async()=>{
+    if(!normalized)return;
+    const s=normalized.summary;
+    if(s.invalid>0)return showToast("Fix invalid framework records before importing.");
+
+    const newCompetencies=normalized.competencies.filter(r=>r.status==="new");
+    const newUnits=normalized.units.filter(r=>r.status==="new");
+    const newTopics=normalized.units.flatMap(unit=>(unit.topics||[]).filter(topic=>topic.status==="new").map(topic=>({unit,topic})));
+    if(!newCompetencies.length&&!newUnits.length&&!newTopics.length)return showToast("Nothing new to import.");
+
+    importButton.disabled=true;importButton.textContent="Importing…";
+
+    try{
+      const compRefByCode=new Map((framework.competencies||[]).map(c=>[String(c.code||"").trim().toUpperCase(),doc(db,"courses",courseId,"competencies",c.id)]));
+      for(const row of newCompetencies){
+        compRefByCode.set(row.data.code,doc(collection(db,"courses",courseId,"competencies")));
+      }
+
+      const unitRefByOrder=new Map((framework.units||[]).map(u=>[Number(u.order),doc(db,"courses",courseId,"units",u.id)]));
+      for(const row of newUnits){
+        unitRefByOrder.set(Number(row.data.order),doc(collection(db,"courses",courseId,"units")));
+      }
+
+      const operations=[];
+
+      for(const row of newCompetencies){
+        const ref=compRefByCode.get(row.data.code);
+        operations.push(batch=>batch.set(ref,{
+          code:row.data.code,name:row.data.name,description:row.data.description,order:row.data.order,
+          createdAt:serverTimestamp(),updatedAt:serverTimestamp()
+        }));
+      }
+
+      for(const row of newUnits){
+        const ref=unitRefByOrder.get(Number(row.data.order));
+        operations.push(batch=>batch.set(ref,{
+          order:row.data.order,title:row.data.title,description:row.data.description,
+          createdAt:serverTimestamp(),updatedAt:serverTimestamp()
+        }));
+      }
+
+      for(const pair of newTopics){
+        const unitOrder=Number(pair.unit.data?.order||pair.unit.existing?.order);
+        const unitRef=unitRefByOrder.get(unitOrder);
+        if(!unitRef)throw new Error("Unable to resolve Unit "+unitOrder+" for topic "+pair.topic.data.number+".");
+
+        const competencyIds=[];
+        const competencyCodes=[];
+        for(const code of pair.topic.data.competencyCodes||[]){
+          const ref=compRefByCode.get(code);
+          if(ref){competencyIds.push(ref.id);competencyCodes.push(code);}
+        }
+
+        const topicRef=doc(collection(db,"courses",courseId,"units",unitRef.id,"topics"));
+        operations.push(batch=>batch.set(topicRef,{
+          number:pair.topic.data.number,title:pair.topic.data.title,
+          learningObjective:pair.topic.data.learningObjective,
+          essentialKnowledge:pair.topic.data.essentialKnowledge,
+          competencyIds,competencyCodes,order:pair.topic.data.order,
+          createdAt:serverTimestamp(),updatedAt:serverTimestamp()
+        }));
+      }
+
+      for(let offset=0;offset<operations.length;offset+=400){
+        const batch=writeBatch(db);
+        operations.slice(offset,offset+400).forEach(apply=>apply(batch));
+        await batch.commit();
+      }
+
+      closeModal();
+      framework=await loadCourseFramework(courseId);
+
+      if(state.currentSection?.courseId===courseId&&$("#page-section-detail")?.classList.contains("active")){
+        state.sectionData=await loadSectionData(state.currentSection);
+        renderSectionDetail("framework");
+      }else{
+        state.currentCourse=course;
+        state.courseFramework=framework;
+        renderCourseDetail();
+      }
+
+      showToast("Framework imported: "+s.newUnits+" unit"+(s.newUnits===1?"":"s")+", "+s.newTopics+" topic"+(s.newTopics===1?"":"s")+", "+s.newCompetencies+" competenc"+(s.newCompetencies===1?"y":"ies")+".");
+    }catch(error){
+      importButton.disabled=false;
+      importButton.textContent="Import Framework";
+      showToast(humanizeFirebaseError(error));
+    }
+  });
 }
 
 function openUnitModal(existing){
@@ -649,7 +1070,7 @@ function sectionTabs(active){
 function renderFrameworkReadOnly(){
   const fw=state.sectionData.framework;
   const instructor=state.role==="instructor";
-  const competencyPanel='<div class="panel" style="margin-bottom:18px"><div class="panel-head"><div><div class="panel-title">Academic Competencies</div><div class="panel-subtitle">Reusable skills for topic mapping, question-bank tagging, and mastery analytics.</div></div>'+(instructor?'<button class="panel-link" data-action="add-section-competency">+ Create Competency</button>':'')+'</div><div class="panel-body">'+(fw.competencies?.length?'<div class="competency-chip-grid">'+fw.competencies.map(c=>'<div class="competency-chip"><strong>'+esc(c.code)+'</strong><span>'+esc(c.name)+'</span>'+(instructor?'<button class="text-btn" data-action="edit-section-competency" data-id="'+c.id+'">Edit</button>':'')+'</div>').join("")+'</div>':'<div class="empty-mini">No competencies have been defined yet.'+(instructor?' Create the first one here.':'')+'</div>')+'</div></div>';
+  const competencyPanel='<div class="panel" style="margin-bottom:18px"><div class="panel-head"><div><div class="panel-title">Academic Competencies</div><div class="panel-subtitle">Reusable skills for topic mapping, question-bank tagging, and mastery analytics.</div></div>'+(instructor?'<div class="inline-actions"><button class="panel-link" data-action="bulk-import-framework" data-course="'+state.currentSection.courseId+'">Bulk Import Framework</button><button class="panel-link" data-action="add-section-competency">+ Create Competency</button></div>':'')+'</div><div class="panel-body">'+(fw.competencies?.length?'<div class="competency-chip-grid">'+fw.competencies.map(c=>'<div class="competency-chip"><strong>'+esc(c.code)+'</strong><span>'+esc(c.name)+'</span>'+(instructor?'<button class="text-btn" data-action="edit-section-competency" data-id="'+c.id+'">Edit</button>':'')+'</div>').join("")+'</div>':'<div class="empty-mini">No competencies have been defined yet.'+(instructor?' Create the first one here.':'')+'</div>')+'</div></div>';
   if(!fw.units.length) return competencyPanel+'<div class="empty-state"><div class="empty-symbol">U</div><h3>The course guide is not yet built.</h3><p>'+(instructor?"Add units and topics from the main Courses workspace.":"Your instructor has not added units and topics to this course framework.")+'</p></div>';
   return competencyPanel+'<div class="unit-list">'+fw.units.map((u,i)=>'<article class="unit-card"><div class="unit-head"><div><div class="unit-number">Unit '+esc(u.order||i+1)+'</div><h3>'+esc(u.title)+'</h3>'+(u.description?'<div class="topic-detail">'+esc(u.description)+'</div>':'')+'</div></div><div class="topic-list">'+((u.topics||[]).length?sortByOrder(u.topics).map(t=>'<div class="topic-row"><div class="topic-index">'+esc(t.number||"")+'</div><div><div class="topic-title">'+esc(t.title)+'</div>'+(t.learningObjective?'<div class="topic-detail"><strong>Learning Objective:</strong> '+esc(t.learningObjective)+'</div>':'')+(t.essentialKnowledge?'<div class="topic-detail"><strong>Essential Knowledge:</strong> '+esc(t.essentialKnowledge)+'</div>':'')+(t.competencyCodes?.length?'<div class="topic-detail"><strong>Competencies:</strong> '+esc(t.competencyCodes.join(", "))+'</div>':'')+'</div></div>').join(""):'<div class="empty-mini">No topics yet.</div>')+'</div></article>').join("")+'</div>';
 }
@@ -1952,6 +2373,7 @@ document.addEventListener("click",async event=>{
   if(action==="back-sections") return setPage("sections");
   if(action==="edit-course") return openCourseModal(state.currentCourse);
   if(action==="add-unit") return openUnitModal();
+  if(action==="bulk-import-framework") return bulkImportFrameworkModal(btn.dataset.course||state.currentCourse?.id||state.currentSection?.courseId);
   if(action==="edit-unit") return openUnitModal(state.courseFramework.units.find(x=>x.id===btn.dataset.id));
   if(action==="add-competency") return openCompetencyModal();
   if(action==="edit-competency") return openCompetencyModal(state.courseFramework.competencies.find(x=>x.id===btn.dataset.id));
