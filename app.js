@@ -1008,6 +1008,7 @@ async function bulkImportFrameworkModal(courseId=state.currentCourse?.id||state.
 }
 
 function openUnitModal(existing){
+  if(!canManageCourse(state.currentCourse))return showToast("Only the Theoria system owner can edit this official Course Framework.");
   const modal=openModal({
     eyebrow:"Course Framework",
     title:existing?"Edit Unit":"Add Unit",
@@ -1027,6 +1028,7 @@ function openUnitModal(existing){
 function openCompetencyModal(existing,courseId=state.currentCourse?.id || state.currentSection?.courseId){
   if(!courseId) return showToast("Open a course or section before creating competencies.");
   const course=state.courses.find(c=>c.id===courseId) || state.sectionData?.course || state.currentCourse;
+  if(!canManageCourse(course))return showToast("Only the Theoria system owner can edit official catalog competencies.");
   const modal=openModal({
     eyebrow:"Academic Competency",
     title:existing?"Edit Competency":"Create Competency",
@@ -1052,10 +1054,6 @@ function openCompetencyModal(existing,courseId=state.currentCourse?.id || state.
       updatedAt:serverTimestamp()
     };
     try{
-      if(state.role==="instructor" && !course?.ownerId){
-        await updateDoc(doc(db,"courses",courseId),{ownerId:state.user.uid,updatedAt:serverTimestamp()});
-        if(course) course.ownerId=state.user.uid;
-      }
       if(existing) await updateDoc(doc(db,"courses",courseId,"competencies",existing.id),data);
       else await addDoc(collection(db,"courses",courseId,"competencies"),{...data,createdAt:serverTimestamp()});
       closeModal();
@@ -1073,6 +1071,7 @@ function openCompetencyModal(existing,courseId=state.currentCourse?.id || state.
 }
 
 function openTopicModal(unitId,existing){
+  if(!canManageCourse(state.currentCourse))return showToast("Only the Theoria system owner can edit topics in this official course.");
   const unit=state.courseFramework.units.find(u=>u.id===unitId);
   const checks=(state.courseFramework.competencies||[]).map(c=>'<label class="checkbox-line"><input type="checkbox" name="competencies" value="'+c.id+'" data-code="'+esc(c.code)+'" '+(existing?.competencyIds?.includes(c.id)?'checked':'')+'> '+esc(c.code+" — "+c.name)+'</label>').join("");
   const next=(unit?.topics?.length||0)+1;
