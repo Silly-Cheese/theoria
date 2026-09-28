@@ -472,13 +472,16 @@ async function assessmentModal(existing){
       '</section>'+
       '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Administration Defaults</h3><p>These settings are copied when the template is assigned and can be adjusted for the section.</p></div></div>'+
         '<div class="compact-field-grid"><div class="field"><label>Duration</label><div class="input-with-suffix"><input name="durationMinutes" type="number" min="0" value="'+esc(existing?.durationMinutes??60)+'"><span>min</span></div></div><div class="field"><label>Opens</label><input name="opensAt" type="datetime-local" value="'+esc(localDateTime(existing?.opensAt))+'"></div><div class="field"><label>Closes</label><input name="closesAt" type="datetime-local" value="'+esc(localDateTime(existing?.closesAt))+'"></div></div>'+
-        '<div class="policy-card-grid"><label class="policy-card"><input type="checkbox" name="anonymousGrading" '+(existing?.anonymousGrading!==false?'checked':'')+'><div><strong>Anonymous Grading</strong><span>Use candidate numbers while evaluating.</span></div></label><label class="policy-card"><input type="checkbox" name="backtracking" '+(existing?.backtracking!==false?'checked':'')+'><div><strong>Allow Backtracking</strong><span>Students may revisit earlier questions.</span></div></label><label class="policy-card"><input type="checkbox" name="randomizeQuestions" '+(existing?.randomizeQuestions?'checked':'')+'><div><strong>Randomize Questions</strong><span>Each attempt receives a randomized order.</span></div></label></div>'+
+        '<div class="policy-card-grid"><label class="policy-card"><input type="checkbox" name="anonymousGrading" '+(existing?.anonymousGrading!==false?'checked':'')+'><div><strong>Anonymous Grading</strong><span>Use candidate numbers while evaluating.</span></div></label><label class="policy-card"><input type="checkbox" name="backtracking" '+(existing?.backtracking!==false?'checked':'')+'><div><strong>Allow Backtracking</strong><span>Students may revisit earlier questions.</span></div></label><label class="policy-card"><input type="checkbox" name="randomizeQuestions" '+(existing?.randomizeQuestions?'checked':'')+'><div><strong>Shuffle Question Order</strong><span>Shuffle the final question order for each student.</span></div></label></div>'+
         '<div class="field"><label>Result Release</label><select name="feedbackPolicy"><option value="manual">Instructor releases results manually</option><option value="score_only">Score only when released</option></select></div>'+
       '</section>'+
       '<section class="form-section"><div class="form-section-head"><div><span>03</span><h3>Student Instructions</h3><p>Add concise instructions one line at a time.</p></div><button type="button" class="secondary-btn small-btn" id="addAssessmentInstruction">+ Add Instruction</button></div><div id="assessmentInstructions" class="structured-list"></div></section>'+
       '<section class="form-section"><div class="form-section-head"><div><span>04</span><h3>Content Blueprint</h3><p>Choose course units and assign their intended share of the assessment.</p></div><div class="inline-actions"><button type="button" class="secondary-btn small-btn" id="balanceContentBlueprint">Balance</button><button type="button" class="secondary-btn small-btn" id="addContentBlueprint">+ Add Target</button></div></div><div id="contentBlueprintRows" class="blueprint-builder"></div><div class="builder-total"><span>Total</span><strong id="contentBlueprintTotal">0%</strong></div></section>'+
       '<section class="form-section"><div class="form-section-head"><div><span>05</span><h3>Competency Blueprint</h3><p>Define the academic competencies this assessment is intended to measure.</p></div><div class="inline-actions"><button type="button" class="secondary-btn small-btn" id="balanceCompetencyBlueprint">Balance</button><button type="button" class="secondary-btn small-btn" id="addCompetencyBlueprint">+ Add Target</button></div></div><div id="competencyBlueprintRows" class="blueprint-builder"></div><div class="builder-total"><span>Total</span><strong id="competencyBlueprintTotal">0%</strong></div></section>'+
-      (!existing?'<section class="form-section question-bank-builder"><div class="form-section-head"><div><span>06</span><h3>Questions</h3><p>Select the questions that belong on this assessment before creating the template.</p></div><div class="question-selection-summary"><strong id="selectedQuestionCount">0</strong><span>questions</span><b id="selectedQuestionPoints">0 pts</b></div></div><div class="question-bank-toolbar"><div class="field"><label>Search Question Bank</label><input id="assessmentQuestionSearch" placeholder="Search prompt, topic, competency, or tag"></div><div class="field"><label>Question Type</label><select id="assessmentQuestionType"><option value="">All question types</option></select></div></div><div id="assessmentQuestionChoices" class="assessment-question-picker"></div></section>':'')+
+      (!existing?'<section class="form-section question-bank-builder"><div class="form-section-head"><div><span>06</span><h3>Question Pool</h3><p>Select every question that may appear on this assessment. You can then use all selected questions or draw a random number from each question type.</p></div><div class="question-selection-summary"><strong id="selectedQuestionCount">0</strong><span>in pool</span><b id="selectedQuestionPoints">0 pts total</b></div></div>'+
+        '<div class="question-bank-toolbar"><div class="field"><label>Search Question Bank</label><input id="assessmentQuestionSearch" placeholder="Search prompt, topic, competency, or tag"></div><div class="field"><label>Question Type</label><select id="assessmentQuestionType"><option value="">All question types</option></select></div><button type="button" class="secondary-btn small-btn question-select-filtered" id="selectFilteredQuestions">Select Filtered</button></div>'+
+        '<div class="random-draw-panel"><label class="policy-card random-draw-toggle"><input type="checkbox" id="randomDrawEnabled"><div><strong>Random Draw by Question Type</strong><span>Each student receives a locked random subset from this pool. Their version does not change on refresh or resume.</span></div></label><div id="randomDrawPlan" class="random-draw-plan hidden"></div></div>'+
+        '<div id="assessmentQuestionChoices" class="assessment-question-picker"></div></section>':'')+
       '<div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">'+(existing?"Save Assessment":"Create Template")+'</button></div></form>'
   });
 
@@ -490,16 +493,74 @@ async function assessmentModal(existing){
   const questionBox=modal.querySelector("#assessmentQuestionChoices");
   const questionSearch=modal.querySelector("#assessmentQuestionSearch");
   const questionType=modal.querySelector("#assessmentQuestionType");
+  const randomDrawToggle=modal.querySelector("#randomDrawEnabled");
+  const randomDrawPlanBox=modal.querySelector("#randomDrawPlan");
+  const drawCounts=new Map();
+
+  const selectedQuestions=()=>bankQuestions.filter(q=>selectedQuestionIds.has(q.id));
+  const selectedGroups=()=>{
+    const groups=new Map();
+    selectedQuestions().forEach(q=>{
+      if(!groups.has(q.type))groups.set(q.type,[]);
+      groups.get(q.type).push(q);
+    });
+    return groups;
+  };
+
+  const renderRandomDrawPlan=()=>{
+    if(existing||!randomDrawPlanBox)return;
+    const enabled=!!randomDrawToggle.checked;
+    randomDrawPlanBox.classList.toggle("hidden",!enabled);
+    if(!enabled)return;
+
+    const groups=selectedGroups();
+    if(!groups.size){
+      randomDrawPlanBox.innerHTML='<div class="empty-mini">Select questions first. Draw controls will appear by question type.</div>';
+      return;
+    }
+
+    for(const [type,questions] of groups){
+      if(!drawCounts.has(type))drawCounts.set(type,questions.length);
+      drawCounts.set(type,Math.min(Number(drawCounts.get(type)||0),questions.length));
+    }
+    [...drawCounts.keys()].forEach(type=>{if(!groups.has(type))drawCounts.delete(type);});
+
+    randomDrawPlanBox.innerHTML='<div class="random-draw-head"><div><strong>Questions per student</strong><span>Set how many questions Theoria should draw from each selected type.</span></div><div class="random-draw-total"><strong id="randomDrawTotal">0</strong><span>on each exam</span></div></div>'+
+      [...groups.entries()].map(([type,questions])=>{
+        const points=[...new Set(questions.map(q=>Number(q.pointsDefault||1)))];
+        const pointText=points.length===1?points[0]+" pts each":"mixed point values";
+        return '<div class="random-draw-row"><div><strong>'+esc(type)+'</strong><span>'+questions.length+' available • '+esc(pointText)+'</span></div><div class="input-with-suffix mini"><input class="random-draw-count" data-type="'+esc(type)+'" type="number" min="0" max="'+questions.length+'" step="1" value="'+esc(drawCounts.get(type))+'"><span>draw</span></div></div>';
+      }).join("")+
+      '<div class="random-draw-note">Every student receives a separately randomized, persistent version. To keep every version worth the same number of points, questions within a randomized type must use the same point value.</div>';
+
+    const refreshTotal=()=>{
+      randomDrawPlanBox.querySelectorAll(".random-draw-count").forEach(input=>{
+        const max=Number(input.max||0),value=Math.max(0,Math.min(max,Math.floor(Number(input.value||0))));
+        input.value=value;drawCounts.set(input.dataset.type,value);
+      });
+      const total=[...drawCounts.values()].reduce((n,x)=>n+Number(x||0),0);
+      const totalEl=modal.querySelector("#randomDrawTotal");if(totalEl)totalEl.textContent=String(total);
+    };
+    randomDrawPlanBox.querySelectorAll(".random-draw-count").forEach(input=>input.addEventListener("input",refreshTotal));
+    refreshTotal();
+  };
+
   const updateQuestionSummary=()=>{
     if(existing)return;
-    const selected=bankQuestions.filter(q=>selectedQuestionIds.has(q.id));
+    const selected=selectedQuestions();
     modal.querySelector("#selectedQuestionCount").textContent=String(selected.length);
-    modal.querySelector("#selectedQuestionPoints").textContent=selected.reduce((n,q)=>n+Number(q.pointsDefault||1),0)+" pts";
+    modal.querySelector("#selectedQuestionPoints").textContent=selected.reduce((n,q)=>n+Number(q.pointsDefault||1),0)+" pts total";
+    renderRandomDrawPlan();
   };
+
+  const filteredQuestions=()=>{
+    const q=String(questionSearch?.value||"").trim().toLowerCase(),type=String(questionType?.value||"");
+    return bankQuestions.filter(item=>(!type||item.type===type)&&(!q||[item.prompt,item.topicTitle,item.topicNumber,(item.competencyCodes||[]).join(" "),(item.tags||[]).join(" ")].join(" ").toLowerCase().includes(q)));
+  };
+
   const renderBankQuestions=()=>{
     if(existing||!questionBox)return;
-    const q=String(questionSearch?.value||"").trim().toLowerCase(),type=String(questionType?.value||"");
-    const filtered=bankQuestions.filter(item=>(!type||item.type===type)&&(!q||[item.prompt,item.topicTitle,item.topicNumber,(item.competencyCodes||[]).join(" "),(item.tags||[]).join(" ")].join(" ").toLowerCase().includes(q)));
+    const filtered=filteredQuestions();
     questionBox.innerHTML=filtered.length?filtered.map(item=>
       '<label class="assessment-question-choice '+(selectedQuestionIds.has(item.id)?'selected':'')+'">'+
         '<input type="checkbox" value="'+item.id+'" '+(selectedQuestionIds.has(item.id)?'checked':'')+'>'+
@@ -513,15 +574,25 @@ async function assessmentModal(existing){
       updateQuestionSummary();
     });
   };
+
   const populateQuestionTypes=()=>{
     if(existing||!questionType)return;
     const types=[...new Set(bankQuestions.map(x=>x.type).filter(Boolean))].sort();
     questionType.innerHTML='<option value="">All question types</option>'+types.map(t=>'<option value="'+esc(t)+'">'+esc(t)+'</option>').join("");
   };
+
   if(!existing){
     populateQuestionTypes();renderBankQuestions();updateQuestionSummary();
     questionSearch.addEventListener("input",renderBankQuestions);
     questionType.addEventListener("change",renderBankQuestions);
+    randomDrawToggle.addEventListener("change",()=>{
+      if(randomDrawToggle.checked)form.elements.randomizeQuestions.checked=true;
+      renderRandomDrawPlan();
+    });
+    modal.querySelector("#selectFilteredQuestions").addEventListener("click",()=>{
+      filteredQuestions().forEach(q=>selectedQuestionIds.add(q.id));
+      renderBankQuestions();updateQuestionSummary();
+    });
   }
 
   const instructionBox=modal.querySelector("#assessmentInstructions");
