@@ -1097,8 +1097,20 @@ async function startExam(id,confirmed=false){
       subSnap=await getDoc(doc(db,"assessments",id,"submissions",s.user.uid));sub={id:subSnap.id,...subSnap.data()};
     }
 
-    const order=(sub.questionOrder?.length?sub.questionOrder:a.questionIds)||[];
-    if(!order.length)return toast("This assessment has no question manifest. Ask the instructor to reopen the assigned copy and save/publish it again.");
+    let order=(sub.questionOrder?.length?sub.questionOrder:a.questionIds)||[];
+    if(!order.length){
+      try{
+        const legacy=await getDocs(collection(db,"assessments",id,"questions"));
+        order=legacy.docs.map(d=>d.id);
+        if(order.length){
+          await updateDoc(doc(db,"assessments",id,"submissions",s.user.uid),{questionOrder:order,updatedAt:serverTimestamp()});
+          sub.questionOrder=order;
+        }
+      }catch(error){
+        console.error("Unable to recover legacy assessment question manifest:",error);
+      }
+    }
+    if(!order.length)return toast("This assessment has no available questions. Ask the instructor to reopen and republish the assigned assessment.");
     const questions=[];
     for(const qid of order){
       try{
