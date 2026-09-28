@@ -1811,8 +1811,47 @@ async function renderSectionAssessments(){
       }
     }
     list.sort((a,b)=>(b.opensAt?.toMillis?.()||0)-(a.opensAt?.toMillis?.()||0));
-    const header=s.role==="instructor"?'<div class="page-head" style="margin-bottom:16px"><div><div class="panel-title">Assigned Assessments</div><p class="page-subtitle">Assign reusable course assessments to this section, then publish when ready.</p></div><button class="primary-btn small-btn" data-phase3-action="assign-current-section" data-section="'+section.id+'">Assign Assessment</button></div>':'';
-    el.innerHTML=header+(list.length?'<div class="assessment-grid">'+list.map(a=>'<article class="assessment-card assigned-card"><div class="assessment-card-topline"><div class="assessment-type">'+esc(a.type)+'</div><span class="badge '+(a.status==="Published"?"live":a.status==="Draft"?"gold":"")+'">'+esc(a.status||"Draft")+'</span></div><h3>'+esc(a.title)+'</h3><p>'+esc(a.questionCount||0)+' questions • '+esc(a.totalPoints||0)+' points</p><div class="assigned-schedule"><div><span>Opens</span><strong>'+esc(dateText(a.opensAt))+'</strong></div><div><span>Closes</span><strong>'+esc(dateText(a.closesAt))+'</strong></div><div><span>Duration</span><strong>'+esc(a.durationMinutes||0)+' min</strong></div></div><div class="card-actions">'+(s.role==="instructor"?'<button class="secondary-btn small-btn" data-phase3-action="edit-assignment" data-id="'+a.id+'">Edit Assignment</button><button class="secondary-btn small-btn" data-phase3-action="open-assessment" data-id="'+a.id+'">Open</button><button class="danger-btn small-btn" data-phase3-action="delete-assigned" data-id="'+a.id+'">Delete</button>':(a.mode==="oral")?'<span class="badge gold">Instructor administered</span>':'<button class="primary-btn small-btn" data-phase3-action="start-exam" data-id="'+a.id+'">'+(availability(a)==="Open"?"Open Assessment":"View Assessment")+'</button><span class="badge">'+esc(availability(a))+'</span>')+'</div></article>').join("")+'</div>':'<div class="empty-state"><div class="empty-symbol">A</div><h3>No assessments assigned yet.</h3><p>'+(s.role==="instructor"?"Choose a reusable assessment template for this course.":"Published assessments will appear here.")+'</p></div>');
+
+    const header=s.role==="instructor"
+      ? '<div class="page-head" style="margin-bottom:16px"><div><div class="panel-title">Assigned Assessments</div><p class="page-subtitle">Assign reusable course assessments to this section, then publish when ready.</p></div><button class="primary-btn small-btn" data-phase3-action="assign-current-section" data-section="'+section.id+'">Assign Assessment</button></div>'
+      : '<div class="page-head" style="margin-bottom:16px"><div><div class="panel-title">Assessments</div><p class="page-subtitle">View scheduled assessment contents before opening, then review results after grading is complete.</p></div></div>';
+
+    if(!list.length){
+      el.innerHTML=header+'<div class="empty-state"><div class="empty-symbol">A</div><h3>No assessments assigned yet.</h3><p>'+(s.role==="instructor"?"Choose a reusable assessment template for this course.":"Published assessments will appear here.")+'</p></div>';
+      return;
+    }
+
+    if(s.role==="instructor"){
+      el.innerHTML=header+'<div class="assessment-grid">'+list.map(a=>
+        '<article class="assessment-card assigned-card"><div class="assessment-card-topline"><div class="assessment-type">'+esc(a.type)+'</div><span class="badge '+(a.status==="Published"?"live":a.status==="Draft"?"gold":"")+'">'+esc(a.status||"Draft")+'</span></div><h3>'+esc(a.title)+'</h3><p>'+esc(a.questionCount||0)+' questions • '+esc(a.totalPoints||0)+' points</p><div class="assigned-schedule"><div><span>Opens</span><strong>'+esc(dateText(a.opensAt))+'</strong></div><div><span>Closes</span><strong>'+esc(dateText(a.closesAt))+'</strong></div><div><span>Duration</span><strong>'+esc(a.durationMinutes||0)+' min</strong></div></div><div class="card-actions"><button class="secondary-btn small-btn" data-phase3-action="edit-assignment" data-id="'+a.id+'">Edit Assignment</button><button class="secondary-btn small-btn" data-phase3-action="open-assessment" data-id="'+a.id+'">Open</button><button class="danger-btn small-btn" data-phase3-action="delete-assigned" data-id="'+a.id+'">Delete</button></div></article>'
+      ).join("")+'</div>';
+      return;
+    }
+
+    const cards=[];
+    for(const a of list){
+      let sub=null,result=null;
+      try{const x=await getDoc(doc(db,"assessments",a.id,"submissions",s.user.uid));if(x.exists())sub=x.data();}catch(_){}
+      try{const x=await getDoc(doc(db,"assessments",a.id,"results",s.user.uid));if(x.exists())result=x.data();}catch(_){}
+      const status=availability(a),graded=result?.complete===true,types=assessmentTypeSummary(a);
+      let actions='<button class="secondary-btn small-btn" data-phase3-action="student-assessment-details" data-id="'+a.id+'">View Details</button>';
+      if(graded){
+        actions='<button class="primary-btn small-btn" data-phase3-action="student-assessment-results" data-id="'+a.id+'">View Results</button><button class="secondary-btn small-btn" data-phase3-action="student-assessment-details" data-id="'+a.id+'">Details</button>';
+      }else if(a.mode==="oral"){
+        actions+='<span class="badge gold">Instructor administered</span>';
+      }else if(sub?.status==="submitted"||sub?.status==="graded"){
+        actions='<button class="secondary-btn small-btn" data-phase3-action="receipt" data-id="'+a.id+'">Submission Receipt</button><button class="secondary-btn small-btn" data-phase3-action="student-assessment-details" data-id="'+a.id+'">Details</button>';
+      }else if(status==="Open"){
+        actions='<button class="primary-btn small-btn" data-phase3-action="start-exam" data-id="'+a.id+'">'+(sub?"Resume":"Begin")+'</button><button class="secondary-btn small-btn" data-phase3-action="student-assessment-details" data-id="'+a.id+'">Details</button>';
+      }
+
+      cards.push('<article class="assessment-card assigned-card student-assessment-card"><div class="assessment-card-topline"><div class="assessment-type">'+esc(a.type)+'</div><span class="badge '+(status==="Open"?"live":status==="Scheduled"?"gold":"")+'">'+esc(status)+'</span></div><h3>'+esc(a.title)+'</h3><p>'+esc(a.questionCount||0)+' questions • '+esc(a.totalPoints||0)+' points</p>'+
+        '<div class="assigned-schedule"><div><span>Opens</span><strong>'+esc(dateText(a.opensAt))+'</strong></div><div><span>Closes</span><strong>'+esc(dateText(a.closesAt))+'</strong></div><div><span>Duration</span><strong>'+esc(a.durationMinutes||0)+' min</strong></div></div>'+
+        (types.length?'<div class="student-card-type-list">'+types.slice(0,4).map(row=>'<span>'+esc(row.count)+' '+esc(row.type)+'</span>').join("")+(types.length>4?'<span>+'+(types.length-4)+' more</span>':'')+'</div>':'')+
+        (graded?'<div class="released-result"><strong>'+esc(result.percent)+'%</strong><span>Graded result available</span></div>':'')+
+        '<div class="card-actions">'+actions+'</div></article>');
+    }
+    el.innerHTML=header+'<div class="assessment-grid">'+cards.join("")+'</div>';
   }catch(error){
     console.error("Unable to load section assessments:",error);
     el.innerHTML='<div class="empty-state"><div class="empty-symbol">!</div><h3>Assessments could not be loaded.</h3><p>Refresh after deploying the latest Firestore rules. If the problem continues, open the main Assessments workspace.</p></div>';
