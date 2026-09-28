@@ -381,6 +381,17 @@ async function openCourse(courseId){
     if(!snap.exists()) return showToast("Course not found.");
     course={id:snap.id,...snap.data()};
   }
+  if(state.role==="instructor" && !course.ownerId){
+    try{
+      await updateDoc(doc(db,"courses",courseId),{ownerId:state.user.uid,updatedAt:serverTimestamp()});
+      course={...course,ownerId:state.user.uid};
+      const idx=state.courses.findIndex(c=>c.id===courseId);
+      if(idx>=0) state.courses[idx]=course;
+      showToast("Legacy course ownership linked to your instructor account.");
+    }catch(error){
+      console.warn("Unable to claim legacy course ownership:",error);
+    }
+  }
   state.currentCourse=course;
   state.courseFramework=await loadCourseFramework(courseId);
   renderCourseDetail();
@@ -430,19 +441,46 @@ function openUnitModal(existing){
   });
 }
 
-function openCompetencyModal(existing){
+function openCompetencyModal(existing,courseId=state.currentCourse?.id || state.currentSection?.courseId){
+  if(!courseId) return showToast("Open a course or section before creating competencies.");
+  const course=state.courses.find(c=>c.id===courseId) || state.sectionData?.course || state.currentCourse;
   const modal=openModal({
     eyebrow:"Academic Competency",
-    title:existing?"Edit Competency":"Add Competency",
-    body:'<form id="competencyForm"><div class="form-grid"><div class="field"><label>Code</label><input name="code" value="'+esc(existing?.code||"")+'" placeholder="ARG-3" required></div><div class="field"><label>Name</label><input name="name" value="'+esc(existing?.name||"")+'" placeholder="Argument Analysis" required></div><div class="field span-2"><label>Description</label><textarea name="description">'+esc(existing?.description||"")+'</textarea></div></div><div class="modal-foot" style="margin:24px -24px -24px"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Competency</button></div></form>'
+    title:existing?"Edit Competency":"Create Competency",
+    wide:true,
+    body:'<form id="competencyForm" class="academic-form">'+
+      '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Competency Identity</h3><p>Define a reusable academic skill students demonstrate across topics and assessments.</p></div></div>'+
+        '<div class="compact-field-grid"><div class="field"><label>Code</label><input name="code" value="'+esc(existing?.code||"")+'" placeholder="ARG-3" required></div><div class="field"><label>Name</label><input name="name" value="'+esc(existing?.name||"")+'" placeholder="Argument Analysis" required></div></div>'+
+        '<div class="field"><label>Description</label><textarea class="editor-compact" rows="3" name="description" placeholder="What does successful performance in this competency demonstrate?">'+esc(existing?.description||"")+'</textarea></div>'+
+      '</section>'+
+      '<div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Competency</button></div></form>'
   });
-  modal.querySelector("#competencyForm").addEventListener("submit",async e=>{
-    e.preventDefault(); const fd=new FormData(e.currentTarget);
-    const data={code:String(fd.get("code")).trim().toUpperCase(),name:String(fd.get("name")).trim(),description:String(fd.get("description")).trim(),updatedAt:serverTimestamp()};
+  const form=modal.querySelector("#competencyForm");
+  const area=form.querySelector(".editor-compact");
+  const grow=()=>{area.style.height="auto";area.style.height=Math.min(area.scrollHeight,180)+"px";};area.addEventListener("input",grow);grow();
+
+  form.addEventListener("submit",async e=>{
+    e.preventDefault();
+    const fd=new FormData(form);
+    const data={
+      code:String(fd.get("code")).trim().toUpperCase(),
+      name:String(fd.get("name")).trim(),
+      description:String(fd.get("description")).trim(),
+      updatedAt:serverTimestamp()
+    };
     try{
-      if(existing) await updateDoc(doc(db,"courses",state.currentCourse.id,"competencies",existing.id),data);
-      else await addDoc(collection(db,"courses",state.currentCourse.id,"competencies"),{...data,createdAt:serverTimestamp()});
-      closeModal(); state.courseFramework=await loadCourseFramework(state.currentCourse.id); renderCourseDetail(); showToast("Competency saved.");
+      if(existing) await updateDoc(doc(db,"courses",courseId,"competencies",existing.id),data);
+      else await addDoc(collection(db,"courses",courseId,"competencies"),{...data,createdAt:serverTimestamp()});
+      closeModal();
+      if(state.currentSection?.courseId===courseId && $("#page-section-detail")?.classList.contains("active")){
+        state.sectionData=await loadSectionData(state.currentSection);
+        renderSectionDetail("framework");
+      }else{
+        state.currentCourse=course;
+        state.courseFramework=await loadCourseFramework(courseId);
+        renderCourseDetail();
+      }
+      showToast("Competency saved.");
     }catch(error){showToast(humanizeFirebaseError(error));}
   });
 }
@@ -531,8 +569,10 @@ function sectionTabs(active){
 
 function renderFrameworkReadOnly(){
   const fw=state.sectionData.framework;
-  if(!fw.units.length) return '<div class="empty-state"><div class="empty-symbol">U</div><h3>The course guide is not yet built.</h3><p>Your instructor has not added units and topics to this course framework.</p></div>';
-  return '<div class="unit-list">'+fw.units.map((u,i)=>'<article class="unit-card"><div class="unit-head"><div><div class="unit-number">Unit '+esc(u.order||i+1)+'</div><h3>'+esc(u.title)+'</h3>'+(u.description?'<div class="topic-detail">'+esc(u.description)+'</div>':'')+'</div></div><div class="topic-list">'+((u.topics||[]).length?sortByOrder(u.topics).map(t=>'<div class="topic-row"><div class="topic-index">'+esc(t.number||"")+'</div><div><div class="topic-title">'+esc(t.title)+'</div>'+(t.learningObjective?'<div class="topic-detail"><strong>Learning Objective:</strong> '+esc(t.learningObjective)+'</div>':'')+(t.essentialKnowledge?'<div class="topic-detail"><strong>Essential Knowledge:</strong> '+esc(t.essentialKnowledge)+'</div>':'')+(t.competencyCodes?.length?'<div class="topic-detail"><strong>Competencies:</strong> '+esc(t.competencyCodes.join(", "))+'</div>':'')+'</div></div>').join(""):'<div class="empty-mini">No topics yet.</div>')+'</div></article>').join("")+'</div>';
+  const instructor=state.role==="instructor";
+  const competencyPanel='<div class="panel" style="margin-bottom:18px"><div class="panel-head"><div><div class="panel-title">Academic Competencies</div><div class="panel-subtitle">Reusable skills for topic mapping, question-bank tagging, and mastery analytics.</div></div>'+(instructor?'<button class="panel-link" data-action="add-section-competency">+ Create Competency</button>':'')+'</div><div class="panel-body">'+(fw.competencies?.length?'<div class="competency-chip-grid">'+fw.competencies.map(c=>'<div class="competency-chip"><strong>'+esc(c.code)+'</strong><span>'+esc(c.name)+'</span>'+(instructor?'<button class="text-btn" data-action="edit-section-competency" data-id="'+c.id+'">Edit</button>':'')+'</div>').join("")+'</div>':'<div class="empty-mini">No competencies have been defined yet.'+(instructor?' Create the first one here.':'')+'</div>')+'</div></div>';
+  if(!fw.units.length) return competencyPanel+'<div class="empty-state"><div class="empty-symbol">U</div><h3>The course guide is not yet built.</h3><p>'+(instructor?"Add units and topics from the main Courses workspace.":"Your instructor has not added units and topics to this course framework.")+'</p></div>';
+  return competencyPanel+'<div class="unit-list">'+fw.units.map((u,i)=>'<article class="unit-card"><div class="unit-head"><div><div class="unit-number">Unit '+esc(u.order||i+1)+'</div><h3>'+esc(u.title)+'</h3>'+(u.description?'<div class="topic-detail">'+esc(u.description)+'</div>':'')+'</div></div><div class="topic-list">'+((u.topics||[]).length?sortByOrder(u.topics).map(t=>'<div class="topic-row"><div class="topic-index">'+esc(t.number||"")+'</div><div><div class="topic-title">'+esc(t.title)+'</div>'+(t.learningObjective?'<div class="topic-detail"><strong>Learning Objective:</strong> '+esc(t.learningObjective)+'</div>':'')+(t.essentialKnowledge?'<div class="topic-detail"><strong>Essential Knowledge:</strong> '+esc(t.essentialKnowledge)+'</div>':'')+(t.competencyCodes?.length?'<div class="topic-detail"><strong>Competencies:</strong> '+esc(t.competencyCodes.join(", "))+'</div>':'')+'</div></div>').join(""):'<div class="empty-mini">No topics yet.</div>')+'</div></article>').join("")+'</div>';
 }
 
 function renderAssignments(){
@@ -916,6 +956,8 @@ document.addEventListener("click",async event=>{
   if(action==="edit-unit") return openUnitModal(state.courseFramework.units.find(x=>x.id===btn.dataset.id));
   if(action==="add-competency") return openCompetencyModal();
   if(action==="edit-competency") return openCompetencyModal(state.courseFramework.competencies.find(x=>x.id===btn.dataset.id));
+  if(action==="add-section-competency") return openCompetencyModal(null,state.currentSection?.courseId);
+  if(action==="edit-section-competency") return openCompetencyModal(state.sectionData?.framework?.competencies?.find(x=>x.id===btn.dataset.id),state.currentSection?.courseId);
   if(action==="add-topic") return openTopicModal(btn.dataset.unit);
   if(action==="edit-topic"){
     const unit=state.courseFramework.units.find(x=>x.id===btn.dataset.unit);
