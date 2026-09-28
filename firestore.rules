@@ -315,7 +315,9 @@ service cloud.firestore {
           && resource.data.ownerId == uid()
         )
         || (
-          assessmentMember(assessmentId)
+          signedIn()
+          && resource.data.sectionId != ''
+          && exists(/databases/$(database)/documents/sections/$(resource.data.sectionId)/members/$(uid()))
           && resource.data.status in ['Published', 'Closed']
         );
       allow create: if isInstructor()
@@ -337,7 +339,22 @@ service cloud.firestore {
 
       match /questions/{questionId} {
         allow read: if assessmentOwner(assessmentId)
-          || (assessmentOpen(assessmentId) && hasActiveSubmission(assessmentId));
+          || (
+            signedIn()
+            && assessmentData(assessmentId).sectionId != ''
+            && sectionMember(assessmentData(assessmentId).sectionId)
+            && assessmentData(assessmentId).status == 'Published'
+            && (
+              assessmentData(assessmentId).opensAt == null
+              || request.time >= assessmentData(assessmentId).opensAt
+            )
+            && (
+              assessmentData(assessmentId).closesAt == null
+              || request.time <= assessmentData(assessmentId).closesAt
+            )
+            && exists(/databases/$(database)/documents/assessments/$(assessmentId)/submissions/$(uid()))
+            && get(/databases/$(database)/documents/assessments/$(assessmentId)/submissions/$(uid())).data.status == 'in_progress'
+          );
         allow create, update, delete: if assessmentOwner(assessmentId);
       }
 
