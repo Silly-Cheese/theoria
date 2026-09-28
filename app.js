@@ -208,7 +208,7 @@ function isOfficialCatalogCourse(course){
 }
 
 function applyOwnerUI(){
-  $(".owner-only").forEach(el=>el.classList.toggle("hidden",!state.isSystemOwner));
+  Array.from(document.querySelectorAll(".owner-only")).forEach(el=>el.classList.toggle("hidden",!state.isSystemOwner));
 }
 
 function setPage(page,label){
