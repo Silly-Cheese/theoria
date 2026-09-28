@@ -1399,3 +1399,49 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 @media(max-width:650px){
   .catalog-course-title-row{flex-direction:column}
 }
+
+
+/* System Owner confirmation */
+.system-owner-confirmation{
+  display:grid;
+  grid-template-columns:54px 1fr;
+  gap:16px;
+  align-items:start
+}
+.owner-confirmation-mark{
+  display:grid;
+  place-items:center;
+  width:50px;
+  height:50px;
+  border:1px solid #b69b65;
+  border-radius:50%;
+  background:#f8f3e8;
+  color:var(--burgundy);
+  font-family:"Libre Baskerville",serif;
+  font-size:21px
+}
+.system-owner-confirmation strong{font-size:11px}
+.system-owner-confirmation p{
+  margin:7px 0 0;
+  font-size:9px;
+  line-height:1.55;
+  color:var(--slate)
+}
+.system-owner-confirmation .notice{margin-top:12px}
+
+.catalog-course-title-row{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:10px
+}
+.catalog-course-title-row h3{margin-right:auto}
+.catalog-course-section{margin-top:18px}
+.catalog-course-section+.catalog-course-section{margin-top:28px}
+.catalog-banner{margin-bottom:18px}
+.question-bank-catalog-banner{margin-bottom:14px}
+
+@media(max-width:620px){
+  .system-owner-confirmation{grid-template-columns:1fr}
+  .owner-confirmation-mark{width:44px;height:44px}
+}
