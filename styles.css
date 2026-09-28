@@ -37,7 +37,7 @@ button,input,select,textarea{font:inherit}button{cursor:pointer}a{color:inherit;
 @media(max-width:480px){.stat-row{grid-template-columns:1fr}.stat{border-right:0;border-bottom:1px solid var(--line)}.stat:last-child{border-bottom:0}.top-actions .secondary-btn{display:none}.role-picker{grid-template-columns:1fr}.join-code-input{flex-direction:column}}
 
 
-/* Phase 2 */
+/* Core academic workspace */
 .content-spacer{margin-top:22px}
 .serif-heading{font-family:"Libre Baskerville",serif;font-weight:400;margin:8px 0 7px}
 .card-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
@@ -547,3 +547,27 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .assessment-grade-row{background:#fffafb}
 .assessment-badge{background:#f4e8eb!important;color:var(--burgundy)!important}
 @media(max-width:700px){.student-grade-summary{grid-template-columns:1fr}.student-grade-summary>div{border-right:0;border-bottom:1px solid var(--line)}.student-grade-summary>div:last-child{border-bottom:0}}
+
+
+/* Scholar Library */
+.library-loading{padding:56px 28px;text-align:center;border:1px dashed var(--lineDark);border-radius:var(--radius);background:rgba(255,255,255,.46)}
+.library-loading h3{font-family:"Libre Baskerville",serif;font-weight:400;font-size:18px;margin:10px 0 0}
+.library-toolbar{display:grid;grid-template-columns:minmax(260px,1.6fr) minmax(180px,.7fr) minmax(200px,.9fr);gap:12px;margin-bottom:14px}
+.library-summary{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);background:#fff;margin-bottom:16px}
+.library-summary>div{padding:13px 16px;border-right:1px solid var(--line)}
+.library-summary>div:last-child{border-right:0}
+.library-summary strong{display:block;font-family:"Libre Baskerville",serif;font-size:19px;font-weight:400}
+.library-summary span{display:block;margin-top:2px;font-size:7px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.library-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.library-card{display:flex;flex-direction:column;min-height:210px;padding:17px 18px;border:1px solid var(--line);border-radius:9px;background:#fff}
+.library-card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+.library-card-top>div>span{display:block;font-size:7px;text-transform:uppercase;letter-spacing:.08em;color:var(--burgundy);font-weight:800}
+.library-card h3{font-family:"Libre Baskerville",serif;font-size:16px;font-weight:400;line-height:1.35;margin:5px 0 0}
+.library-course{flex:0 0 auto;padding:5px 7px;border-radius:999px;background:#f1ede5;color:var(--slate);font-size:7px;font-weight:800;letter-spacing:.07em}
+.library-citation{margin-top:11px;padding:9px 10px;border-left:2px solid var(--gold);background:#faf8f3;font-family:"Libre Baskerville",serif;font-size:9px;line-height:1.55;color:var(--burgundy)}
+.library-card>p{font-size:9px;line-height:1.55;color:var(--slate);margin:11px 0 0}
+.library-card-foot{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-top:auto;padding-top:16px}
+.library-card-foot strong{display:block;font-size:9px}
+.library-card-foot span{display:block;font-size:7px;color:var(--muted);margin-top:2px}
+@media(max-width:900px){.library-toolbar{grid-template-columns:1fr 1fr}.library-toolbar>.field:first-child{grid-column:1/-1}.library-grid{grid-template-columns:1fr}}
+@media(max-width:600px){.library-toolbar{grid-template-columns:1fr}.library-toolbar>.field:first-child{grid-column:auto}.library-summary{grid-template-columns:1fr}.library-summary>div{border-right:0;border-bottom:1px solid var(--line)}.library-summary>div:last-child{border-bottom:0}.library-card-foot{align-items:flex-start;flex-direction:column}}
