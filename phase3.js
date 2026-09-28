@@ -764,30 +764,40 @@ function availability(a){
   return "Open";
 }
 
+function safeArray(value){
+  return Array.isArray(value)?value:[];
+}
+
+function cachedAssessment(id){
+  if(P3.current?.id===id)return P3.current;
+  return P3.assessments.find(a=>a.id===id)||null;
+}
+
 function assessmentTypeSummary(a){
-  if(a.randomDrawEnabled&&Array.isArray(a.randomDrawPlan)&&a.randomDrawPlan.length){
-    return a.randomDrawPlan.filter(row=>Number(row.count||0)>0).map(row=>({
-      type:row.type||"Question",
-      count:Number(row.count||0),
-      available:Number(row.available||0),
+  const drawPlan=safeArray(a?.randomDrawPlan);
+  if(a?.randomDrawEnabled&&drawPlan.length){
+    return drawPlan.filter(row=>Number(row?.count||0)>0).map(row=>({
+      type:row?.type||"Question",
+      count:Number(row?.count||0),
+      available:Number(row?.available||0),
       randomized:true
     }));
   }
   const counts=new Map();
-  for(const q of a.questionPool||[]){
-    const type=String(q.type||"Question");
+  for(const q of safeArray(a?.questionPool)){
+    const type=String(q?.type||"Question");
     counts.set(type,(counts.get(type)||0)+1);
   }
   if(counts.size)return [...counts.entries()].map(([type,count])=>({type,count,available:count,randomized:false}));
-  return Number(a.questionCount||0)>0?[{type:"Questions",count:Number(a.questionCount||0),available:Number(a.questionCount||0),randomized:false}]:[];
+  return Number(a?.questionCount||0)>0?[{type:"Questions",count:Number(a.questionCount||0),available:Number(a.questionCount||0),randomized:false}]:[];
 }
 
 function assessmentStudentDetailsBody(a){
   const types=assessmentTypeSummary(a);
-  const instructions=Array.isArray(a.instructionSteps)&&a.instructionSteps.length?a.instructionSteps:String(a.instructions||"").split("\n").map(x=>x.trim()).filter(Boolean);
-  const content=(a.contentBlueprint||[]).filter(x=>Number(x.weight||0)>0);
-  const competencies=(a.competencyBlueprint||[]).filter(x=>Number(x.weight||0)>0);
-  const parts=(a.parts||[]).filter(x=>Number(x.weight||0)>0);
+  const instructions=safeArray(a?.instructionSteps).length?safeArray(a.instructionSteps):String(a?.instructions||"").split("\n").map(x=>x.trim()).filter(Boolean);
+  const content=safeArray(a?.contentBlueprint).filter(x=>Number(x?.weight||0)>0);
+  const competencies=safeArray(a?.competencyBlueprint).filter(x=>Number(x?.weight||0)>0);
+  const parts=safeArray(a?.parts).filter(x=>Number(x?.weight||0)>0);
 
   return '<div class="student-assessment-preview">'+
     '<div class="assessment-preview-guard"><div class="preview-lock">Θ</div><div><strong>Assessment contents only</strong><span>Question prompts, passages, answer choices, and answer keys remain hidden until the assessment is legitimately opened.</span></div></div>'+
@@ -805,36 +815,56 @@ function assessmentStudentDetailsBody(a){
 
 async function studentAssessmentDetails(id){
   try{
-    const snap=await getDoc(doc(db,"assessments",id));
-    if(!snap.exists())return toast("Assessment not found.");
-    const a={id:snap.id,...snap.data()};
+    let a=cachedAssessment(id);
+    if(!a){
+      const snap=await getDoc(doc(db,"assessments",id));
+      if(!snap.exists())return toast("Assessment not found.");
+      a={id:snap.id,...snap.data()};
+    }
     if(!a.sectionId)return toast("This assessment is not assigned to a section.");
-    const modal=core().openModal({
+    return core().openModal({
       eyebrow:a.type||"Assessment",
       title:a.title||"Assessment Details",
       wide:true,
       body:assessmentStudentDetailsBody(a),
       footer:'<button class="primary-btn" data-close-modal>Close</button>'
     });
-    return modal;
-  }catch(err){toast(err.message||"Unable to load assessment details.");}
+  }catch(err){
+    console.error("Unable to open assessment details:",err);
+    toast(err?.code==="permission-denied"?"Theoria could not authorize this assessment detail view. Confirm that you are enrolled in the assigned section.":(err?.message||"Unable to load assessment details."));
+  }
 }
 
 async function studentAssessmentResults(id){
   const s=state();
   try{
-    const [aSnap,subSnap,resultSnap]=await Promise.all([
-      getDoc(doc(db,"assessments",id)),
-      getDoc(doc(db,"assessments",id,"submissions",s.user.uid)),
-      getDoc(doc(db,"assessments",id,"results",s.user.uid))
-    ]);
-    if(!aSnap.exists())return toast("Assessment not found.");
-    if(!resultSnap.exists()||resultSnap.data().complete!==true)return toast("This assessment has not been fully graded yet.");
+    let a=cachedAssessment(id);
+    if(!a){
+      const aSnap=await getDoc(doc(db,"assessments",id));
+      if(!aSnap.exists())return toast("Assessment not found.");
+      a={id:aSnap.id,...aSnap.data()};
+    }
 
-    const a={id:aSnap.id,...aSnap.data()},sub=subSnap.exists()?subSnap.data():{},result=resultSnap.data();
-    const order=Array.isArray(sub.questionOrder)?sub.questionOrder:[];
-    const pool=new Map((a.questionPool||[]).map(q=>[q.id,q]));
-    const grading=result.grading||{};
+    let result=null,sub={};
+    try{
+      const resultSnap=await getDoc(doc(db,"assessments",id,"results",s.user.uid));
+      if(resultSnap.exists())result={id:resultSnap.id,...resultSnap.data()};
+    }catch(error){
+      console.error("Unable to read assessment result:",error);
+      throw error;
+    }
+    if(!result||result.complete!==true)return toast("This assessment has not been fully graded yet.");
+
+    try{
+      const subSnap=await getDoc(doc(db,"assessments",id,"submissions",s.user.uid));
+      if(subSnap.exists())sub={id:subSnap.id,...subSnap.data()};
+    }catch(error){
+      console.warn("Submission metadata unavailable for results view:",error);
+    }
+
+    const order=safeArray(sub.questionOrder);
+    const pool=new Map(safeArray(a.questionPool).map(q=>[q?.id,q||{}]).filter(([id])=>id));
+    const grading=(result.grading&&typeof result.grading==="object")?result.grading:{};
     const questionRows=order.map((qid,index)=>{
       const meta=pool.get(qid)||{},grade=grading[qid]||{};
       const max=Number(meta.points||0);
@@ -842,19 +872,24 @@ async function studentAssessmentResults(id){
       return '<div class="student-result-question"><div class="result-question-number">'+(index+1)+'</div><div><span>'+esc(meta.type||"Question")+'</span><strong>'+(score===null?'Not scored':esc(score)+' / '+esc(max||"—")+' pts')+'</strong>'+(grade.comment?'<p>'+esc(grade.comment)+'</p>':'')+'</div></div>';
     }).join("");
 
-    const parts=result.partScores?Object.values(result.partScores):[];
+    const parts=result.partScores&&typeof result.partScores==="object"
+      ? Object.values(result.partScores).filter(Boolean)
+      : [];
+
     core().setPage("exam",a.title||"Assessment Results");
-    $("#examRoot").innerHTML=
+    const root=$("#examRoot");
+    if(!root)throw new Error("Assessment results workspace is unavailable.");
+    root.innerHTML=
       '<div class="student-results-shell"><button class="text-btn" data-phase3-action="back-assessments">← Assessments</button>'+
-      '<div class="student-results-hero"><div><div class="eyebrow">'+esc(a.courseCode||"")+' • '+esc(a.type||"Assessment")+'</div><h1>'+esc(a.title||"Assessment")+'</h1><p>Grading is complete. This summary shows your performance without exposing answer keys.</p></div><div class="result-score-mark"><strong>'+esc(result.percent)+'%</strong><span>'+esc(result.totalScore)+' / '+esc(result.maxScore)+' points</span></div></div>'+
+      '<div class="student-results-hero"><div><div class="eyebrow">'+esc(a.courseCode||"")+' • '+esc(a.type||"Assessment")+'</div><h1>'+esc(a.title||"Assessment")+'</h1><p>Grading is complete. This summary shows your performance without exposing answer keys.</p></div><div class="result-score-mark"><strong>'+esc(result.percent??"—")+(result.percent!==undefined&&result.percent!==null?"%":"")+'</strong><span>'+esc(result.totalScore??"—")+' / '+esc(result.maxScore??a.totalPoints??"—")+' points</span></div></div>'+
       '<div class="receipt-grid student-result-meta"><div><span>Candidate Number</span><strong>'+esc(result.candidateNumber||sub.candidateNumber||"—")+'</strong></div><div><span>Status</span><strong>Graded</strong></div><div><span>Submitted</span><strong>'+esc(dateText(sub.submittedAt))+'</strong></div><div><span>Graded</span><strong>'+esc(dateText(result.gradedAt))+'</strong></div></div>'+
-      (parts.length?'<section class="student-result-section"><div class="panel-title">Assessment Part Performance</div><div class="result-domain-grid">'+parts.map(x=>'<div><span>'+esc(x.title||"Assessment Part")+'</span><strong>'+esc(x.percent)+'%</strong><small>'+esc(x.score)+' / '+esc(x.max)+' pts</small></div>').join("")+'</div></section>':'')+
-      (questionRows?'<section class="student-result-section"><div class="panel-title">Question Performance</div><p class="student-result-note">Question text and answer keys are not displayed in this results summary.</p><div class="student-result-question-list">'+questionRows+'</div></section>':'')+
+      (parts.length?'<section class="student-result-section"><div class="panel-title">Assessment Part Performance</div><div class="result-domain-grid">'+parts.map(x=>'<div><span>'+esc(x?.title||"Assessment Part")+'</span><strong>'+esc(x?.percent??"—")+(x?.percent!==undefined&&x?.percent!==null?"%":"")+'</strong><small>'+esc(x?.score??"—")+' / '+esc(x?.max??"—")+' pts</small></div>').join("")+'</div></section>':'')+
+      (questionRows?'<section class="student-result-section"><div class="panel-title">Question Performance</div><p class="student-result-note">Question text and answer keys are not displayed in this results summary.</p><div class="student-result-question-list">'+questionRows+'</div></section>':'<section class="student-result-section"><div class="panel-title">Question Performance</div><p class="student-result-note">Per-question metadata is unavailable for this legacy attempt, but your overall and assessment-part results are shown above.</p></section>')+
       (result.overallComment?'<section class="student-result-section"><div class="panel-title">Instructor Comment</div><div class="academic-banner"><p>'+esc(result.overallComment)+'</p></div></section>':'')+
       '<div class="student-results-actions"><button class="secondary-btn" data-phase3-action="student-assessment-details" data-id="'+a.id+'">Assessment Details</button><button class="primary-btn" data-phase3-action="back-assessments">Return to Assessments</button></div></div>';
   }catch(err){
     console.error("Unable to load student assessment results:",err);
-    toast(err?.code==="permission-denied"?"Your result is still being graded or is not yet available.":(err.message||"Unable to load assessment results."));
+    toast(err?.code==="permission-denied"?"Theoria could not authorize this result yet. Deploy the latest Firestore rules, then sign out and back in.":(err?.message||"Unable to load assessment results."));
   }
 }
 
