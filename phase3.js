@@ -113,6 +113,39 @@ function newCandidateNumber(){
   return out;
 }
 
+function shuffled(values){
+  const arr=[...(values||[])];
+  for(let i=arr.length-1;i>0;i--){
+    let j;
+    if(globalThis.crypto?.getRandomValues){
+      const n=new Uint32Array(1);crypto.getRandomValues(n);j=n[0]%(i+1);
+    }else j=Math.floor(Math.random()*(i+1));
+    [arr[i],arr[j]]=[arr[j],arr[i]];
+  }
+  return arr;
+}
+
+function buildAttemptQuestionOrder(assessment){
+  const pool=Array.isArray(assessment.questionPool)&&assessment.questionPool.length
+    ? assessment.questionPool
+    : (assessment.questionIds||[]).map(id=>({id,type:"Question"}));
+
+  if(assessment.randomDrawEnabled && Array.isArray(assessment.randomDrawPlan) && assessment.randomDrawPlan.length){
+    const chosen=[];
+    for(const row of assessment.randomDrawPlan){
+      const count=Math.max(0,Number(row.count||0));
+      if(!count)continue;
+      const candidates=pool.filter(q=>q.type===row.type);
+      if(candidates.length<count)throw new Error("The assessment pool no longer contains enough "+row.type+" questions for its random draw plan.");
+      chosen.push(...shuffled(candidates).slice(0,count).map(q=>q.id));
+    }
+    return shuffled(chosen);
+  }
+
+  const ids=pool.map(q=>q.id);
+  return assessment.randomizeQuestions?shuffled(ids):ids;
+}
+
 async function framework(courseId){
   const [unitsSnap,compSnap]=await Promise.all([
     getDocs(collection(db,"courses",courseId,"units")),
@@ -1104,8 +1137,9 @@ async function startExam(id,confirmed=false){
     }
 
     if(!sub){
-      let order=[...(a.questionIds||[])];if(!order.length)return toast("This assessment has no published questions.");
-      if(a.randomizeQuestions)order=order.map(v=>({v,r:Math.random()})).sort((x,y)=>x.r-y.r).map(x=>x.v);
+      let order=[];
+      try{order=buildAttemptQuestionOrder(a);}catch(error){return toast(error.message||"Unable to build your assessment version.");}
+      if(!order.length)return toast("This assessment has no published questions.");
       await setDoc(doc(db,"assessments",id,"submissions",s.user.uid),{
         studentId:s.user.uid,candidateNumber:newCandidateNumber(),status:"in_progress",
         startedAt:serverTimestamp(),acknowledgedAt:serverTimestamp(),updatedAt:serverTimestamp(),
