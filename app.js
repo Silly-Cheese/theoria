@@ -1736,6 +1736,7 @@ function openAssignmentModal(existing){
       '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Assignment Identity</h3><p>Name the work and choose its academic purpose.</p></div></div>'+
         '<div class="field"><label>Assignment Title</label><input class="title-input" name="title" value="'+esc(existing?.title||"")+'" placeholder="e.g. Nicene Creed Primary Source Analysis" required></div>'+
         '<div class="field"><label>Assignment Type</label><div class="type-tile-grid">'+typeTiles+'</div></div>'+
+        '<div class="compact-field-grid" style="margin-top:12px"><div class="field"><label>Unit Folder</label><select name="unitId" id="assignmentUnit"></select></div><div class="field"><label>Topic</label><select name="topicId" id="assignmentTopic"></select></div><div class="field"><label>Organization</label><div class="static-field">Used for student and instructor unit folders</div></div></div>'+
       '</section>'+
       '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Scoring & Schedule</h3><p>Set the practical details without leaving the page.</p></div></div>'+
         '<div class="compact-field-grid"><div class="field"><label>Points</label><div class="input-with-suffix"><input type="number" min="0" step="0.1" name="points" value="'+esc(existing?.points??100)+'" required><span>pts</span></div></div>'+
@@ -1754,6 +1755,18 @@ function openAssignmentModal(existing){
   const form=modal.querySelector("#assignmentForm");
   form.status.value=existing?.status||"Published";
   form.submissionMode.value=existing?.submissionMode||"Text + Link";
+
+  const assignmentFramework=state.sectionData?.framework||{units:[]};
+  const assignmentUnit=form.querySelector("#assignmentUnit"),assignmentTopic=form.querySelector("#assignmentTopic");
+  assignmentUnit.innerHTML='<option value="">Unsorted / no unit</option>'+assignmentFramework.units.map(u=>'<option value="'+u.id+'">'+esc("Unit "+(u.order||"")+" — "+u.title)+'</option>').join("");
+  assignmentUnit.value=existing?.unitId||"";
+  const fillAssignmentTopics=()=>{
+    const unit=assignmentFramework.units.find(u=>u.id===assignmentUnit.value);
+    assignmentTopic.innerHTML='<option value="">No specific topic</option>'+((unit?.topics||[]).map(t=>'<option value="'+t.id+'">'+esc((t.number||"")+" — "+t.title)+'</option>').join(""));
+    assignmentTopic.value=(existing?.topicId&&unit?.topics?.some(t=>t.id===existing.topicId))?existing.topicId:"";
+  };
+  assignmentUnit.addEventListener("change",fillAssignmentTopics);
+  fillAssignmentTopics();
 
   const renderRow=(container,value,index,kind)=>{
     const row=document.createElement("div");
@@ -1776,6 +1789,8 @@ function openAssignmentModal(existing){
     const fd=new FormData(form);
     const instructionSteps=[...stepBox.querySelectorAll(".structured-input")].map(x=>x.value.trim()).filter(Boolean);
     const requirements=[...reqBox.querySelectorAll(".structured-input")].map(x=>x.value.trim()).filter(Boolean);
+    const selectedUnit=assignmentFramework.units.find(u=>u.id===String(fd.get("unitId")||""));
+    const selectedTopic=(selectedUnit?.topics||[]).find(t=>t.id===String(fd.get("topicId")||""));
     const data={
       title:String(fd.get("title")).trim(),
       type:String(fd.get("type")||"Assignment"),
@@ -1787,14 +1802,14 @@ function openAssignmentModal(existing){
       requirements,
       submissionMode:String(fd.get("submissionMode")||"Text + Link"),
       allowResubmission:form.elements.allowResubmission.checked,
-      unitId:existing?.unitId||"",
-      unitTitle:existing?.unitTitle||"",
-      unitNumber:existing?.unitNumber||"",
-      topicId:existing?.topicId||"",
-      topicTitle:existing?.topicTitle||"",
-      topicNumber:existing?.topicNumber||"",
+      unitId:selectedUnit?.id||"",
+      unitTitle:selectedUnit?.title||"",
+      unitNumber:Number(selectedUnit?.order||0),
+      topicId:selectedTopic?.id||"",
+      topicTitle:selectedTopic?.title||"",
+      topicNumber:selectedTopic?.number||"",
       tags:existing?.tags||[],
-      unitSequence:existing?.unitSequence||0,
+      unitSequence:Number(selectedTopic?.order||existing?.unitSequence||0),
       updatedAt:serverTimestamp()
     };
     try{
