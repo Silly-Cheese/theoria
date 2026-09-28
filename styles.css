@@ -447,3 +447,60 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .section-choice-grid,.release-choice-grid{grid-template-columns:1fr}
   .assignment-copy-note{flex-direction:column}.assignment-copy-note strong{white-space:normal}
 }
+
+
+/* Student coursework submission experience */
+.coursework-card{align-items:stretch}
+.late-text{color:#8a3742!important;font-weight:700}
+.assignment-grade-preview{display:flex;align-items:center;gap:12px;margin-top:10px;padding:9px 11px;background:#eef3eb;border-left:3px solid #627a62}
+.assignment-grade-preview strong{font-family:"Libre Baskerville",serif;font-size:13px;font-weight:400;color:#516950}
+.assignment-grade-preview span{font-size:8px;color:var(--slate)}
+.submission-setting{height:100%;align-items:center!important;padding:11px!important;border:1px solid var(--line);border-radius:7px;background:#faf9f6}
+.student-assignment-layout{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(320px,.85fr);gap:18px}
+.assignment-brief,.assignment-response-panel{border:1px solid var(--line);border-radius:9px;background:#fff;padding:18px}
+.assignment-brief-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+.assignment-brief-head>div:first-child>span{display:block;font-size:8px;text-transform:uppercase;letter-spacing:.08em;color:var(--burgundy)}
+.assignment-brief-head h3{font-family:"Libre Baskerville",serif;font-size:20px;font-weight:400;margin:5px 0 0}
+.assignment-brief-points{min-width:72px;text-align:center;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:#f8f5ef}
+.assignment-brief-points strong{display:block;font-family:"Libre Baskerville",serif;font-size:18px;font-weight:400}
+.assignment-brief-points span{display:block;font-size:7px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.assignment-overview{font-family:"Libre Baskerville",serif;font-size:10px;line-height:1.65;color:var(--slate);margin:15px 0}
+.assignment-brief-meta{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);margin:14px 0}
+.assignment-brief-meta>div{padding:10px 11px;border-right:1px solid var(--line)}.assignment-brief-meta>div:last-child{border-right:0}
+.assignment-brief-meta span{display:block;font-size:7px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:3px}
+.assignment-brief-meta strong{font-size:9px}
+.assignment-full-steps{display:grid;gap:8px;margin-top:16px}
+.assignment-full-step{display:grid;grid-template-columns:32px 1fr;gap:10px;align-items:start;padding:9px 0;border-bottom:1px solid var(--line)}
+.assignment-full-step:last-child{border-bottom:0}
+.assignment-full-step span{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#f1ede5;color:var(--burgundy);font-family:"Libre Baskerville",serif;font-size:8px}
+.assignment-full-step p{font-size:9px;line-height:1.55;color:var(--slate);margin:4px 0 0}
+.assignment-requirements{display:grid;gap:6px;margin-top:17px;padding:13px 14px;background:#f8f5ef;border-left:3px solid var(--gold)}
+.assignment-requirements>div:not(.eyebrow){font-size:9px;color:var(--slate)}
+.assignment-response-panel .panel-title{margin-bottom:4px}
+.assignment-response-editor{min-height:280px!important;resize:vertical;line-height:1.7!important;font-family:"Libre Baskerville",serif!important;font-size:10px!important}
+.completion-confirmation{display:grid!important;grid-template-columns:auto 1fr!important;gap:10px!important;align-items:start!important;margin:14px 0!important;padding:13px!important;border:1px solid var(--line)!important;border-radius:8px;background:#faf9f6}
+.completion-confirmation input{width:auto!important;margin-top:2px!important}
+.completion-confirmation strong{display:block;font-size:10px}.completion-confirmation span{display:block;font-size:8px;color:var(--muted);margin-top:3px}
+.assignment-submit-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+.submission-timestamp{font-size:8px;color:var(--muted);margin-top:10px}
+.submission-summary-strip{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:15px}
+.submission-summary-strip>div{text-align:center;padding:13px;border-right:1px solid var(--line);background:#f8f5ef}.submission-summary-strip>div:last-child{border-right:0}
+.submission-summary-strip strong{display:block;font-family:"Libre Baskerville",serif;font-size:18px;font-weight:400}
+.submission-summary-strip span{display:block;font-size:7px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-top:2px}
+.submission-roster{display:grid;gap:7px}
+.submission-roster-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:11px 12px;border:1px solid var(--line);border-radius:7px;background:#fff}
+.submission-roster-row strong{display:block;font-size:10px}.submission-roster-row span{display:block;font-size:8px;color:var(--muted);margin-top:2px}
+.review-submission-layout{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(280px,.75fr);gap:18px}
+.review-work,.review-grade-panel{border:1px solid var(--line);border-radius:8px;background:#fff;padding:16px}
+.submission-status-line{display:flex;align-items:center;gap:10px;margin-bottom:14px}.submission-status-line>span:last-child{font-size:8px;color:var(--muted)}
+.submitted-response{padding:15px;background:#fbfaf7;border:1px solid var(--line);border-radius:7px}
+.submitted-response p{font-family:"Libre Baskerville",serif;font-size:10px;line-height:1.75;color:var(--ink);margin:8px 0 0}
+.submission-link{display:inline-block;margin-top:12px;font-size:9px;color:var(--burgundy);font-weight:700}
+.review-grade-panel{align-self:start}
+.badge.danger{background:#f4e9eb;color:#8a3742}
+
+@media(max-width:850px){
+  .student-assignment-layout,.review-submission-layout{grid-template-columns:1fr}
+  .assignment-brief-meta{grid-template-columns:1fr}
+  .assignment-brief-meta>div{border-right:0;border-bottom:1px solid var(--line)}.assignment-brief-meta>div:last-child{border-bottom:0}
+}
