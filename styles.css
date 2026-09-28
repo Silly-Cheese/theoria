@@ -353,3 +353,43 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .workflow-strip>div:nth-child(2){border-right:0}
   .workflow-strip>div:nth-child(-n+2){border-bottom:1px solid var(--line)}
 }
+
+
+/* Assessment creation — Question Bank picker */
+.question-bank-builder{overflow:visible}
+.question-selection-summary{display:flex;align-items:baseline;gap:7px;padding:8px 10px;border:1px solid var(--line);border-radius:7px;background:#f8f5ee;white-space:nowrap}
+.question-selection-summary strong{font-family:"Libre Baskerville",serif;font-size:18px;font-weight:400;color:var(--burgundy)}
+.question-selection-summary span{font-size:8px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.question-selection-summary b{font-size:9px;font-weight:700;color:var(--slate);padding-left:5px;border-left:1px solid var(--line)}
+.question-bank-toolbar{display:grid;grid-template-columns:1fr 220px;gap:12px;margin-bottom:13px}
+.assessment-question-picker{display:grid;gap:8px;max-height:430px;overflow:auto;padding-right:3px}
+.assessment-question-choice{
+  display:grid!important;
+  grid-template-columns:auto minmax(0,1fr) 30px!important;
+  align-items:flex-start!important;
+  gap:11px!important;
+  margin:0!important;
+  padding:12px!important;
+  border:1px solid var(--line)!important;
+  border-radius:8px;
+  background:#fff;
+  cursor:pointer;
+  transition:.14s ease
+}
+.assessment-question-choice:hover{border-color:#c9bfb2!important;background:#fffdfa}
+.assessment-question-choice.selected{border-color:var(--burgundy)!important;background:#fff8f9;box-shadow:inset 0 0 0 1px rgba(107,35,50,.12)}
+.assessment-question-choice>input{width:auto!important;margin:4px 0 0!important}
+.question-choice-copy{min-width:0}
+.question-choice-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:5px}
+.question-choice-meta span{font-size:7px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);padding:3px 6px;border:1px solid var(--line);border-radius:999px;background:#faf8f4}
+.question-choice-copy>strong{display:block;font-family:"Libre Baskerville",serif;font-size:11px;line-height:1.5;font-weight:400;color:var(--ink)}
+.question-select-mark{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:#f1ede5;color:#aaa39a;font-size:10px;font-weight:800}
+.assessment-question-choice.selected .question-select-mark{background:var(--burgundy);color:#fff}
+.compact-empty{padding:26px!important;min-height:auto!important}
+.compact-empty .empty-symbol{width:38px;height:38px;font-size:14px}.compact-empty h3{font-size:14px}.compact-empty p{font-size:9px}
+
+@media(max-width:700px){
+  .question-bank-toolbar{grid-template-columns:1fr}
+  .assessment-question-picker{max-height:520px}
+  .question-selection-summary{align-self:stretch;justify-content:center}
+}
