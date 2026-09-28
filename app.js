@@ -615,7 +615,11 @@ async function loadSectionData(section){
 
   return {
     course, framework, assignments,
-    resources:resourceSnap.docs.map(d=>({id:d.id,...d.data()})),
+    resources:resourceSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>{
+      const au=Number(a.unitNumber||9999),bu=Number(b.unitNumber||9999);
+      const as=Number(a.unitSequence||9999),bs=Number(b.unitSequence||9999);
+      return au-bu||as-bs||String(a.title||"").localeCompare(String(b.title||""));
+    }),
     members:members.sort((a,b)=>String(a.displayName||"").localeCompare(String(b.displayName||""))),
     grades, assignmentSubmissions, assessmentRefs, assessmentGrades
   };
@@ -683,9 +687,19 @@ function renderAssignments(){
 function renderResources(){
   const items=state.sectionData.resources;
   const list=items.length?'<div class="resource-list">'+items.map(r=>
-    '<div class="resource-row"><div><div class="card-kicker">'+esc(r.type||"Reading")+'</div><h4>'+esc(r.title)+'</h4>'+(r.citation?'<div class="resource-citation">'+esc(r.citation)+'</div>':'')+(r.notes?'<p>'+esc(r.notes)+'</p>':'')+'<div class="resource-meta">'+(r.url?'<a class="link" target="_blank" rel="noopener" href="'+esc(r.url)+'">Open Resource ↗</a>':'<span>No external link</span>')+'</div></div>'+(state.role==="instructor"?'<div class="inline-actions"><button class="text-btn" data-action="edit-resource" data-id="'+r.id+'">Edit</button></div>':'')+'</div>'
+    '<div class="resource-row"><div><div class="card-kicker">'+esc(r.type||"Reading")+
+      (r.unitTitle?' • Unit '+esc(r.unitNumber||"")+': '+esc(r.unitTitle):'')+
+      (r.topicNumber?' • Topic '+esc(r.topicNumber):'')+
+      '</div><h4>'+esc(r.title)+'</h4>'+
+      (r.citation?'<div class="resource-citation">'+esc(r.citation)+'</div>':'')+
+      (r.notes?'<p>'+esc(r.notes)+'</p>':'')+
+      '<div class="resource-meta">'+(r.url?'<a class="link" target="_blank" rel="noopener" href="'+esc(r.url)+'">Open Resource ↗</a>':'<span>No external link</span>')+'</div></div>'+
+      (state.role==="instructor"?'<div class="inline-actions"><button class="text-btn" data-action="edit-resource" data-id="'+r.id+'">Edit</button><button class="danger-btn small-btn" data-action="delete-resource" data-id="'+r.id+'">Delete</button></div>':'')+
+    '</div>'
   ).join("")+'</div>':'<div class="empty-state"><div class="empty-symbol">R</div><h3>No resources yet.</h3><p>'+(state.role==="instructor"?"Add primary sources, Scripture readings, articles, books, or research links.":"Your instructor has not added resources yet.")+'</p></div>';
-  return '<div class="page-head" style="margin-bottom:16px"><div><div class="panel-title">Readings & Resources</div></div>'+(state.role==="instructor"?'<button class="primary-btn small-btn" data-action="create-resource">Add Resource</button>':'')+'</div>'+list;
+  return '<div class="page-head" style="margin-bottom:16px"><div><div class="panel-title">Readings & Resources</div><p class="page-subtitle">'+(state.role==="instructor"?"Build unit reading sets, primary-source collections, and research materials.":"Readings, primary sources, and scholarly materials assigned to this section.")+'</p></div>'+
+    (state.role==="instructor"?'<div class="inline-actions"><button class="secondary-btn small-btn" data-action="bulk-import-resources">Bulk Import Unit Resources</button><button class="primary-btn small-btn" data-action="create-resource">Add Resource</button></div>':'')+
+    '</div>'+list;
 }
 
 function renderStudents(){
@@ -1359,6 +1373,267 @@ async function openAssignmentSubmissionReview(assignmentId,studentId){
   }catch(error){showToast(humanizeFirebaseError(error));}
 }
 
+function stripResourceJsonFence(text){
+  let value=String(text||"").trim();
+  value=value.replace(/^\s*```(?:json)?\s*/i,"").replace(/\s*```\s*$/,"").trim();
+  const firstArray=value.indexOf("["),lastArray=value.lastIndexOf("]");
+  const firstObject=value.indexOf("{"),lastObject=value.lastIndexOf("}");
+  if(firstArray>=0&&lastArray>firstArray)return value.slice(firstArray,lastArray+1);
+  if(firstObject>=0&&lastObject>firstObject)return value.slice(firstObject,lastObject+1);
+  return value;
+}
+
+function bulkResourcePrompt(section,course,unit){
+  const topics=(unit?.topics||[]).map(topic=>{
+    const pieces=[
+      (topic.number||topic.id)+" — "+topic.title,
+      topic.learningObjective?"Objective: "+topic.learningObjective:"",
+      topic.essentialKnowledge?"Essential knowledge: "+topic.essentialKnowledge:"",
+      topic.competencyCodes?.length?"Competencies: "+topic.competencyCodes.join(", "):""
+    ].filter(Boolean);
+    return pieces.join(" | ");
+  });
+
+  return [
+    "Create a complete unit resource set for Theoria.",
+    "",
+    "Course: "+(course?.code||"")+" — "+(course?.title||""),
+    "Section: "+(section?.sectionName||""),
+    "Unit: "+(unit?.order||"")+" — "+(unit?.title||""),
+    unit?.description?"Unit description: "+unit.description:"",
+    "",
+    "Return ONLY valid JSON. Do not use Markdown fences, commentary, headings, or explanatory prose.",
+    "Return either a JSON array of resource objects or an object with a single \"resources\" array.",
+    "",
+    "Each resource object may use:",
+    "{",
+    '  "title": "resource title",',
+    '  "type": "Primary Source | Scripture Reading | Article | Book / Chapter | PDF Link | Lecture Notes | Research Link | Supplemental Resource",',
+    '  "url": "https://example.com/optional",',
+    '  "citation": "author, title, chapter/pages, Scripture reference, or formal citation",',
+    '  "notes": "short student-facing note explaining what to read or pay attention to",',
+    '  "topicNumber": "1.1",',
+    '  "tags": ["primary-source", "trinity"],',
+    '  "order": 1',
+    "}",
+    "",
+    "Rules:",
+    "- Build a coherent scholarly resource set for the whole unit, not a random link dump.",
+    "- Use only topic numbers from the selected unit below.",
+    "- Prefer primary sources, Scripture, reputable scholarship, and directly relevant research materials.",
+    "- A URL is optional when the citation/reference is sufficient, such as a book chapter or Scripture passage.",
+    "- Do not invent URLs. If you are not certain of an exact URL, leave url empty.",
+    "- notes should tell the student what to read, why it matters, or what to focus on.",
+    "- Order the resources pedagogically.",
+    "",
+    "UNIT TOPICS:",
+    ...(topics.length?topics:["No topics are currently defined for this unit. Leave topicNumber empty."])
+  ].filter(Boolean).join("\n");
+}
+
+function validResourceUrl(value){
+  const raw=String(value||"").trim();
+  if(!raw)return true;
+  try{
+    const u=new URL(raw);
+    return u.protocol==="https:"||u.protocol==="http:";
+  }catch(_){return false;}
+}
+
+function normalizeBulkResource(raw,index,unit,existingKeys){
+  const errors=[],warnings=[];
+  if(!raw||typeof raw!=="object"||Array.isArray(raw))return {index,errors:["Resource is not a JSON object."],warnings:[],data:null};
+
+  const allowedTypes=["Primary Source","Scripture Reading","Article","Book / Chapter","PDF Link","Lecture Notes","Research Link","Supplemental Resource"];
+  const aliases={
+    "book":"Book / Chapter","chapter":"Book / Chapter","pdf":"PDF Link","scripture":"Scripture Reading",
+    "primary":"Primary Source","research":"Research Link","supplemental":"Supplemental Resource","notes":"Lecture Notes"
+  };
+  let type=String(raw.type||"Supplemental Resource").trim();
+  if(!allowedTypes.includes(type))type=aliases[type.toLowerCase()]||type;
+  if(!allowedTypes.includes(type)){warnings.push("Unknown resource type defaulted to Supplemental Resource.");type="Supplemental Resource";}
+
+  const title=String(raw.title||raw.name||"").trim();
+  if(!title)errors.push("Resource title is required.");
+
+  const url=String(raw.url||raw.link||"").trim();
+  if(url&&!validResourceUrl(url))errors.push("URL must be a valid http:// or https:// address.");
+
+  const citation=String(raw.citation||raw.reference||"").trim();
+  const notes=String(raw.notes||raw.note||raw.description||"").trim();
+  if(!url&&!citation)warnings.push("No URL or citation/reference was provided.");
+
+  const duplicateKey=(title+"|"+citation).toLowerCase();
+  if(title&&existingKeys.has(duplicateKey))warnings.push("A matching resource title/citation already exists in this section.");
+
+  const topicNumber=String(raw.topicNumber||raw.topic||"").trim();
+  const topic=topicNumber?(unit?.topics||[]).find(t=>String(t.number||"").trim().toLowerCase()===topicNumber.toLowerCase()):null;
+  if(topicNumber&&!topic)warnings.push("Topic "+topicNumber+" was not found in the selected unit and will be left unassigned.");
+
+  const tags=(Array.isArray(raw.tags)?raw.tags:String(raw.tags||"").split(",")).map(x=>String(x).trim()).filter(Boolean);
+  const orderRaw=Number(raw.order??index+1);
+  const unitSequence=Number.isFinite(orderRaw)?orderRaw:index+1;
+
+  return {
+    index,errors,warnings,
+    data:{
+      title,type,url,citation,notes,tags,
+      unitId:unit?.id||"",
+      unitTitle:unit?.title||"",
+      unitNumber:unit?.order||"",
+      topicId:topic?.id||"",
+      topicTitle:topic?.title||"",
+      topicNumber:topic?.number||"",
+      unitSequence
+    }
+  };
+}
+
+async function bulkImportResourcesModal(){
+  if(state.role!=="instructor"||!state.currentSection||!state.sectionData)return;
+  const section=state.currentSection,course=state.sectionData.course,framework=state.sectionData.framework;
+  if(!framework?.units?.length)return showToast("Create at least one course unit before bulk-importing unit resources.");
+
+  let selectedUnit=framework.units[0];
+  let parsedRows=[];
+  const existingKeys=new Set((state.sectionData.resources||[]).map(r=>(String(r.title||"")+"|"+String(r.citation||"")).toLowerCase()));
+
+  const modal=openModal({
+    eyebrow:"Unit Resources",
+    title:"Bulk Import Resources",
+    wide:true,
+    body:'<div class="academic-form">'+
+      '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Select Unit</h3><p>Theoria will map imported topic numbers to this unit.</p></div></div>'+
+        '<div class="field"><label>Unit</label><select id="bulkResourceUnit">'+framework.units.map(u=>'<option value="'+u.id+'">Unit '+esc(u.order||"")+' — '+esc(u.title)+'</option>').join("")+'</select></div>'+
+        '<div class="bulk-import-prompt-row"><div><strong>Generate the whole unit resource set in ChatGPT</strong><span>The prompt includes the unit’s real topics and tells ChatGPT not to invent URLs.</span></div><button type="button" class="secondary-btn" id="copyResourcePrompt">Copy ChatGPT Resource Prompt</button></div>'+
+      '</section>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Add Resource Set</h3><p>Paste one complete JSON response or upload a .json file.</p></div></div>'+
+        '<div class="compact-field-grid"><div class="field"><label>JSON File</label><input id="bulkResourceFile" type="file" accept=".json,application/json"></div><div class="field"><label>Expected Format</label><div class="static-field">JSON array or {"resources":[...]}</div></div></div>'+
+        '<div class="field"><label>Paste Complete Unit Resource Set</label><textarea id="bulkResourceJson" class="bulk-json-editor" spellcheck="false" placeholder="Paste the complete JSON resource set here"></textarea></div>'+
+        '<button type="button" class="primary-btn" id="previewBulkResources">Validate & Preview</button>'+
+      '</section>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>03</span><h3>Import Preview</h3><p>Review titles, citations, URLs, topic mapping, and warnings before saving.</p></div><div id="bulkResourceSummary"></div></div><div id="bulkResourceResults"><div class="empty-mini">Paste or upload a resource set, then validate it.</div></div></section>'+
+      '<div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button type="button" class="primary-btn" id="importBulkResources" disabled>Import Resources</button></div>'+
+    '</div>'
+  });
+
+  const unitSelect=modal.querySelector("#bulkResourceUnit");
+  const textarea=modal.querySelector("#bulkResourceJson");
+  const fileInput=modal.querySelector("#bulkResourceFile");
+  const summary=modal.querySelector("#bulkResourceSummary");
+  const results=modal.querySelector("#bulkResourceResults");
+  const importButton=modal.querySelector("#importBulkResources");
+
+  const resetPreview=()=>{
+    parsedRows=[];summary.innerHTML="";
+    results.innerHTML='<div class="empty-mini">Validate the current resource set before importing.</div>';
+    importButton.disabled=true;importButton.textContent="Import Resources";
+  };
+
+  unitSelect.addEventListener("change",()=>{
+    selectedUnit=framework.units.find(u=>u.id===unitSelect.value)||framework.units[0];
+    resetPreview();
+  });
+
+  modal.querySelector("#copyResourcePrompt").addEventListener("click",async()=>{
+    const prompt=bulkResourcePrompt(section,course,selectedUnit);
+    try{
+      await navigator.clipboard.writeText(prompt);
+      showToast("Unit resource prompt copied for ChatGPT.");
+    }catch(_){
+      textarea.value=prompt;
+      showToast("Clipboard access was unavailable, so the prompt was placed in the editor.");
+    }
+  });
+
+  fileInput.addEventListener("change",async()=>{
+    const file=fileInput.files?.[0];if(!file)return;
+    try{textarea.value=await file.text();resetPreview();}catch(_){showToast("The JSON file could not be read.");}
+  });
+
+  modal.querySelector("#previewBulkResources").addEventListener("click",()=>{
+    let payload;
+    try{
+      const parsed=JSON.parse(stripResourceJsonFence(textarea.value));
+      payload=Array.isArray(parsed)?parsed:(Array.isArray(parsed?.resources)?parsed.resources:null);
+      if(!payload)throw new Error("Expected a JSON array or an object with a resources array.");
+    }catch(error){
+      parsedRows=[];
+      summary.innerHTML='<span class="badge danger">Invalid JSON</span>';
+      results.innerHTML='<div class="notice danger-notice">'+esc(error.message||"The resource set is not valid JSON.")+'</div>';
+      importButton.disabled=true;return;
+    }
+
+    parsedRows=payload.map((row,index)=>normalizeBulkResource(row,index,selectedUnit,existingKeys));
+    const valid=parsedRows.filter(row=>row.data&&!row.errors.length);
+    const invalid=parsedRows.filter(row=>row.errors.length);
+    const warnings=parsedRows.filter(row=>row.warnings.length);
+    const linked=valid.filter(row=>row.data.url).length;
+
+    summary.innerHTML='<div class="bulk-preview-counts"><span><strong>'+valid.length+'</strong> valid</span><span><strong>'+invalid.length+'</strong> invalid</span><span><strong>'+warnings.length+'</strong> warnings</span><span><strong>'+linked+'</strong> linked</span></div>';
+
+    results.innerHTML=parsedRows.length?'<div class="bulk-preview-list">'+parsedRows.map(row=>
+      '<div class="bulk-preview-row '+(row.errors.length?'invalid':row.warnings.length?'warning':'valid')+'"><div class="bulk-preview-number">'+(row.index+1)+'</div><div><strong>'+esc(row.data?.title||"Invalid resource")+'</strong><span>'+esc(row.data?.type||"")+(row.data?.topicNumber?' • Topic '+esc(row.data.topicNumber):'')+(row.data?.citation?' • '+esc(row.data.citation):'')+'</span>'+
+      (row.errors.length?'<div class="bulk-messages errors">'+row.errors.map(x=>'<div>✕ '+esc(x)+'</div>').join("")+'</div>':'')+
+      (row.warnings.length?'<div class="bulk-messages warnings">'+row.warnings.map(x=>'<div>! '+esc(x)+'</div>').join("")+'</div>':'')+
+      '</div></div>'
+    ).join("")+'</div>':'<div class="empty-mini">No resources were found in the JSON.</div>';
+
+    importButton.disabled=!valid.length;
+    importButton.textContent=valid.length?"Import "+valid.length+" Resource"+(valid.length===1?"":"s"):"Import Resources";
+  });
+
+  importButton.addEventListener("click",async()=>{
+    const valid=parsedRows.filter(row=>row.data&&!row.errors.length);
+    if(!valid.length)return;
+    importButton.disabled=true;importButton.textContent="Importing…";
+    try{
+      for(let offset=0;offset<valid.length;offset+=400){
+        const batch=writeBatch(db);
+        valid.slice(offset,offset+400).forEach(row=>{
+          const ref=doc(collection(db,"sections",section.id,"resources"));
+          batch.set(ref,{...row.data,importedInBulk:true,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+        });
+        await batch.commit();
+      }
+      closeModal();
+      state.sectionData=await loadSectionData(section);
+      renderSectionDetail("resources");
+      if($("#page-library")?.classList.contains("active"))await renderScholarLibrary();
+      const skipped=parsedRows.length-valid.length;
+      showToast(valid.length+" resource"+(valid.length===1?"":"s")+" imported for "+selectedUnit.title+(skipped?" • "+skipped+" invalid skipped":"")+".");
+    }catch(error){
+      importButton.disabled=false;
+      importButton.textContent="Import "+valid.length+" Resource"+(valid.length===1?"":"s");
+      showToast(humanizeFirebaseError(error));
+    }
+  });
+}
+
+async function deleteResource(resourceId){
+  const section=state.currentSection;
+  const resource=state.sectionData.resources.find(x=>x.id===resourceId);
+  if(!section||!resource)return showToast("Resource not found.");
+
+  const modal=openModal({
+    eyebrow:"Delete Resource",
+    title:resource.title,
+    body:'<div class="delete-assessment-warning"><div class="delete-warning-icon">!</div><div><strong>This removes the resource from this section and the Scholar Library.</strong><p>No assignment, assessment, grade, or student submission records are deleted.</p></div></div>'+
+      '<div class="question-delete-preview"><span>'+esc(resource.type||"Resource")+'</span><strong>'+esc(resource.title||"Untitled Resource")+'</strong><small>'+esc(resource.citation||resource.url||"No citation or external link")+'</small></div>',
+    footer:'<button class="secondary-btn" data-close-modal>Cancel</button><button class="danger-btn" id="confirmDeleteResource">Delete Resource</button>'
+  });
+
+  modal.querySelector("#confirmDeleteResource").onclick=async()=>{
+    try{
+      await deleteDoc(doc(db,"sections",section.id,"resources",resourceId));
+      closeModal();
+      state.sectionData=await loadSectionData(section);
+      renderSectionDetail("resources");
+      showToast("Resource deleted.");
+    }catch(error){showToast(humanizeFirebaseError(error));}
+  };
+}
+
 function openResourceModal(existing){
   const modal=openModal({
     eyebrow:"Scholar Resource",
@@ -1380,7 +1655,16 @@ function openResourceModal(existing){
   const grow=()=>{note.style.height="auto";note.style.height=Math.min(note.scrollHeight,180)+"px";};note.addEventListener("input",grow);grow();
   form.addEventListener("submit",async e=>{
     e.preventDefault();const fd=new FormData(form);
-    const data={title:String(fd.get("title")).trim(),type:String(fd.get("type")),url:String(fd.get("url")).trim(),citation:String(fd.get("citation")||"").trim(),notes:String(fd.get("notes")).trim(),updatedAt:serverTimestamp()};
+    const url=String(fd.get("url")).trim();
+    if(url&&!validResourceUrl(url))return showToast("Enter a valid http:// or https:// resource URL.");
+    const data={
+      title:String(fd.get("title")).trim(),type:String(fd.get("type")),url,
+      citation:String(fd.get("citation")||"").trim(),notes:String(fd.get("notes")).trim(),
+      unitId:existing?.unitId||"",unitTitle:existing?.unitTitle||"",unitNumber:existing?.unitNumber||"",
+      topicId:existing?.topicId||"",topicTitle:existing?.topicTitle||"",topicNumber:existing?.topicNumber||"",
+      tags:existing?.tags||[],unitSequence:existing?.unitSequence||0,
+      updatedAt:serverTimestamp()
+    };
     try{
       if(existing) await updateDoc(doc(db,"sections",state.currentSection.id,"resources",existing.id),data);
       else await addDoc(collection(db,"sections",state.currentSection.id,"resources"),{...data,createdAt:serverTimestamp()});
@@ -1658,6 +1942,8 @@ document.addEventListener("click",async event=>{
   if(action==="assignment-submissions") return openAssignmentSubmissionsModal(btn.dataset.id);
   if(action==="review-assignment-submission") return openAssignmentSubmissionReview(btn.dataset.assignment,btn.dataset.student);
   if(action==="create-resource") return openResourceModal();
+  if(action==="bulk-import-resources") return bulkImportResourcesModal();
+  if(action==="delete-resource") return deleteResource(btn.dataset.id);
   if(action==="open-section-resource") return openSection(btn.dataset.section,"resources");
   if(action==="edit-resource") return openResourceModal(state.sectionData.resources.find(x=>x.id===btn.dataset.id));
   if(action==="set-grade") return openGradeModal(btn.dataset.assignment,btn.dataset.student);
