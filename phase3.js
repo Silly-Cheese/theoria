@@ -641,7 +641,7 @@ async function removeItem(id){
   try{await batch.commit();await openAssessment(a.id,"items");}catch(err){toast(err.message||"Unable to remove item.");}
 }
 
-async function assignAssessmentModal(assessmentId){
+async function assignAssessmentModal(assessmentId,preferredSectionId=""){
   if(!P3.current || P3.current.id!==assessmentId) await openAssessment(assessmentId);
   const a=P3.current,d=P3.detail,s=state();
   if(a.sectionId)return toast("This assessment is already assigned to a section.");
@@ -654,6 +654,7 @@ async function assignAssessmentModal(assessmentId){
     wide:true,
     body:'<form id="assignAssessmentForm" class="academic-form"><section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Choose Section</h3><p>A reusable copy will be created for this section. The original template remains unchanged.</p></div></div><div class="field"><label>Section</label><select name="sectionId">'+sections.map(sec=>'<option value="'+sec.id+'">'+esc(sec.courseCode+" — "+sec.sectionName+" • "+sec.term)+'</option>').join("")+'</select></div><div class="field"><label>Assigned Title</label><input class="title-input" name="title" value="'+esc(a.title)+'" required></div></section><section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Section Schedule</h3><p>Adjust these dates for this specific class.</p></div></div><div class="compact-field-grid"><div class="field"><label>Duration</label><div class="input-with-suffix"><input name="durationMinutes" type="number" min="0" value="'+esc(a.durationMinutes||60)+'"><span>min</span></div></div><div class="field"><label>Opens</label><input name="opensAt" type="datetime-local" value="'+esc(localDateTime(a.opensAt))+'"></div><div class="field"><label>Closes</label><input name="closesAt" type="datetime-local" value="'+esc(localDateTime(a.closesAt))+'"></div></div></section><div class="notice">The assigned copy begins as a draft. Review it, then publish it when students should receive access.</div><div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Create Assigned Copy</button></div></form>'
   });
+  if(preferredSectionId) modal.querySelector('#assignAssessmentForm select[name="sectionId"]').value=preferredSectionId;
   modal.querySelector("#assignAssessmentForm").onsubmit=async e=>{
     e.preventDefault();const fd=new FormData(e.currentTarget),section=sections.find(sec=>sec.id===String(fd.get("sectionId")));
     const ref=doc(collection(db,"assessments"));
@@ -682,6 +683,22 @@ async function assignAssessmentModal(assessmentId){
       }
       core().closeModal();await loadAssessments();await openAssessment(ref.id);toast("Assessment assigned as a section draft. Review it, then publish when ready.");
     }catch(err){toast(err.message||"Unable to assign assessment.");}
+  };
+}
+
+async function chooseAssessmentForSection(sectionId){
+  await loadAssessments();
+  const section=state().sections.find(x=>x.id===sectionId)||state().currentSection;
+  const templates=P3.assessments.filter(a=>!a.sectionId&&a.courseId===section.courseId);
+  if(!templates.length)return toast("No reusable assessment templates exist for this course yet. Create one in Assessments and add Question Bank questions first.");
+  const modal=core().openModal({
+    eyebrow:"Assign Assessment",
+    title:"Choose a Reusable Assessment",
+    wide:true,
+    body:'<form id="chooseAssessmentForm"><div class="template-choice-list">'+templates.map((a,i)=>'<label class="template-choice"><input type="radio" name="assessmentId" value="'+a.id+'" '+(i===0?'checked':'')+'><div><span>'+esc(a.type)+'</span><strong>'+esc(a.title)+'</strong><small>'+esc(a.questionCount||0)+' questions • '+esc(a.totalPoints||0)+' points</small></div></label>').join("")+'</div><div class="modal-foot" style="margin:24px -24px -24px"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Continue</button></div></form>'
+  });
+  modal.querySelector("#chooseAssessmentForm").onsubmit=e=>{
+    e.preventDefault();const id=new FormData(e.currentTarget).get("assessmentId");core().closeModal();assignAssessmentModal(String(id),sectionId);
   };
 }
 
@@ -717,7 +734,8 @@ async function renderSectionAssessments(){
       }
     }
     list.sort((a,b)=>(b.opensAt?.toMillis?.()||0)-(a.opensAt?.toMillis?.()||0));
-    el.innerHTML=list.length?'<div class="assessment-grid">'+list.map(a=>'<article class="assessment-card"><div class="assessment-type">'+esc(a.type)+'</div><h3>'+esc(a.title)+'</h3><p>'+esc(availability(a))+' • '+esc(a.durationMinutes||0)+' minutes</p><div class="card-actions">'+(s.role==="instructor"?'<button class="secondary-btn small-btn" data-phase3-action="open-assessment" data-id="'+a.id+'">Open Builder</button>':(a.mode==="oral"||a.mode==="disputation")?'<span class="badge gold">Instructor administered</span>':availability(a)==="Open"?'<button class="primary-btn small-btn" data-phase3-action="start-exam" data-id="'+a.id+'">Open Assessment</button>':'<span class="badge">'+esc(availability(a))+'</span>')+'</div></article>').join("")+'</div>':'<div class="empty-state"><div class="empty-symbol">A</div><h3>No section assessments yet.</h3><p>'+(s.role==="instructor"?"Create one from the Assessments workspace, then it will appear here.":"Published assessments will appear here.")+'</p></div>';
+    const header=s.role==="instructor"?'<div class="page-head" style="margin-bottom:16px"><div><div class="panel-title">Assigned Assessments</div><p class="page-subtitle">Assign reusable course assessments to this section, then publish when ready.</p></div><button class="primary-btn small-btn" data-phase3-action="assign-current-section" data-section="'+section.id+'">Assign Assessment</button></div>':'';
+    el.innerHTML=header+(list.length?'<div class="assessment-grid">'+list.map(a=>'<article class="assessment-card"><div class="assessment-type">'+esc(a.type)+'</div><h3>'+esc(a.title)+'</h3><p>'+esc(availability(a))+' • '+esc(a.durationMinutes||0)+' minutes</p><div class="card-actions">'+(s.role==="instructor"?'<button class="secondary-btn small-btn" data-phase3-action="open-assessment" data-id="'+a.id+'">Open Builder</button>':(a.mode==="oral"||a.mode==="disputation")?'<span class="badge gold">Instructor administered</span>':availability(a)==="Open"?'<button class="primary-btn small-btn" data-phase3-action="start-exam" data-id="'+a.id+'">Open Assessment</button>':'<span class="badge">'+esc(availability(a))+'</span>')+'</div></article>').join("")+'</div>':'<div class="empty-state"><div class="empty-symbol">A</div><h3>No assessments assigned yet.</h3><p>'+(s.role==="instructor"?"Choose a reusable assessment template for this course.":"Published assessments will appear here.")+'</p></div>');
   }catch(error){
     console.error("Unable to load section assessments:",error);
     el.innerHTML='<div class="empty-state"><div class="empty-symbol">!</div><h3>Assessments could not be loaded.</h3><p>Refresh after deploying the latest Firestore rules. If the problem continues, open the main Assessments workspace.</p></div>';
@@ -1043,6 +1061,7 @@ document.addEventListener("click",async e=>{
   const a=b.dataset.phase3Action;
   if(a==="new-assessment")return assessmentModal();
   if(a==="assign-assessment")return assignAssessmentModal(b.dataset.id);
+  if(a==="assign-current-section")return chooseAssessmentForSection(b.dataset.section);
   if(a==="edit-item")return itemModal(P3.items.find(x=>x.id===b.dataset.id&&x.courseId===b.dataset.course));
   if(a==="open-assessment")return openAssessment(b.dataset.id);
   if(a==="back-assessments"){clearInterval(P3.timer);P3.exam=null;core().setPage("assessments");return renderAssessments();}
