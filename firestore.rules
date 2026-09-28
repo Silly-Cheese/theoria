@@ -255,7 +255,6 @@ service cloud.firestore {
           || (
             sectionMember(sectionId)
             && resource.data.studentId == uid()
-            && resource.data.released == true
           );
         allow create, update, delete: if sectionOwner(sectionId);
       }
@@ -413,7 +412,10 @@ service cloud.firestore {
         allow read: if assessmentOwner(assessmentId)
           || (
             isSelf(studentId)
-            && resource.data.released == true
+            && (
+              resource.data.complete == true
+              || resource.data.released == true
+            )
           );
         allow create, update, delete: if assessmentOwner(assessmentId);
       }
