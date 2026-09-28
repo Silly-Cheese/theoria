@@ -514,6 +514,7 @@ async function openAddItemsModal(){
     const partId=String(fd.get("partId"));
     const batch=writeBatch(db);
     let order=p3.assessmentData.questions.length,total=Number(a.totalPoints||0);
+    const questionIds=p3.assessmentData.questions.map(q=>q.id);
     for(const id of ids){
       const item=available.find(x=>x.id===id); if(!item) continue;
       const qref=doc(collection(db,"assessments",a.id,"questions"));
@@ -523,11 +524,12 @@ async function openAddItemsModal(){
         options:item.options||[],points:Number(item.pointsDefault||1),topicId:item.topicId||"",topicTitle:item.topicTitle||"",topicNumber:item.topicNumber||"",
         competencyIds:item.competencyIds||[],competencyCodes:item.competencyCodes||[],createdAt:serverTimestamp()
       });
+      questionIds.push(qref.id);
       batch.set(doc(db,"assessments",a.id,"keys",qref.id),{
         itemId:item.id,correctAnswer:item.correctAnswer??"",explanation:item.explanation||"",rubric:item.rubric||[],createdAt:serverTimestamp()
       });
     }
-    batch.update(doc(db,"assessments",a.id),{questionCount:order,totalPoints:total,updatedAt:serverTimestamp()});
+    batch.update(doc(db,"assessments",a.id),{questionCount:order,totalPoints:total,questionIds,updatedAt:serverTimestamp()});
     try{await batch.commit();core().closeModal();await openAssessment(a.id,"items");toast("Items added to assessment.");}
     catch(error){toast(error.message||"Unable to add items.");}
   });
@@ -559,7 +561,7 @@ async function removeAssessmentItem(id){
   const a=p3.currentAssessment,batch=writeBatch(db);
   batch.delete(doc(db,"assessments",a.id,"questions",id));
   batch.delete(doc(db,"assessments",a.id,"keys",id));
-  batch.update(doc(db,"assessments",a.id),{questionCount:Math.max(0,Number(a.questionCount||1)-1),totalPoints:Math.max(0,Number(a.totalPoints||0)-Number(q.points||0)),updatedAt:serverTimestamp()});
+  batch.update(doc(db,"assessments",a.id),{questionCount:Math.max(0,Number(a.questionCount||1)-1),totalPoints:Math.max(0,Number(a.totalPoints||0)-Number(q.points||0)),questionIds:p3.assessmentData.questions.filter(x=>x.id!==id).map(x=>x.id),updatedAt:serverTimestamp()});
   try{await batch.commit();await openAssessment(a.id,"items");toast("Item removed.");}catch(error){toast(error.message||"Unable to remove item.");}
 }
 
@@ -568,7 +570,7 @@ async function setAssessmentStatus(status){
   if(status==="Published" && !p3.assessmentData.questions.length) return toast("Add at least one assessment item or evaluation prompt before publishing.");
   if(status==="Published" && weightTotal(a.parts)!==100) return toast("Examination parts must total 100% before publishing.");
   const batch=writeBatch(db);
-  batch.update(doc(db,"assessments",a.id),{status,updatedAt:serverTimestamp()});
+  batch.update(doc(db,"assessments",a.id),{status,questionIds:p3.assessmentData.questions.map(q=>q.id),updatedAt:serverTimestamp()});
   if(status==="Draft") batch.delete(doc(db,"sections",a.sectionId,"assessmentRefs",a.id));
   else batch.set(doc(db,"sections",a.sectionId,"assessmentRefs",a.id),{assessmentId:a.id,title:a.title,type:a.type,status,opensAt:a.opensAt||null,closesAt:a.closesAt||null,durationMinutes:a.durationMinutes||0,updatedAt:serverTimestamp()},{merge:true});
   try{await batch.commit();await openAssessment(a.id,"overview");await renderAssessments();toast("Assessment status: "+status+".");}catch(error){toast(error.message||"Unable to update status.");}
@@ -675,11 +677,9 @@ async function startAssessment(id,confirmed=false){
       return;
     }
 
-    const qSnap=await getDocs(collection(db,"assessments",id,"questions"));
-    let questions=qSnap.docs.map(d=>({id:d.id,...d.data()})).sort((x,y)=>Number(x.order||99)-Number(y.order||99));
-    if(!questions.length) return toast("This assessment does not contain any questions.");
     if(!submission){
-      let order=questions.map(q=>q.id);
+      let order=[...(a.questionIds||[])];
+      if(!order.length) return toast("This assessment has not been fully assembled by the instructor.");
       if(a.randomizeQuestions) order=order.map(v=>({v,r:Math.random()})).sort((x,y)=>x.r-y.r).map(x=>x.v);
       await setDoc(doc(db,"assessments",id,"submissions",s.user.uid),{
         studentId:s.user.uid,candidateNumber:candidateNumber(),status:"in_progress",
@@ -695,6 +695,9 @@ async function startAssessment(id,confirmed=false){
       });
       subSnap=await getDoc(doc(db,"assessments",id,"submissions",s.user.uid));submission={id:subSnap.id,...subSnap.data()};
     }
+    const qSnap=await getDocs(collection(db,"assessments",id,"questions"));
+    let questions=qSnap.docs.map(d=>({id:d.id,...d.data()})).sort((x,y)=>Number(x.order||99)-Number(y.order||99));
+    if(!questions.length) return toast("This assessment does not contain any questions.");
     const order=submission.questionOrder||questions.map(q=>q.id);
     questions=order.map(qid=>questions.find(q=>q.id===qid)).filter(Boolean);
     launchExam(a,questions,submission);
