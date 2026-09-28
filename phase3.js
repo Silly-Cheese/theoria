@@ -979,7 +979,7 @@ async function renderSectionAssessments(){
     }
     list.sort((a,b)=>(b.opensAt?.toMillis?.()||0)-(a.opensAt?.toMillis?.()||0));
     const header=s.role==="instructor"?'<div class="page-head" style="margin-bottom:16px"><div><div class="panel-title">Assigned Assessments</div><p class="page-subtitle">Assign reusable course assessments to this section, then publish when ready.</p></div><button class="primary-btn small-btn" data-phase3-action="assign-current-section" data-section="'+section.id+'">Assign Assessment</button></div>':'';
-    el.innerHTML=header+(list.length?'<div class="assessment-grid">'+list.map(a=>'<article class="assessment-card assigned-card"><div class="assessment-card-topline"><div class="assessment-type">'+esc(a.type)+'</div><span class="badge '+(a.status==="Published"?"live":a.status==="Draft"?"gold":"")+'">'+esc(a.status||"Draft")+'</span></div><h3>'+esc(a.title)+'</h3><p>'+esc(a.questionCount||0)+' questions • '+esc(a.totalPoints||0)+' points</p><div class="assigned-schedule"><div><span>Opens</span><strong>'+esc(dateText(a.opensAt))+'</strong></div><div><span>Closes</span><strong>'+esc(dateText(a.closesAt))+'</strong></div><div><span>Duration</span><strong>'+esc(a.durationMinutes||0)+' min</strong></div></div><div class="card-actions">'+(s.role==="instructor"?'<button class="secondary-btn small-btn" data-phase3-action="edit-assignment" data-id="'+a.id+'">Edit Assignment</button><button class="secondary-btn small-btn" data-phase3-action="open-assessment" data-id="'+a.id+'">Open</button><button class="danger-btn small-btn" data-phase3-action="delete-assigned" data-id="'+a.id+'">Delete</button>':(a.mode==="oral"||a.mode==="disputation")?'<span class="badge gold">Instructor administered</span>':availability(a)==="Open"?'<button class="primary-btn small-btn" data-phase3-action="start-exam" data-id="'+a.id+'">Open Assessment</button>':'<span class="badge">'+esc(availability(a))+'</span>')+'</div></article>').join("")+'</div>':'<div class="empty-state"><div class="empty-symbol">A</div><h3>No assessments assigned yet.</h3><p>'+(s.role==="instructor"?"Choose a reusable assessment template for this course.":"Published assessments will appear here.")+'</p></div>');
+    el.innerHTML=header+(list.length?'<div class="assessment-grid">'+list.map(a=>'<article class="assessment-card assigned-card"><div class="assessment-card-topline"><div class="assessment-type">'+esc(a.type)+'</div><span class="badge '+(a.status==="Published"?"live":a.status==="Draft"?"gold":"")+'">'+esc(a.status||"Draft")+'</span></div><h3>'+esc(a.title)+'</h3><p>'+esc(a.questionCount||0)+' questions • '+esc(a.totalPoints||0)+' points</p><div class="assigned-schedule"><div><span>Opens</span><strong>'+esc(dateText(a.opensAt))+'</strong></div><div><span>Closes</span><strong>'+esc(dateText(a.closesAt))+'</strong></div><div><span>Duration</span><strong>'+esc(a.durationMinutes||0)+' min</strong></div></div><div class="card-actions">'+(s.role==="instructor"?'<button class="secondary-btn small-btn" data-phase3-action="edit-assignment" data-id="'+a.id+'">Edit Assignment</button><button class="secondary-btn small-btn" data-phase3-action="open-assessment" data-id="'+a.id+'">Open</button><button class="danger-btn small-btn" data-phase3-action="delete-assigned" data-id="'+a.id+'">Delete</button>':(a.mode==="oral"||a.mode==="disputation")?'<span class="badge gold">Instructor administered</span>':'<button class="primary-btn small-btn" data-phase3-action="start-exam" data-id="'+a.id+'">'+(availability(a)==="Open"?"Open Assessment":"View Assessment")+'</button><span class="badge">'+esc(availability(a))+'</span>')+'</div></article>').join("")+'</div>':'<div class="empty-state"><div class="empty-symbol">A</div><h3>No assessments assigned yet.</h3><p>'+(s.role==="instructor"?"Choose a reusable assessment template for this course.":"Published assessments will appear here.")+'</p></div>');
   }catch(error){
     console.error("Unable to load section assessments:",error);
     el.innerHTML='<div class="empty-state"><div class="empty-symbol">!</div><h3>Assessments could not be loaded.</h3><p>Refresh after deploying the latest Firestore rules. If the problem continues, open the main Assessments workspace.</p></div>';
@@ -1097,13 +1097,24 @@ async function startExam(id,confirmed=false){
       subSnap=await getDoc(doc(db,"assessments",id,"submissions",s.user.uid));sub={id:subSnap.id,...subSnap.data()};
     }
 
-    const qSnap=await getDocs(collection(db,"assessments",id,"questions"));
-    const all=qSnap.docs.map(d=>({id:d.id,...d.data()})),order=sub.questionOrder||all.map(q=>q.id),questions=order.map(qid=>all.find(q=>q.id===qid)).filter(Boolean);
+    const order=(sub.questionOrder?.length?sub.questionOrder:a.questionIds)||[];
+    if(!order.length)return toast("This assessment has no question manifest. Ask the instructor to reopen the assigned copy and save/publish it again.");
+    const questions=[];
+    for(const qid of order){
+      try{
+        const qDoc=await getDoc(doc(db,"assessments",id,"questions",qid));
+        if(qDoc.exists())questions.push({id:qDoc.id,...qDoc.data()});
+      }catch(error){
+        console.error("Unable to load assessment question",qid,error);
+        throw error;
+      }
+    }
     if(!questions.length)return toast("No examination questions are available.");
+    if(questions.length!==order.length)return toast("Some assessment questions are unavailable. Ask the instructor to republish this assigned assessment.");
     launchExam(a,questions,sub);
   }catch(err){
     console.error("Unable to start assessment:",err);
-    toast(err?.code==="permission-denied"?"The assessment could not be opened because your student access is not authorized. Ask the instructor to confirm that it is published to your enrolled section.":(err.message||"This assessment is not available."));
+    toast(err?.code==="permission-denied"?"Theoria could not authorize this assessment attempt. Confirm that the assessment is published to this exact section and that your account is enrolled, then try again.":(err.message||"This assessment is not available."));
   }
 }
 
