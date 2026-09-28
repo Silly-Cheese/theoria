@@ -287,3 +287,5 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .blueprint-edit-row{grid-template-columns:1fr 95px 28px}
   .form-disclosure summary{align-items:flex-start;flex-direction:column}
 }
+
+.resource-citation{font-family:"Libre Baskerville",serif;font-size:9px;line-height:1.5;color:var(--burgundy);margin:5px 0 7px}
