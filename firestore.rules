@@ -25,7 +25,22 @@ service cloud.firestore {
     function isSystemOwner() {
       return signedIn()
         && exists(/databases/$(database)/documents/system/owner)
+        && get(/databases/$(database)/documents/system/owner).data.uid == uid()
+        && get(/databases/$(database)/documents/system/owner).data.confirmed == true;
+    }
+
+    function ownerRecordMatchesUser() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/system/owner)
         && get(/databases/$(database)/documents/system/owner).data.uid == uid();
+    }
+
+    function claimingSystemOwner() {
+      return signedIn()
+        && !ownerExists()
+        && existsAfter(/databases/$(database)/documents/system/owner)
+        && getAfter(/databases/$(database)/documents/system/owner).data.uid == uid()
+        && getAfter(/databases/$(database)/documents/system/owner).data.confirmed == true;
     }
 
     function courseData(courseId) {
@@ -141,18 +156,19 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow create: if isSelf(userId)
-        && (
-          request.resource.data.role == 'student'
-          || (
-            request.resource.data.role == 'instructor'
-            && request.resource.data.bootstrapOwner == true
-            && !ownerExists()
-            && ownerAfterMatchesUser()
-          )
-        );
+        && request.resource.data.role in ['student', 'instructor'];
       allow read: if isSelf(userId);
       allow update: if isSelf(userId)
-        && request.resource.data.role == resource.data.role;
+        && (
+          request.resource.data.role == resource.data.role
+          || (
+            request.resource.data.role == 'instructor'
+            && (
+              ownerRecordMatchesUser()
+              || claimingSystemOwner()
+            )
+          )
+        );
       allow delete: if false;
 
       match /enrollments/{sectionId} {
@@ -166,8 +182,20 @@ service cloud.firestore {
       allow create: if systemDoc == 'owner'
         && !ownerExists()
         && isInstructorAfter()
-        && request.resource.data.uid == uid();
-      allow update, delete: if false;
+        && request.resource.data.uid == uid()
+        && request.resource.data.confirmed == true;
+      allow update: if systemDoc == 'owner'
+        && ownerRecordMatchesUser()
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.confirmed == true
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'displayName',
+          'email',
+          'confirmed',
+          'confirmedAt',
+          'updatedAt'
+        ]);
+      allow delete: if false;
     }
 
     match /courses/{courseId} {
@@ -238,7 +266,8 @@ service cloud.firestore {
     match /sections/{sectionId} {
       allow read: if signedIn();
       allow create: if isInstructor()
-        && request.resource.data.ownerId == uid();
+        && request.resource.data.ownerId == uid()
+        && canUseCourseAsInstructor(request.resource.data.courseId);
       allow update, delete: if sectionOwner(sectionId);
 
       match /members/{userId} {
