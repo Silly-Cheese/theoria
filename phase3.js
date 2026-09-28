@@ -328,6 +328,7 @@ async function renderAssessments(){
       const avail=availabilityLabel(a);
       let action="";
       if(submission?.status==="submitted" || submission?.status==="graded") action='<button class="secondary-btn small-btn" data-phase3-action="view-receipt" data-id="'+a.id+'">Submission Receipt</button>';
+      else if((a.mode==="oral"||a.mode==="disputation") && avail==="Open") action='<span class="badge gold">Instructor administered</span>';
       else if(avail==="Open") action='<button class="primary-btn small-btn" data-phase3-action="start-assessment" data-id="'+a.id+'">'+(submission?"Resume":"Begin")+'</button>';
       else action='<span class="badge">'+esc(avail)+'</span>';
       cards.push('<article class="assessment-card"><div class="assessment-type">'+esc(a.type||"Assessment")+'</div><h3>'+esc(a.title)+'</h3><p>'+esc(a.courseCode||"")+' • '+esc(a.sectionName||"")+'</p><div class="assessment-card-stats"><span>'+esc(a.durationMinutes||0)+' min</span><span>'+esc(a.totalPoints||0)+' pts</span><span>'+esc(dt(a.closesAt))+'</span></div>'+(result?'<div class="released-result"><strong>'+esc(result.percent??"—")+'%</strong><span>Released result</span></div>':'')+'<div class="card-actions">'+action+'</div></article>');
@@ -564,7 +565,7 @@ async function removeAssessmentItem(id){
 
 async function setAssessmentStatus(status){
   const a=p3.currentAssessment;
-  if(status==="Published" && !p3.assessmentData.questions.length && !["Oral Examination","Disputation"].includes(a.type)) return toast("Add at least one item before publishing.");
+  if(status==="Published" && !p3.assessmentData.questions.length) return toast("Add at least one assessment item or evaluation prompt before publishing.");
   if(status==="Published" && weightTotal(a.parts)!==100) return toast("Examination parts must total 100% before publishing.");
   const batch=writeBatch(db);
   batch.update(doc(db,"assessments",a.id),{status,updatedAt:serverTimestamp()});
@@ -583,7 +584,7 @@ async function renderSectionAssessments(){
     const refs=await getDocs(collection(db,"sections",section.id,"assessmentRefs"));
     for(const r of refs.docs){try{const x=await getDoc(doc(db,"assessments",r.id));if(x.exists())list.push({id:x.id,...x.data()});}catch(e){}}
   }
-  el.innerHTML=list.length?'<div class="assessment-grid">'+list.map(a=>'<article class="assessment-card"><div class="assessment-type">'+esc(a.type)+'</div><h3>'+esc(a.title)+'</h3><p>'+esc(availabilityLabel(a))+' • '+esc(a.durationMinutes||0)+' minutes</p><div class="card-actions">'+(s.role==="instructor"?'<button class="secondary-btn small-btn" data-phase3-action="open-assessment" data-id="'+a.id+'">Open Builder</button>':availabilityLabel(a)==="Open"?'<button class="primary-btn small-btn" data-phase3-action="start-assessment" data-id="'+a.id+'">Open Assessment</button>':'<span class="badge">'+esc(availabilityLabel(a))+'</span>')+'</div></article>').join("")+'</div>':'<div class="empty-state"><div class="empty-symbol">A</div><h3>No section assessments yet.</h3><p>'+(s.role==="instructor"?"Create one from the main Assessments workspace.":"Published examinations and evaluations will appear here.")+'</p></div>';
+  el.innerHTML=list.length?'<div class="assessment-grid">'+list.map(a=>'<article class="assessment-card"><div class="assessment-type">'+esc(a.type)+'</div><h3>'+esc(a.title)+'</h3><p>'+esc(availabilityLabel(a))+' • '+esc(a.durationMinutes||0)+' minutes</p><div class="card-actions">'+(s.role==="instructor"?'<button class="secondary-btn small-btn" data-phase3-action="open-assessment" data-id="'+a.id+'">Open Builder</button>':(a.mode==="oral"||a.mode==="disputation")?'<span class="badge gold">Instructor administered</span>':availabilityLabel(a)==="Open"?'<button class="primary-btn small-btn" data-phase3-action="start-assessment" data-id="'+a.id+'">Open Assessment</button>':'<span class="badge">'+esc(availabilityLabel(a))+'</span>')+'</div></article>').join("")+'</div>':'<div class="empty-state"><div class="empty-symbol">A</div><h3>No section assessments yet.</h3><p>'+(s.role==="instructor"?"Create one from the main Assessments workspace.":"Published examinations and evaluations will appear here.")+'</p></div>';
 }
 
 async function renderGradingPolicy(){
@@ -646,31 +647,56 @@ async function openAccommodations(studentId){
   });
 }
 
-async function startAssessment(id){
+async function startAssessment(id,confirmed=false){
   const s=state();
   try{
     const snap=await getDoc(doc(db,"assessments",id));if(!snap.exists())return toast("Assessment not found.");
     const a={id:snap.id,...snap.data()};
+    if(a.mode==="oral" || a.mode==="disputation") return toast("This evaluation is administered directly by the instructor.");
     let subSnap=await getDoc(doc(db,"assessments",id,"submissions",s.user.uid));
     let submission=subSnap.exists()?{id:subSnap.id,...subSnap.data()}:null;
     if(submission && submission.status!=="in_progress") return showReceipt(id);
+
+    const memberSnap=await getDoc(doc(db,"sections",a.sectionId,"members",s.user.uid));
+    const member=memberSnap.exists()?memberSnap.data():{};
+    const accommodations=member.accommodations||{timeMultiplier:1,breaks:false,calculator:false,largeText:false,reducedDistractions:false};
+    if(!submission && !confirmed){
+      const effective=Math.round(Number(a.durationMinutes||0)*Number(accommodations.timeMultiplier||1));
+      const modal=core().openModal({
+        eyebrow:"Formal Assessment",
+        title:a.title,
+        wide:true,
+        body:'<div class="exam-preflight"><div class="preflight-warning"><strong>Before you begin</strong><p>Beginning creates your official candidate record and starts the examination timer. Closing or refreshing the browser does not reset your attempt.</p></div><div class="detail-list"><div><span>Assessment</span><strong>'+esc(a.type)+'</strong></div><div><span>Time Allowed</span><strong>'+(effective?esc(effective)+" minutes":"Untimed")+'</strong></div><div><span>Closes</span><strong>'+esc(dt(a.closesAt))+'</strong></div><div><span>Backtracking</span><strong>'+(a.backtracking!==false?"Permitted":"Restricted")+'</strong></div><div><span>Candidate Grading</span><strong>'+(a.anonymousGrading!==false?"Anonymous candidate number":"Named")+'</strong></div></div>'+(a.instructions?'<div class="preflight-instructions"><div class="eyebrow">Instructor Instructions</div><p>'+esc(a.instructions).replace(/\n/g,"<br>")+'</p></div>':'')+'<div class="accommodation-summary"><div class="eyebrow">Assessment Access</div><span>'+esc(accommodations.timeMultiplier||1)+'× time</span>'+(accommodations.breaks?'<span>Breaks permitted</span>':'')+(accommodations.calculator?'<span>Calculator permitted</span>':'')+(accommodations.largeText?'<span>Large text</span>':'')+'</div><label class="checkbox-line preflight-ack"><input id="examAcknowledge" type="checkbox"> I have read the instructions and understand that beginning starts my official attempt.</label></div>',
+        footer:'<button class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" id="beginOfficialAssessment" disabled>Begin Assessment</button>'
+      });
+      const ack=modal.querySelector("#examAcknowledge"),begin=modal.querySelector("#beginOfficialAssessment");
+      ack.addEventListener("change",()=>begin.disabled=!ack.checked);
+      begin.addEventListener("click",()=>{core().closeModal();startAssessment(id,true);});
+      return;
+    }
+
     const qSnap=await getDocs(collection(db,"assessments",id,"questions"));
     let questions=qSnap.docs.map(d=>({id:d.id,...d.data()})).sort((x,y)=>Number(x.order||99)-Number(y.order||99));
-    if(!questions.length && !["oral","disputation"].includes(a.mode)) return toast("This assessment does not contain any questions.");
-    const memberSnap=await getDoc(doc(db,"sections",a.sectionId,"members",s.user.uid));
-    const accommodations=memberSnap.exists()?(memberSnap.data().accommodations||{}):{};
+    if(!questions.length) return toast("This assessment does not contain any questions.");
     if(!submission){
       let order=questions.map(q=>q.id);
       if(a.randomizeQuestions) order=order.map(v=>({v,r:Math.random()})).sort((x,y)=>x.r-y.r).map(x=>x.v);
       await setDoc(doc(db,"assessments",id,"submissions",s.user.uid),{
-        studentId:s.user.uid,candidateNumber:candidateNumber(),status:"in_progress",startedAt:serverTimestamp(),updatedAt:serverTimestamp(),
+        studentId:s.user.uid,candidateNumber:candidateNumber(),status:"in_progress",
+        startedAt:serverTimestamp(),acknowledgedAt:serverTimestamp(),updatedAt:serverTimestamp(),
         answers:{},marked:[],currentIndex:0,elapsedSeconds:0,questionOrder:order,
-        accommodationsApplied:{timeMultiplier:Number(accommodations.timeMultiplier||1),breaks:!!accommodations.breaks,calculator:!!accommodations.calculator,largeText:!!accommodations.largeText,reducedDistractions:!!accommodations.reducedDistractions}
+        accommodationsApplied:{
+          timeMultiplier:Number(accommodations.timeMultiplier||1),
+          breaks:!!accommodations.breaks,
+          calculator:!!accommodations.calculator,
+          largeText:!!accommodations.largeText,
+          reducedDistractions:!!accommodations.reducedDistractions
+        }
       });
       subSnap=await getDoc(doc(db,"assessments",id,"submissions",s.user.uid));submission={id:subSnap.id,...subSnap.data()};
     }
     const order=submission.questionOrder||questions.map(q=>q.id);
-    questions=order.map(id=>questions.find(q=>q.id===id)).filter(Boolean);
+    questions=order.map(qid=>questions.find(q=>q.id===qid)).filter(Boolean);
     launchExam(a,questions,submission);
   }catch(error){toast(error.message||"This assessment is not available right now.");}
 }
@@ -761,7 +787,8 @@ async function showReceipt(id,auto=false){
     let result=null;try{const r=await getDoc(doc(db,"assessments",id,"results",state().user.uid));if(r.exists())result=r.data();}catch(e){}
     const assessment=a.exists()?a.data():{},submission=sub.exists()?sub.data():{};
     core().setPage("exam",assessment.title||"Submission Receipt");
-    $("#examRoot").innerHTML='<div class="receipt-shell"><div class="receipt-mark">Θ</div><div class="eyebrow">Examination Receipt</div><h1>'+esc(assessment.title||"Assessment")+'</h1><p>Your response has been recorded'+(auto?" automatically when time expired":"")+'.</p><div class="receipt-grid"><div><span>Candidate Number</span><strong>'+esc(submission.candidateNumber||"—")+'</strong></div><div><span>Status</span><strong>'+esc(submission.status||"submitted")+'</strong></div><div><span>Submitted</span><strong>'+esc(dt(submission.submittedAt))+'</strong></div><div><span>Result</span><strong>'+(result?esc(result.percent)+"%":"Awaiting evaluation")+'</strong></div></div><button class="primary-btn" data-phase3-action="back-assessments">Return to Assessments</button></div>';
+    const domains=result?.partScores?'<div class="receipt-domains"><div class="panel-title">Examination Domain Performance</div>'+Object.values(result.partScores).map(x=>'<div class="blueprint-row"><span>'+esc(x.title)+'</span><strong>'+esc(x.percent)+'%</strong></div>').join("")+'</div>':'';
+    $("#examRoot").innerHTML='<div class="receipt-shell"><div class="receipt-mark">Θ</div><div class="eyebrow">Examination Receipt</div><h1>'+esc(assessment.title||"Assessment")+'</h1><p>Your response has been recorded'+(auto?" automatically when time expired":"")+'.</p><div class="receipt-grid"><div><span>Candidate Number</span><strong>'+esc(submission.candidateNumber||"—")+'</strong></div><div><span>Status</span><strong>'+esc(submission.status||"submitted")+'</strong></div><div><span>Submitted</span><strong>'+esc(dt(submission.submittedAt))+'</strong></div><div><span>Result</span><strong>'+(result?esc(result.percent)+"%":"Awaiting evaluation")+'</strong></div></div>'+domains+(result?.overallComment?'<div class="academic-banner"><div class="kicker">Instructor Comment</div><p>'+esc(result.overallComment)+'</p></div>':'')+'<button class="primary-btn" data-phase3-action="back-assessments">Return to Assessments</button></div>';
   }catch(error){toast("Unable to load submission receipt.");}
 }
 
