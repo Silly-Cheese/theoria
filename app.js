@@ -130,6 +130,72 @@ function renderUser(user,profile){
   applyRole(state.role);
 }
 
+async function maybePromptSystemOwner(user){
+  if(!user)return;
+  const ownerRef=doc(db,"system","owner");
+  let ownerSnap;
+  try{ownerSnap=await getDoc(ownerRef);}
+  catch(error){console.warn("Unable to inspect system owner:",error);return;}
+
+  const owner=ownerSnap.exists()?ownerSnap.data():null;
+  const sameAccount=!!owner&&owner.uid===user.uid;
+  if(sameAccount&&owner.confirmed===true){
+    state.isSystemOwner=true;
+    return;
+  }
+  if(owner&&!sameAccount)return;
+
+  const modal=openModal({
+    eyebrow:"Theoria Administration",
+    title:"Are you the system owner?",
+    body:'<div class="system-owner-confirmation"><div class="owner-confirmation-mark">Θ</div><div><strong>Confirm the account that owns the Theoria Course Catalog.</strong><p>The signed-in email is <strong>'+esc(user.email||state.profile?.email||"Unknown email")+'</strong>.</p><p>The system owner can create and publish official courses, manage master Course Frameworks and Question Banks, and still teach sections as an instructor.</p><div class="notice">This administrative claim is separate from being an instructor. Other instructors can teach official catalog courses without being able to edit the master catalog.</div></div></div>',
+    footer:'<button class="secondary-btn" id="declineSystemOwner">Not now</button><button class="primary-btn" id="confirmSystemOwner">Yes — I am the System Owner</button>'
+  });
+
+  modal.querySelector("#declineSystemOwner").onclick=()=>closeModal();
+  modal.querySelector("#confirmSystemOwner").onclick=async()=>{
+    const confirm=modal.querySelector("#confirmSystemOwner");
+    const decline=modal.querySelector("#declineSystemOwner");
+    confirm.disabled=true;decline.disabled=true;confirm.textContent="Confirming…";
+    try{
+      const batch=writeBatch(db);
+      batch.set(doc(db,"users",user.uid),{
+        role:"instructor",
+        systemOwner:true,
+        displayName:state.profile?.displayName||user.displayName||"Instructor",
+        email:user.email||state.profile?.email||"",
+        updatedAt:serverTimestamp()
+      },{merge:true});
+
+      const ownerData={
+        uid:user.uid,
+        displayName:state.profile?.displayName||user.displayName||"Instructor",
+        email:user.email||state.profile?.email||"",
+        confirmed:true,
+        confirmedAt:serverTimestamp(),
+        updatedAt:serverTimestamp()
+      };
+      if(ownerSnap.exists())batch.update(ownerRef,ownerData);
+      else batch.set(ownerRef,{...ownerData,createdAt:serverTimestamp()});
+
+      await batch.commit();
+      state.profile={...(state.profile||{}),role:"instructor",systemOwner:true,email:user.email||state.profile?.email||""};
+      state.role="instructor";
+      state.isSystemOwner=true;
+      closeModal();
+      renderUser(user,state.profile);
+      applyOwnerUI();
+      await loadWorkspace();
+      setPage("home");
+      showToast("System Owner confirmed. You can now author the official Theoria Course Catalog.");
+    }catch(error){
+      console.error("Unable to confirm system owner:",error);
+      confirm.disabled=false;decline.disabled=false;confirm.textContent="Yes — I am the System Owner";
+      showToast(humanizeFirebaseError(error));
+    }
+  };
+}
+
 function canManageCourse(course){
   if(!course||state.role!=="instructor"||!state.user)return false;
   if(state.isSystemOwner)return true;
@@ -2773,26 +2839,16 @@ registerForm.addEventListener("submit",async event=>{
   const name=$("#registerName").value.trim(),email=$("#registerEmail").value.trim(),password=$("#registerPassword").value;
   const button=registerForm.querySelector("button[type=submit]");button.disabled=true;button.textContent="Creating account…";
   try{
+    const requestedRole=state.role==="instructor"?"instructor":"student";
     const credential=await createUserWithEmailAndPassword(auth,email,password);
     await updateProfile(credential.user,{displayName:name});
-    const userRef=doc(db,"users",credential.user.uid);
-    const profileBase={displayName:name,email,createdAt:serverTimestamp(),updatedAt:serverTimestamp()};
-    if(state.role==="instructor"){
-      const ownerRef=doc(db,"system","owner");
-      const ownerSnap=await getDoc(ownerRef);
-      if(!ownerSnap.exists()){
-        const batch=writeBatch(db);
-        batch.set(userRef,{...profileBase,role:"instructor",bootstrapOwner:true});
-        batch.set(ownerRef,{uid:credential.user.uid,displayName:name,email,createdAt:serverTimestamp()});
-        await batch.commit();
-      }else{
-        state.role="student";
-        await setDoc(userRef,{...profileBase,role:"student"});
-        showToast("An instructor owner already exists. This account was created as a student.");
-      }
-    }else{
-      await setDoc(userRef,{...profileBase,role:"student"});
-    }
+    await setDoc(doc(db,"users",credential.user.uid),{
+      displayName:name,
+      email,
+      role:requestedRole,
+      createdAt:serverTimestamp(),
+      updatedAt:serverTimestamp()
+    });
   }catch(error){authError.textContent=humanizeFirebaseError(error);}
   finally{button.disabled=false;button.textContent="Create Theoria account";}
 });
@@ -2919,19 +2975,15 @@ onAuthStateChanged(auth,async user=>{
   }
   try{
     state.profile=await loadProfile(user);
-    if(state.profile.role==="instructor"){
-      const ownerRef=doc(db,"system","owner");
-      let ownerSnap=await getDoc(ownerRef);
-      if(!ownerSnap.exists()){
-        await setDoc(ownerRef,{uid:user.uid,displayName:state.profile.displayName||user.displayName||"Instructor",email:user.email,createdAt:serverTimestamp()});
-        ownerSnap=await getDoc(ownerRef);
-      }
-      state.isSystemOwner=ownerSnap.exists()&&ownerSnap.data().uid===user.uid;
-    }else{
-      state.isSystemOwner=false;
-    }
+    const ownerSnap=await getDoc(doc(db,"system","owner"));
+    state.isSystemOwner=ownerSnap.exists()
+      && ownerSnap.data().uid===user.uid
+      && ownerSnap.data().confirmed===true;
+  }catch(error){
+    console.error("Unable to load Theoria profile:",error);
+    state.profile={displayName:user.displayName||"Theoria User",email:user.email,role:"student"};
+    state.isSystemOwner=false;
   }
-  catch(error){console.error("Unable to load Theoria profile:",error);state.profile={displayName:user.displayName||"Theoria User",email:user.email,role:"student"};}
   renderUser(user,state.profile);
   authShell.classList.add("hidden");appShell.classList.remove("hidden");
   try{
@@ -2940,5 +2992,6 @@ onAuthStateChanged(auth,async user=>{
     window.dispatchEvent(new CustomEvent("theoria:ready"));
     const joinParam=new URLSearchParams(location.search).get("join");
     if(joinParam && state.role==="student") setTimeout(()=>previewJoin(joinParam),200);
+    setTimeout(()=>maybePromptSystemOwner(user),180);
   }catch(error){console.error(error);showToast("Theoria loaded, but some academic data could not be retrieved.");}
 });
