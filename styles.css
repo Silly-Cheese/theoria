@@ -504,3 +504,21 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .assignment-brief-meta{grid-template-columns:1fr}
   .assignment-brief-meta>div{border-right:0;border-bottom:1px solid var(--line)}.assignment-brief-meta>div:last-child{border-bottom:0}
 }
+
+
+/* Assessment review & submission */
+.review-summary-grid{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff}
+.review-summary-grid>div{text-align:center;padding:15px 12px;border-right:1px solid var(--line)}.review-summary-grid>div:last-child{border-right:0}
+.review-summary-grid strong{display:block;font-family:"Libre Baskerville",serif;font-size:22px;font-weight:400;color:var(--ink)}
+.review-summary-grid span{display:block;margin-top:3px;font-size:7px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.review-question-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:16px}
+.review-question-chip{display:grid;gap:3px;text-align:left;padding:10px 11px;border:1px solid var(--line);border-radius:7px;background:#fff;cursor:pointer}
+.review-question-chip:hover{border-color:#c8bdaf}
+.review-question-chip span{font-size:8px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.review-question-chip strong{font-size:9px}.review-question-chip small{font-size:7px;color:var(--burgundy);font-weight:700}
+.review-question-chip.answered{border-left:3px solid #627a62}.review-question-chip.unanswered{border-left:3px solid #8a3742;background:#fffafa}
+.review-question-chip.marked{box-shadow:inset 0 0 0 1px rgba(168,137,72,.3)}
+@media(max-width:700px){
+  .review-summary-grid{grid-template-columns:1fr 1fr 1fr}
+  .review-question-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
