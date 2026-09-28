@@ -707,3 +707,62 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .framework-topic-row{margin-left:18px}
   .framework-topic-row:before{left:-11px;width:7px}
 }
+
+
+/* Unit folders for coursework and Question Bank */
+.unit-folder-stack{display:grid;gap:11px}
+.unit-folder{border:1px solid var(--line);border-radius:9px;background:#fff;overflow:hidden}
+.unit-folder>summary{list-style:none;display:grid;grid-template-columns:38px 1fr auto;gap:11px;align-items:center;padding:12px 14px;cursor:pointer;background:#faf8f4;border-bottom:1px solid transparent}
+.unit-folder[open]>summary{border-bottom-color:var(--line);background:#f7f3ec}
+.unit-folder>summary::-webkit-details-marker{display:none}
+.unit-folder-icon{display:grid;place-items:center;width:32px;height:32px;border-radius:7px;background:#ece5da;color:var(--burgundy);font-family:"Libre Baskerville",serif;font-size:12px}
+.unit-folder summary strong{display:block;font-family:"Libre Baskerville",serif;font-size:13px;font-weight:400}
+.unit-folder summary span{display:block;margin-top:2px;font-size:8px;color:var(--muted)}
+.unit-folder-chevron{font-size:13px;color:var(--muted);transition:.14s ease}
+.unit-folder[open] .unit-folder-chevron{transform:rotate(180deg)}
+.unit-folder-body{padding:12px}
+.unit-folder-body.assignment-list{padding:0}
+.unit-folder-body.assignment-list .assignment-row{border-left:0;border-right:0;border-top:0;border-radius:0}
+.unit-folder-body.assignment-list .assignment-row:last-child{border-bottom:0}
+.unsorted-folder{border-color:#d9c5a6}
+.unsorted-folder>summary{background:#fffaf0}
+.unsorted-folder .unit-folder-icon{background:#f4e8cf;color:#7d612d}
+.question-course-group{margin-bottom:24px}
+.question-course-group:last-child{margin-bottom:0}
+.question-course-head{padding-bottom:8px;border-bottom:1px solid var(--line);margin-bottom:10px!important}
+
+/* Framework Auto-Sort assistant */
+.auto-sort-intro{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:14px 15px;margin-bottom:14px;border:1px solid var(--line);border-radius:8px;background:#f8f5ee}
+.auto-sort-intro strong{display:block;font-size:11px}
+.auto-sort-intro>div:first-child>span{display:block;max-width:680px;margin-top:4px;font-size:8px;line-height:1.5;color:var(--muted)}
+.auto-sort-legend{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}
+.confidence{display:inline-flex;align-items:center;justify-content:center;padding:4px 7px;border-radius:999px;font-size:7px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;border:1px solid transparent}
+.confidence.exact{background:#e6efe4;color:#4e694f;border-color:#cfdfca}
+.confidence.high{background:#edf1e9;color:#5c7154;border-color:#dce5d7}
+.confidence.medium{background:#fbf1da;color:#7a622f;border-color:#ecdba9}
+.confidence.low{background:#f2eeea;color:#777067;border-color:#e0d9d0}
+.auto-sort-list{display:grid;gap:8px;max-height:560px;overflow:auto;padding-right:3px}
+.auto-sort-row{display:grid;grid-template-columns:minmax(0,1.35fr) 105px minmax(240px,.95fr);gap:12px;align-items:center;padding:11px 12px;border:1px solid var(--line);border-radius:8px;background:#fff}
+.auto-sort-copy{min-width:0}
+.auto-sort-copy>span{display:block;font-size:7px;text-transform:uppercase;letter-spacing:.08em;color:var(--burgundy)}
+.auto-sort-copy>strong{display:block;margin-top:3px;font-size:10px;line-height:1.45}
+.auto-sort-copy>small{display:block;margin-top:4px;font-size:8px;line-height:1.4;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.auto-sort-confidence{text-align:center}
+.auto-sort-confidence small{display:block;margin-top:4px;font-size:7px;color:var(--muted)}
+.auto-sort-select{margin:0!important}
+.auto-sort-select label{font-size:7px!important}
+.auto-sort-select select{font-size:9px!important}
+
+@media(max-width:850px){
+  .auto-sort-row{grid-template-columns:1fr 90px}
+  .auto-sort-select{grid-column:1/-1}
+}
+@media(max-width:620px){
+  .auto-sort-intro{flex-direction:column}
+  .auto-sort-legend{justify-content:flex-start}
+  .auto-sort-row{grid-template-columns:1fr}
+  .auto-sort-confidence{text-align:left;display:flex;align-items:center;gap:7px}
+  .auto-sort-confidence small{margin:0}
+  .unit-folder>summary{grid-template-columns:34px 1fr auto;padding:11px}
+  .unit-folder-icon{width:29px;height:29px}
+}
