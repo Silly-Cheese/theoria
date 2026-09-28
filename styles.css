@@ -522,3 +522,28 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .review-summary-grid{grid-template-columns:1fr 1fr 1fr}
   .review-question-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
+
+
+/* Unified coursework + assessment gradebook */
+.gradebook-wrap{overflow:auto}
+.gradebook-table{min-width:980px}
+.gradebook-group-row th{background:#f3eee6!important;border-bottom:1px solid var(--line);text-align:center!important;font-size:8px!important;text-transform:uppercase;letter-spacing:.09em;color:var(--muted)}
+.gradebook-group-row .coursework-group{color:#6d5f4c}
+.gradebook-group-row .assessment-group{color:var(--burgundy);background:#f8eef0!important}
+.gradebook-kind{display:block;font-size:7px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:4px}
+.gradebook-kind.assessment-kind{color:var(--burgundy)}
+.assessment-grade-head{background:#fffafb!important}
+.assessment-score-cell{background:#fffafb;cursor:pointer}
+.assessment-score-cell:hover{background:#fdf1f3}
+.grade-pending{display:grid;gap:2px;color:var(--muted);font-size:11px}
+.grade-pending small{font-size:7px;text-transform:uppercase;letter-spacing:.06em}
+.gradebook-legend{display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin:10px 0 13px;font-size:8px;color:var(--muted)}
+.gradebook-legend span{display:flex;align-items:center;gap:6px}
+.legend-dot{width:8px;height:8px;border-radius:50%;display:inline-block}.coursework-dot{background:#9b8a70}.assessment-dot{background:var(--burgundy)}
+.student-grade-summary{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);background:#fff;margin-bottom:16px}
+.student-grade-summary>div{padding:18px 20px;border-right:1px solid var(--line)}.student-grade-summary>div:last-child{border-right:0}
+.student-grade-summary span{display:block;font-size:8px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted)}
+.student-grade-summary strong{display:block;margin-top:6px;font-family:"Libre Baskerville",serif;font-size:24px;font-weight:400}
+.assessment-grade-row{background:#fffafb}
+.assessment-badge{background:#f4e8eb!important;color:var(--burgundy)!important}
+@media(max-width:700px){.student-grade-summary{grid-template-columns:1fr}.student-grade-summary>div{border-right:0;border-bottom:1px solid var(--line)}.student-grade-summary>div:last-child{border-bottom:0}}
