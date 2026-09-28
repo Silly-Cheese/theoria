@@ -59,7 +59,9 @@ async function loadSectionBundle(sectionId,{deep=false}={}){
   const s=state(),section=await getSection(sectionId);
   if(!section)throw new Error("Section not found.");
 
-  const assignmentsSnap=await getDocs(collection(db,"sections",sectionId,"assignments"));
+  const assignmentsSnap=s.role==="instructor"
+    ? await getDocs(collection(db,"sections",sectionId,"assignments"))
+    : await getDocs(query(collection(db,"sections",sectionId,"assignments"),where("status","==","Published")));
   const assignments=assignmentsSnap.docs.map(d=>({id:d.id,...d.data()})).filter(x=>x.status!=="Draft");
 
   let members=[],grades=[],assessmentGrades=[],pathways=[],records=[],mastery=[],appeals=[],portfolios=[];
@@ -87,7 +89,6 @@ async function loadSectionBundle(sectionId,{deep=false}={}){
     const gets=await Promise.all([
       getDoc(doc(db,"sections",sectionId,"members",uid)),
       getDocs(query(collection(db,"sections",sectionId,"grades"),where("studentId","==",uid))),
-      getDocs(query(collection(db,"sections",sectionId,"assessmentGrades"),where("studentId","==",uid),where("released","==",true))),
       getDoc(doc(db,"sections",sectionId,"gradingPathways",uid)),
       getDoc(doc(db,"sections",sectionId,"academicRecords",uid)),
       getDoc(doc(db,"sections",sectionId,"mastery",uid)),
@@ -96,12 +97,19 @@ async function loadSectionBundle(sectionId,{deep=false}={}){
     ]);
     if(gets[0].exists())members=[{id:gets[0].id,...gets[0].data()}];
     grades=gets[1].docs.map(d=>({id:d.id,...d.data()}));
-    assessmentGrades=gets[2].docs.map(d=>({id:d.id,...d.data()}));
-    if(gets[3].exists())pathways=[{id:gets[3].id,...gets[3].data()}];
-    if(gets[4].exists())records=[{id:gets[4].id,...gets[4].data()}];
-    if(gets[5].exists())mastery=[{id:gets[5].id,...gets[5].data()}];
-    appeals=gets[6].docs.map(d=>({id:d.id,...d.data()}));
-    if(gets[7].exists())portfolios=[{id:gets[7].id,...gets[7].data()}];
+    if(gets[2].exists())pathways=[{id:gets[2].id,...gets[2].data()}];
+    if(gets[3].exists())records=[{id:gets[3].id,...gets[3].data()}];
+    if(gets[4].exists())mastery=[{id:gets[4].id,...gets[4].data()}];
+    appeals=gets[5].docs.map(d=>({id:d.id,...d.data()}));
+    if(gets[6].exists())portfolios=[{id:gets[6].id,...gets[6].data()}];
+
+    const refSnap=await getDocs(collection(db,"sections",sectionId,"assessmentRefs"));
+    for(const ref of refSnap.docs){
+      try{
+        const grade=await getDoc(doc(db,"sections",sectionId,"assessmentGrades",ref.id+"_"+uid));
+        if(grade.exists())assessmentGrades.push({id:grade.id,...grade.data()});
+      }catch(_){}
+    }
   }
 
   let assessments=[];
