@@ -166,27 +166,27 @@ async function loadItems(){
   if(!s||s.role!=="instructor")return [];
   const all=[];
   for(const c of s.courses){
-    if(!c.ownerId){
-      try{
-        await updateDoc(doc(db,"courses",c.id),{ownerId:s.user.uid,updatedAt:serverTimestamp()});
-        c.ownerId=s.user.uid;
-      }catch(_){}
+    try{
+      const snap=await getDocs(collection(db,"courses",c.id,"items"));
+      snap.docs.forEach(d=>all.push({id:d.id,courseId:c.id,courseCode:c.code,courseTitle:c.title,...d.data()}));
+    }catch(error){
+      console.warn("Question Bank unavailable for course:",c.code||c.id,error);
     }
-    const snap=await getDocs(collection(db,"courses",c.id,"items"));
-    snap.docs.forEach(d=>all.push({id:d.id,courseId:c.id,courseCode:c.code,courseTitle:c.title,...d.data()}));
   }
   P3.items=all.sort((a,b)=>String(a.courseCode||"").localeCompare(String(b.courseCode||""))||String(a.prompt||"").localeCompare(String(b.prompt||"")));
   return P3.items;
 }
 
 function itemCard(item){
+  const course=state()?.courses?.find(c=>c.id===item.courseId);
+  const manager=!!course&&core().canManageCourse(course);
   return '<article class="assessment-item-card">'+
     '<div class="item-card-head"><div><div class="card-kicker">'+esc(item.courseCode||"COURSE")+' • '+esc(item.type||"Question")+'</div>'+
     '<h3>'+esc((item.prompt||"Untitled question").slice(0,150))+(String(item.prompt||"").length>150?"…":"")+'</h3></div>'+
     '<span class="badge">'+esc(item.difficulty||"Moderate")+'</span></div>'+
     '<div class="item-tags"><span>'+esc(item.topicNumber||"No topic")+'</span><span>'+esc(item.cognitiveLevel||"Application")+'</span><span>'+esc(item.pointsDefault||1)+' pts</span>'+
     (item.competencyCodes||[]).map(x=>'<span>'+esc(x)+'</span>').join("")+'</div>'+
-    '<div class="card-actions"><button class="secondary-btn small-btn" data-phase3-action="edit-item" data-course="'+item.courseId+'" data-id="'+item.id+'">Edit</button><button class="danger-btn small-btn" data-phase3-action="delete-bank-question" data-course="'+item.courseId+'" data-id="'+item.id+'">Delete</button></div></article>';
+    '<div class="card-actions">'+(manager?'<button class="secondary-btn small-btn" data-phase3-action="edit-item" data-course="'+item.courseId+'" data-id="'+item.id+'">Edit</button><button class="danger-btn small-btn" data-phase3-action="delete-bank-question" data-course="'+item.courseId+'" data-id="'+item.id+'">Delete</button>':'<span class="badge">Official Question Bank</span>')+'</div></article>';
 }
 
 async function renderItemBank(){
@@ -206,7 +206,7 @@ async function renderItemBank(){
   }
 
   el.innerHTML='<div class="assessment-toolbar"><div class="filter-row">'+
-    '<select id="itemCourseFilter"><option value="">All courses</option>'+s.courses.map(c=>'<option value="'+c.id+'">'+esc(c.code+" — "+c.title)+'</option>').join("")+'</select>'+
+    '<select id="itemCourseFilter"><option value="">All courses</option>'+manageable.map(c=>'<option value="'+c.id+'">'+esc(c.code+" — "+c.title)+'</option>').join("")+'</select>'+
     '<select id="itemTypeFilter"><option value="">All types</option>'+["Multiple Choice","Multiple Select","Short Response","Essay","Passage Analysis","Primary Source Analysis","Argument Analysis","Oral Prompt","Disputation Prompt"].map(x=>'<option>'+x+'</option>').join("")+'</select>'+
     '<input id="itemSearch" placeholder="Search prompt, unit, topic, competency, or tag"></div><div class="toolbar-stat"><strong>'+P3.items.length+'</strong><span> reusable questions</span></div></div>'+
     '<div id="itemBankList"></div>';
@@ -216,7 +216,7 @@ async function renderItemBank(){
     const groups=core().unitFolderGroups(list,fw);
     const unsortedCount=list.filter(item=>!item.unitId||!fw.units.some(u=>u.id===item.unitId)).length;
     return '<section class="question-course-group"><div class="page-head compact-head question-course-head"><div><div class="panel-title">'+esc(course.code+" — "+course.title)+'</div><p class="page-subtitle">'+list.length+' question'+(list.length===1?"":"s")+' organized by course unit.</p></div>'+
-      (list.length?'<button class="secondary-btn small-btn" data-phase3-action="auto-sort-question-bank" data-course="'+course.id+'">Auto-Sort'+(unsortedCount?' ('+unsortedCount+')':'')+'</button>':'')+
+      (list.length&&core().canManageCourse(course)?'<button class="secondary-btn small-btn" data-phase3-action="auto-sort-question-bank" data-course="'+course.id+'">Auto-Sort'+(unsortedCount?' ('+unsortedCount+')':'')+'</button>':'')+
       '</div>'+
       (groups.length?'<div class="unit-folder-stack">'+groups.map((group,index)=>
         '<details class="unit-folder '+(group.id==="unsorted"?'unsorted-folder':'')+'" '+(index===0||group.id==="unsorted"?'open':'')+'>'+
@@ -251,6 +251,7 @@ async function renderItemBank(){
 async function autoSortQuestionBankModal(courseId){
   const course=state()?.courses?.find(c=>c.id===courseId);
   if(!course)return toast("Course not found.");
+  if(!core().canManageCourse(course))return toast("The official Question Bank is managed by the Theoria system owner.");
   const fw=await framework(courseId);
   if(!fw.units.length)return toast("Create course units and topics before using Auto-Sort.");
 
@@ -482,9 +483,10 @@ function normalizeBulkQuestion(raw,index,fw){
 
 async function bulkImportQuestionsModal(){
   const s=state();
-  if(!s?.courses?.length)return toast("Create a course before importing questions.");
+  const manageable=(s?.courses||[]).filter(c=>core().canManageCourse(c));
+  if(!manageable.length)return toast("Only the Theoria system owner can import questions into the official Question Bank.");
 
-  let selectedCourse=s.courses[0];
+  let selectedCourse=manageable[0];
   let fw=await framework(selectedCourse.id);
   let parsedRows=[];
 
@@ -493,7 +495,7 @@ async function bulkImportQuestionsModal(){
     title:"Bulk Import Questions",
     wide:true,
     body:'<div class="academic-form">'+
-      '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Choose Course</h3><p>Theoria maps imported topic numbers and competency codes against this course framework.</p></div></div><div class="field"><label>Course</label><select id="bulkImportCourse">'+s.courses.map(c=>'<option value="'+c.id+'">'+esc(c.code+" — "+c.title)+'</option>').join("")+'</select></div><div class="bulk-import-prompt-row"><div><strong>Generate in ChatGPT</strong><span>Copy a course-aware prompt that tells ChatGPT exactly how to format the full question set.</span></div><button type="button" class="secondary-btn" id="copyBulkPrompt">Copy ChatGPT Import Prompt</button></div></section>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Choose Course</h3><p>Theoria maps imported topic numbers and competency codes against this course framework.</p></div></div><div class="field"><label>Course</label><select id="bulkImportCourse">'+manageable.map(c=>'<option value="'+c.id+'">'+esc(c.code+" — "+c.title)+'</option>').join("")+'</select></div><div class="bulk-import-prompt-row"><div><strong>Generate in ChatGPT</strong><span>Copy a course-aware prompt that tells ChatGPT exactly how to format the full question set.</span></div><button type="button" class="secondary-btn" id="copyBulkPrompt">Copy ChatGPT Import Prompt</button></div></section>'+
       '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Add Question Set</h3><p>Paste one complete JSON set from ChatGPT or upload a .json file. You do not need to paste questions individually.</p></div></div><div class="compact-field-grid"><div class="field"><label>JSON File</label><input id="bulkQuestionFile" type="file" accept=".json,application/json"></div><div class="field"><label>Expected Format</label><div class="static-field">JSON array or {"questions":[...]}</div></div></div><div class="field"><label>Paste Complete Question Set</label><textarea id="bulkQuestionJson" class="bulk-json-editor" spellcheck="false" placeholder="Paste the complete JSON question set here"></textarea></div><button type="button" class="primary-btn" id="previewBulkQuestions">Validate & Preview</button></section>'+
       '<section class="form-section" id="bulkPreviewSection"><div class="form-section-head"><div><span>03</span><h3>Import Preview</h3><p>Nothing is saved until you confirm the import.</p></div><div id="bulkPreviewSummary"></div></div><div id="bulkPreviewResults"><div class="empty-mini">Paste or upload a question set, then validate it.</div></div></section>'+
       '<div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button type="button" class="primary-btn" id="importBulkQuestions" disabled>Import Questions</button></div></div>'
@@ -590,6 +592,8 @@ async function bulkImportQuestionsModal(){
 }
 
 async function deleteBankQuestion(courseId,itemId){
+  const course=state()?.courses?.find(c=>c.id===courseId);
+  if(!course||!core().canManageCourse(course))return toast("The official Question Bank is managed by the Theoria system owner.");
   const item=P3.items.find(x=>x.courseId===courseId&&x.id===itemId);
   if(!item)return toast("Question not found.");
   const modal=core().openModal({
@@ -609,8 +613,11 @@ async function deleteBankQuestion(courseId,itemId){
 
 async function itemModal(existing){
   const s=state();
-  if(!s?.courses?.length)return toast("Create a course before creating assessment questions.");
-  let courseId=existing?.courseId||s.courses[0].id;
+  const manageable=(s?.courses||[]).filter(c=>core().canManageCourse(c));
+  if(!manageable.length)return toast("Only the Theoria system owner can author the official Question Bank.");
+  let courseId=existing?.courseId||manageable[0].id;
+  const selectedManagedCourse=s.courses.find(c=>c.id===courseId);
+  if(!selectedManagedCourse||!core().canManageCourse(selectedManagedCourse))return toast("This official Question Bank is read-only for instructors.");
   let fw=await framework(courseId);
   const types=["Multiple Choice","Multiple Select","Short Response","Essay","Passage Analysis","Primary Source Analysis","Argument Analysis","Oral Prompt","Disputation Prompt"];
   const currentType=existing?.type||"Multiple Choice";
@@ -622,7 +629,7 @@ async function itemModal(existing){
     wide:true,
     body:'<form id="itemForm" class="academic-form">'+
       '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Item Identity</h3><p>Place the question inside the course framework.</p></div></div>'+
-        '<div class="compact-field-grid"><div class="field"><label>Course</label><select name="courseId" id="itemCourse" '+(existing?'disabled':'')+'>'+s.courses.map(c=>'<option value="'+c.id+'">'+esc(c.code+" — "+c.title)+'</option>').join("")+'</select></div>'+
+        '<div class="compact-field-grid"><div class="field"><label>Course</label><select name="courseId" id="itemCourse" '+(existing?'disabled':'')+'>'+manageable.map(c=>'<option value="'+c.id+'">'+esc(c.code+" — "+c.title)+'</option>').join("")+'</select></div>'+
         '<div class="field"><label>Difficulty</label><select name="difficulty"><option>Foundational</option><option>Moderate</option><option>Advanced</option></select></div>'+
         '<div class="field"><label>Cognitive Level</label><select name="cognitiveLevel"><option>Recall</option><option>Understanding</option><option>Application</option><option>Analysis</option><option>Evaluation</option><option>Synthesis</option></select></div></div>'+
         '<div class="compact-field-grid"><div class="field"><label>Unit</label><select name="unitId" id="itemUnit"></select></div><div class="field"><label>Topic</label><select name="topicId" id="itemTopic"></select></div><div class="field"><label>Default Points</label><div class="input-with-suffix"><input name="pointsDefault" type="number" min="0" step="0.5" value="'+esc(existing?.pointsDefault??1)+'"><span>pts</span></div></div></div>'+
@@ -963,12 +970,6 @@ async function assessmentModal(existing){
   let fw=await framework(selectedCourse.id);
   let bankQuestions=[];
   const loadBankQuestions=async course=>{
-    if(!course.ownerId){
-      try{
-        await updateDoc(doc(db,"courses",course.id),{ownerId:s.user.uid,updatedAt:serverTimestamp()});
-        course.ownerId=s.user.uid;
-      }catch(_){}
-    }
     const snap=await getDocs(collection(db,"courses",course.id,"items"));
     bankQuestions=snap.docs.map(d=>({id:d.id,courseId:course.id,...d.data()}))
       .sort((a,b)=>String(a.topicNumber||"").localeCompare(String(b.topicNumber||""),undefined,{numeric:true})||String(a.prompt||"").localeCompare(String(b.prompt||"")));
