@@ -126,7 +126,7 @@ async function framework(courseId){
   return {units,competencies:compSnap.docs.map(d=>({id:d.id,...d.data()}))};
 }
 
-/* -------------------- ITEM BANK -------------------- */
+/* -------------------- Question Bank -------------------- */
 
 async function loadItems(){
   const s=state();
