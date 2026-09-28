@@ -417,7 +417,7 @@ async function renderAssessments(){
   if(s.role==="instructor"){
     const templates=P3.assessments.filter(a=>!a.sectionId);
     const assigned=P3.assessments.filter(a=>!!a.sectionId);
-    const card=a=>'<article class="assessment-card"><div class="assessment-type">'+esc(a.type)+'</div><h3>'+esc(a.title)+'</h3><p>'+esc(a.courseCode||"")+' • '+(a.sectionId?esc(a.sectionName||"Assigned Section"):'Reusable assessment template')+'</p><div class="assessment-card-stats"><span><strong>'+esc(a.questionCount||0)+'</strong> questions</span><span><strong>'+esc(a.totalPoints||0)+'</strong> points</span><span>'+esc(a.sectionId?availability(a):"Template")+'</span></div><div class="card-actions">'+(!a.sectionId?'<button class="primary-btn small-btn" data-phase3-action="assign-assessment" data-id="'+a.id+'">Assign to Section</button>':'<button class="secondary-btn small-btn" data-phase3-action="edit-assignment" data-id="'+a.id+'">Edit Assignment</button><button class="danger-btn small-btn" data-phase3-action="delete-assigned" data-id="'+a.id+'">Delete</button>')+'<button class="secondary-btn small-btn" data-phase3-action="open-assessment" data-id="'+a.id+'">Open Builder</button></div></article>';
+    const card=a=>'<article class="assessment-card"><div class="assessment-type">'+esc(a.type)+'</div><h3>'+esc(a.title)+'</h3><p>'+esc(a.courseCode||"")+' • '+(a.sectionId?esc(a.sectionName||"Assigned Section"):'Reusable assessment template')+'</p><div class="assessment-card-stats"><span><strong>'+esc(a.questionCount||0)+'</strong> '+(a.randomDrawEnabled?'questions/student':'questions')+'</span><span><strong>'+esc(a.totalPoints||0)+'</strong> points</span><span>'+esc(a.sectionId?availability(a):"Template")+'</span></div><div class="card-actions">'+(!a.sectionId?'<button class="primary-btn small-btn" data-phase3-action="assign-assessment" data-id="'+a.id+'">Assign to Section</button>':'<button class="secondary-btn small-btn" data-phase3-action="edit-assignment" data-id="'+a.id+'">Edit Assignment</button>')+'<button class="secondary-btn small-btn" data-phase3-action="open-assessment" data-id="'+a.id+'">Open Builder</button><button class="danger-btn small-btn" data-phase3-action="delete-assessment" data-id="'+a.id+'">Delete</button></div></article>';
     el.innerHTML=(templates.length?'<div class="assessment-library-group"><div class="page-head compact-head"><div><div class="panel-title">Assessment Templates</div><p class="page-subtitle">Build once from the Question Bank, then assign to one or more sections.</p></div></div><div class="assessment-grid">'+templates.map(card).join("")+'</div></div>':'')+
       (assigned.length?'<div class="assessment-library-group"><div class="page-head compact-head"><div><div class="panel-title">Assigned Assessments</div><p class="page-subtitle">Live section copies with their own schedule, submissions, and grading.</p></div></div><div class="assessment-grid">'+assigned.map(card).join("")+'</div></div>':'');
     return;
@@ -889,7 +889,7 @@ function renderAssessment(tab="overview"){
   else if(a.status==="Published")statusButton='<button class="secondary-btn small-btn" data-phase3-action="close">Close</button>';
   else statusButton='<button class="secondary-btn small-btn" data-phase3-action="reopen">Reopen</button>';
   $("#assessmentDetail").innerHTML='<button class="text-btn" data-phase3-action="back-assessments">← Assessments</button>'+
-    '<div class="detail-hero"><div class="detail-top"><div><div class="eyebrow">'+esc(a.courseCode)+' • '+esc(a.type)+'</div><h1 class="detail-title">'+esc(a.title)+'</h1><div class="detail-meta"><span>'+(template?'Reusable Template':esc(a.sectionName||"Assigned Section"))+'</span><span>'+esc(template?"Template":a.status)+'</span>'+(template?'':'<span>'+esc(dateText(a.opensAt))+'</span>')+'</div></div><div class="inline-actions">'+(!template?'<button class="secondary-btn small-btn" data-phase3-action="edit-assignment" data-id="'+a.id+'">Edit Assignment</button>':'')+'<button class="secondary-btn small-btn" data-phase3-action="edit-assessment">Edit Content</button>'+statusButton+(!template?'<button class="danger-btn small-btn" data-phase3-action="delete-assigned" data-id="'+a.id+'">Delete</button>':'')+'</div></div>'+(a.instructions?'<p class="page-subtitle" style="margin-top:16px">'+esc(a.instructions)+'</p>':'')+'</div>'+
+    '<div class="detail-hero"><div class="detail-top"><div><div class="eyebrow">'+esc(a.courseCode)+' • '+esc(a.type)+'</div><h1 class="detail-title">'+esc(a.title)+'</h1><div class="detail-meta"><span>'+(template?'Reusable Template':esc(a.sectionName||"Assigned Section"))+'</span><span>'+esc(template?"Template":a.status)+'</span>'+(template?'':'<span>'+esc(dateText(a.opensAt))+'</span>')+'</div></div><div class="inline-actions">'+(!template?'<button class="secondary-btn small-btn" data-phase3-action="edit-assignment" data-id="'+a.id+'">Edit Assignment</button>':'')+'<button class="secondary-btn small-btn" data-phase3-action="edit-assessment">Edit Content</button>'+statusButton+'<button class="danger-btn small-btn" data-phase3-action="delete-assessment" data-id="'+a.id+'">Delete Assessment</button></div></div>'+(a.instructions?'<p class="page-subtitle" style="margin-top:16px">'+esc(a.instructions)+'</p>':'')+'</div>'+
     (template?'<div class="workflow-strip"><div class="done"><span>1</span><strong>Template</strong></div><div class="'+(a.questionCount?"done":"current")+'"><span>2</span><strong>Question Bank</strong></div><div class="'+(a.questionCount?"current":"")+'"><span>3</span><strong>Assign</strong></div><div><span>4</span><strong>Publish</strong></div></div>':'')+
     assessmentTabs(tab)+'<div>'+body+'</div>';
 }
@@ -1126,48 +1126,126 @@ async function deleteRefsInBatches(refs){
   }
 }
 
-async function deleteAssignedAssessment(assessmentId){
+async function deleteAssessment(assessmentId){
   if(!P3.current || P3.current.id!==assessmentId) await openAssessment(assessmentId);
   const a=P3.current,d=P3.detail;
-  if(!a.sectionId)return toast("Only assigned section copies can be deleted here.");
-  const hasStudentData=d.submissions.length>0||d.results.length>0;
+  if(!a)return toast("Assessment not found.");
+
+  const assigned=!!a.sectionId;
+  let unresolvedAppeals=[],portfolioDocs=[],sectionGradeDocs=[];
+  if(assigned){
+    const [appealSnap,portfolioSnap,gradeSnap]=await Promise.all([
+      getDocs(collection(db,"sections",a.sectionId,"appeals")),
+      getDocs(collection(db,"sections",a.sectionId,"portfolios")),
+      getDocs(collection(db,"sections",a.sectionId,"assessmentGrades"))
+    ]);
+    unresolvedAppeals=appealSnap.docs.filter(x=>{
+      const row=x.data();
+      return row.targetType==="Assessment"&&row.targetId===a.id&&![ "Resolved","Denied","Withdrawn" ].includes(row.status);
+    });
+    portfolioDocs=portfolioSnap.docs;
+    sectionGradeDocs=gradeSnap.docs.filter(x=>x.data().assessmentId===a.id);
+    if(unresolvedAppeals.length){
+      return toast("Resolve the open grade appeal"+(unresolvedAppeals.length===1?"":"s")+" for this assessment before deleting it.");
+    }
+  }
+
+  const assignedCopies=!assigned?P3.assessments.filter(x=>x.templateSourceId===a.id):[];
+  const hasStudentData=assigned&&(d.submissions.length>0||d.results.length>0||sectionGradeDocs.length>0);
+  const needsTypedConfirmation=hasStudentData||assignedCopies.length>0;
+
   const modal=core().openModal({
-    eyebrow:"Delete Assigned Assessment",
+    eyebrow:assigned?"Delete Assigned Assessment":"Delete Assessment Template",
     title:a.title,
-    body:'<div class="delete-assessment-warning"><div class="delete-warning-icon">!</div><div><strong>This deletes only the assigned section copy.</strong><p>The reusable assessment template and Question Bank questions are not deleted.</p></div></div>'+
-      '<div class="detail-list" style="margin-top:16px"><div><span>Section</span><strong>'+esc(a.sectionName||"Assigned Section")+'</strong></div><div><span>Status</span><strong>'+esc(a.status||"Draft")+'</strong></div><div><span>Student Attempts</span><strong>'+esc(d.submissions.length)+'</strong></div><div><span>Results</span><strong>'+esc(d.results.length)+'</strong></div></div>'+
-      (hasStudentData?'<div class="notice danger-notice" style="margin-top:16px">This assessment contains student attempt/result data. Deleting it permanently removes those assessment records. Type <strong>DELETE</strong> below to continue.</div><div class="field" style="margin-top:14px"><label>Confirmation</label><input id="deleteAssessmentConfirm" autocomplete="off" placeholder="Type DELETE"></div>':'<div class="notice" style="margin-top:16px">This draft has no student attempt data and can be safely removed from the section.</div>'),
-    footer:'<button class="secondary-btn" data-close-modal>Cancel</button><button class="danger-btn" id="confirmDeleteAssigned" '+(hasStudentData?'disabled':'')+'>Delete Assigned Assessment</button>'
+    body:
+      '<div class="delete-assessment-warning"><div class="delete-warning-icon">!</div><div><strong>'+
+      (assigned?"This permanently removes this section assessment.":"This permanently removes this reusable assessment template.")+
+      '</strong><p>'+
+      (assigned
+        ?"Student attempts, event logs, results, gradebook rows, and section publication references tied to this assessment will be deleted. The original reusable template is not affected."
+        :(assignedCopies.length
+          ?"Existing assigned copies are independent and will remain available to their sections. Their link back to this template will be cleared."
+          :"Question Bank questions are not deleted; only this assessment template and its copied assessment questions/keys are removed."))+
+      '</p></div></div>'+
+      '<div class="detail-list" style="margin-top:16px">'+
+        '<div><span>Type</span><strong>'+esc(a.type||"Assessment")+'</strong></div>'+
+        '<div><span>Question Pool</span><strong>'+esc(d.questions.length)+'</strong></div>'+
+        (assigned?'<div><span>Student Attempts</span><strong>'+esc(d.submissions.length)+'</strong></div><div><span>Results</span><strong>'+esc(d.results.length)+'</strong></div><div><span>Gradebook Rows</span><strong>'+esc(sectionGradeDocs.length)+'</strong></div>':'<div><span>Existing Assigned Copies</span><strong>'+esc(assignedCopies.length)+'</strong></div>')+
+      '</div>'+
+      (needsTypedConfirmation
+        ?'<div class="notice danger-notice" style="margin-top:16px">This deletion affects existing academic records or assigned copies. Type <strong>DELETE</strong> to confirm.</div><div class="field" style="margin-top:14px"><label>Confirmation</label><input id="deleteAssessmentConfirm" autocomplete="off" placeholder="Type DELETE"></div>'
+        :'<div class="notice" style="margin-top:16px">No student attempt data or assigned copies are attached to this assessment.</div>'),
+    footer:'<button class="secondary-btn" data-close-modal>Cancel</button><button class="danger-btn" id="confirmDeleteAssessment" '+(needsTypedConfirmation?'disabled':'')+'>'+esc(assigned?"Delete Assessment":"Delete Template")+'</button>'
   });
-  const button=modal.querySelector("#confirmDeleteAssigned"),input=modal.querySelector("#deleteAssessmentConfirm");
+
+  const button=modal.querySelector("#confirmDeleteAssessment"),input=modal.querySelector("#deleteAssessmentConfirm");
   if(input)input.addEventListener("input",()=>button.disabled=input.value.trim()!=="DELETE");
+
   button.onclick=async()=>{
     button.disabled=true;button.textContent="Deleting…";
     try{
       const refs=[];
-      const questions=await getDocs(collection(db,"assessments",a.id,"questions"));questions.docs.forEach(x=>refs.push(x.ref));
-      const keys=await getDocs(collection(db,"assessments",a.id,"keys"));keys.docs.forEach(x=>refs.push(x.ref));
+      const questions=await getDocs(collection(db,"assessments",a.id,"questions"));
+      const keys=await getDocs(collection(db,"assessments",a.id,"keys"));
+      questions.docs.forEach(x=>refs.push(x.ref));keys.docs.forEach(x=>refs.push(x.ref));
+
       const submissions=await getDocs(collection(db,"assessments",a.id,"submissions"));
       for(const sub of submissions.docs){
-        const events=await getDocs(collection(db,"assessments",a.id,"submissions",sub.id,"events"));events.docs.forEach(x=>refs.push(x.ref));
+        const events=await getDocs(collection(db,"assessments",a.id,"submissions",sub.id,"events"));
+        events.docs.forEach(x=>refs.push(x.ref));
         refs.push(sub.ref);
       }
-      const results=await getDocs(collection(db,"assessments",a.id,"results"));results.docs.forEach(x=>refs.push(x.ref));
+      const results=await getDocs(collection(db,"assessments",a.id,"results"));
+      results.docs.forEach(x=>refs.push(x.ref));
       await deleteRefsInBatches(refs);
 
-      const sectionGradeSnap=await getDocs(collection(db,"sections",a.sectionId,"assessmentGrades"));
-      const sectionGradeRefs=sectionGradeSnap.docs.filter(x=>x.data().assessmentId===a.id).map(x=>x.ref);
-      await deleteRefsInBatches(sectionGradeRefs);
+      if(assigned){
+        await deleteRefsInBatches(sectionGradeDocs.map(x=>x.ref));
 
-      const finalBatch=writeBatch(db);
-      finalBatch.delete(doc(db,"sections",a.sectionId,"assessmentRefs",a.id));
-      finalBatch.delete(doc(db,"assessments",a.id));
-      await finalBatch.commit();
+        // Remove stale portfolio references but keep every other curated work item.
+        for(const p of portfolioDocs){
+          const row=p.data(),works=Array.isArray(row.featuredWorks)?row.featuredWorks:[];
+          if(works.some(w=>w.type==="Assessment"&&w.id===a.id)){
+            await updateDoc(p.ref,{
+              featuredWorks:works.filter(w=>!(w.type==="Assessment"&&w.id===a.id)),
+              updatedAt:serverTimestamp()
+            });
+          }
+        }
+
+        const finalBatch=writeBatch(db);
+        finalBatch.delete(doc(db,"sections",a.sectionId,"assessmentRefs",a.id));
+        finalBatch.delete(doc(db,"assessments",a.id));
+        await finalBatch.commit();
+      }else{
+        // Assigned copies remain valid but no longer point at a deleted template.
+        for(let i=0;i<assignedCopies.length;i+=400){
+          const batch=writeBatch(db);
+          assignedCopies.slice(i,i+400).forEach(copy=>{
+            batch.update(doc(db,"assessments",copy.id),{templateSourceId:"",updatedAt:serverTimestamp()});
+          });
+          await batch.commit();
+        }
+        await deleteDoc(doc(db,"assessments",a.id));
+      }
+
+      const deletedSectionId=a.sectionId||"";
       core().closeModal();P3.current=null;P3.detail=null;await loadAssessments();
-      if(state().currentSection?.id===a.sectionId&&$("#page-section-detail")?.classList.contains("active"))await renderSectionAssessments();
-      else{core().setPage("assessments");await renderAssessments();}
-      toast("Assigned assessment deleted. The reusable template was kept.");
-    }catch(err){button.disabled=false;button.textContent="Delete Assigned Assessment";toast(err.message||"Unable to delete the assigned assessment.");}
+      if(deletedSectionId){
+        window.TheoriaPhase4?.invalidate?.(deletedSectionId);
+        try{await window.TheoriaPhase4?.recomputeMastery?.(deletedSectionId);}catch(_){}
+      }
+
+      if(deletedSectionId&&state().currentSection?.id===deletedSectionId&&$("#page-section-detail")?.classList.contains("active")){
+        await renderSectionAssessments();
+      }else{
+        core().setPage("assessments");await renderAssessments();
+      }
+      toast(assigned?"Assessment deleted.":"Assessment template deleted.");
+    }catch(err){
+      button.disabled=false;button.textContent=assigned?"Delete Assessment":"Delete Template";
+      toast(err.message||"Unable to delete the assessment.");
+    }
   };
 }
 
@@ -1637,7 +1715,7 @@ document.addEventListener("click",async e=>{
   if(a==="assign-assessment")return assignAssessmentModal(b.dataset.id);
   if(a==="assign-current-section")return chooseAssessmentForSection(b.dataset.section);
   if(a==="edit-assignment")return editAssignedAssessmentModal(b.dataset.id);
-  if(a==="delete-assigned")return deleteAssignedAssessment(b.dataset.id);
+  if(a==="delete-assigned"||a==="delete-assessment")return deleteAssessment(b.dataset.id);
   if(a==="delete-bank-question")return deleteBankQuestion(b.dataset.course,b.dataset.id);
   if(a==="edit-item")return itemModal(P3.items.find(x=>x.id===b.dataset.id&&x.courseId===b.dataset.course));
   if(a==="open-assessment")return openAssessment(b.dataset.id);
