@@ -22,6 +22,38 @@ service cloud.firestore {
       return signedIn() && userData().role == 'instructor';
     }
 
+    function isSystemOwner() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/system/owner)
+        && get(/databases/$(database)/documents/system/owner).data.uid == uid();
+    }
+
+    function courseData(courseId) {
+      return get(/databases/$(database)/documents/courses/$(courseId)).data;
+    }
+
+    function courseIsPublishedCatalog(courseId) {
+      return courseData(courseId).catalogCourse == true
+        && courseData(courseId).catalogPublished == true;
+    }
+
+    function canUseCourseAsInstructor(courseId) {
+      return isInstructor()
+        && (
+          courseOwner(courseId)
+          || isSystemOwner()
+          || courseIsPublishedCatalog(courseId)
+        );
+    }
+
+    function canManageCourse(courseId) {
+      return isSystemOwner()
+        || (
+          courseOwner(courseId)
+          && courseData(courseId).catalogCourse != true
+        );
+    }
+
     function isInstructorAfter() {
       return signedIn()
         && getAfter(/databases/$(database)/documents/users/$(uid())).data.role == 'instructor';
@@ -136,32 +168,52 @@ service cloud.firestore {
     match /courses/{courseId} {
       allow read: if signedIn();
       allow create: if isInstructor()
-        && request.resource.data.ownerId == uid();
-      allow update: if courseOwner(courseId)
+        && request.resource.data.ownerId == uid()
+        && (
+          request.resource.data.catalogCourse != true
+          || isSystemOwner()
+        );
+      allow update: if isSystemOwner()
+        || (
+          courseOwner(courseId)
+          && resource.data.catalogCourse != true
+          && request.resource.data.catalogCourse != true
+        )
         || (
           isInstructor()
           && !('ownerId' in resource.data)
           && request.resource.data.ownerId == uid()
+          && request.resource.data.catalogCourse != true
         );
-      allow delete: if courseOwner(courseId);
+      allow delete: if isSystemOwner()
+        || (
+          courseOwner(courseId)
+          && resource.data.catalogCourse != true
+        );
 
       match /units/{unitId} {
         allow read: if signedIn();
-        allow create, update, delete: if courseOwner(courseId);
+        allow create, update, delete: if canManageCourse(courseId);
 
         match /topics/{topicId} {
           allow read: if signedIn();
-          allow create, update, delete: if courseOwner(courseId);
+          allow create, update, delete: if canManageCourse(courseId);
         }
       }
 
       match /competencies/{competencyId} {
         allow read: if signedIn();
-        allow create, update, delete: if courseOwner(courseId);
+        allow create, update, delete: if canManageCourse(courseId);
       }
 
       match /items/{itemId} {
-        allow read, create, update, delete: if courseOwner(courseId);
+        allow read: if isSystemOwner()
+          || courseOwner(courseId)
+          || (
+            isInstructor()
+            && courseIsPublishedCatalog(courseId)
+          );
+        allow create, update, delete: if canManageCourse(courseId);
       }
     }
 
@@ -321,7 +373,7 @@ service cloud.firestore {
         );
       allow create: if isInstructor()
         && request.resource.data.ownerId == uid()
-        && courseOwner(request.resource.data.courseId)
+        && canUseCourseAsInstructor(request.resource.data.courseId)
         && (
           request.resource.data.sectionId == ''
           || sectionOwner(request.resource.data.sectionId)
