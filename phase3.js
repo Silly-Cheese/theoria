@@ -366,7 +366,7 @@ async function renderAssessments(){
   if(s.role==="instructor"){
     const templates=P3.assessments.filter(a=>!a.sectionId);
     const assigned=P3.assessments.filter(a=>!!a.sectionId);
-    const card=a=>'<article class="assessment-card"><div class="assessment-type">'+esc(a.type)+'</div><h3>'+esc(a.title)+'</h3><p>'+esc(a.courseCode||"")+' • '+(a.sectionId?esc(a.sectionName||"Assigned Section"):'Reusable assessment template')+'</p><div class="assessment-card-stats"><span><strong>'+esc(a.questionCount||0)+'</strong> questions</span><span><strong>'+esc(a.totalPoints||0)+'</strong> points</span><span>'+esc(a.sectionId?availability(a):"Template")+'</span></div><div class="card-actions">'+(!a.sectionId?'<button class="primary-btn small-btn" data-phase3-action="assign-assessment" data-id="'+a.id+'">Assign to Section</button>':'')+'<button class="secondary-btn small-btn" data-phase3-action="open-assessment" data-id="'+a.id+'">Open Builder</button></div></article>';
+    const card=a=>'<article class="assessment-card"><div class="assessment-type">'+esc(a.type)+'</div><h3>'+esc(a.title)+'</h3><p>'+esc(a.courseCode||"")+' • '+(a.sectionId?esc(a.sectionName||"Assigned Section"):'Reusable assessment template')+'</p><div class="assessment-card-stats"><span><strong>'+esc(a.questionCount||0)+'</strong> questions</span><span><strong>'+esc(a.totalPoints||0)+'</strong> points</span><span>'+esc(a.sectionId?availability(a):"Template")+'</span></div><div class="card-actions">'+(!a.sectionId?'<button class="primary-btn small-btn" data-phase3-action="assign-assessment" data-id="'+a.id+'">Assign to Section</button>':'<button class="secondary-btn small-btn" data-phase3-action="edit-assignment" data-id="'+a.id+'">Edit Assignment</button><button class="danger-btn small-btn" data-phase3-action="delete-assigned" data-id="'+a.id+'">Delete</button>')+'<button class="secondary-btn small-btn" data-phase3-action="open-assessment" data-id="'+a.id+'">Open Builder</button></div></article>';
     el.innerHTML=(templates.length?'<div class="assessment-library-group"><div class="page-head compact-head"><div><div class="panel-title">Assessment Templates</div><p class="page-subtitle">Build once from the Question Bank, then assign to one or more sections.</p></div></div><div class="assessment-grid">'+templates.map(card).join("")+'</div></div>':'')+
       (assigned.length?'<div class="assessment-library-group"><div class="page-head compact-head"><div><div class="panel-title">Assigned Assessments</div><p class="page-subtitle">Live section copies with their own schedule, submissions, and grading.</p></div></div><div class="assessment-grid">'+assigned.map(card).join("")+'</div></div>':'');
     return;
@@ -669,7 +669,7 @@ function renderAssessment(tab="overview"){
   else if(a.status==="Published")statusButton='<button class="secondary-btn small-btn" data-phase3-action="close">Close</button>';
   else statusButton='<button class="secondary-btn small-btn" data-phase3-action="reopen">Reopen</button>';
   $("#assessmentDetail").innerHTML='<button class="text-btn" data-phase3-action="back-assessments">← Assessments</button>'+
-    '<div class="detail-hero"><div class="detail-top"><div><div class="eyebrow">'+esc(a.courseCode)+' • '+esc(a.type)+'</div><h1 class="detail-title">'+esc(a.title)+'</h1><div class="detail-meta"><span>'+(template?'Reusable Template':esc(a.sectionName||"Assigned Section"))+'</span><span>'+esc(template?"Template":a.status)+'</span>'+(template?'':'<span>'+esc(dateText(a.opensAt))+'</span>')+'</div></div><div class="inline-actions"><button class="secondary-btn small-btn" data-phase3-action="edit-assessment">Edit</button>'+statusButton+'</div></div>'+(a.instructions?'<p class="page-subtitle" style="margin-top:16px">'+esc(a.instructions)+'</p>':'')+'</div>'+
+    '<div class="detail-hero"><div class="detail-top"><div><div class="eyebrow">'+esc(a.courseCode)+' • '+esc(a.type)+'</div><h1 class="detail-title">'+esc(a.title)+'</h1><div class="detail-meta"><span>'+(template?'Reusable Template':esc(a.sectionName||"Assigned Section"))+'</span><span>'+esc(template?"Template":a.status)+'</span>'+(template?'':'<span>'+esc(dateText(a.opensAt))+'</span>')+'</div></div><div class="inline-actions">'+(!template?'<button class="secondary-btn small-btn" data-phase3-action="edit-assignment" data-id="'+a.id+'">Edit Assignment</button>':'')+'<button class="secondary-btn small-btn" data-phase3-action="edit-assessment">Edit Content</button>'+statusButton+(!template?'<button class="danger-btn small-btn" data-phase3-action="delete-assigned" data-id="'+a.id+'">Delete</button>':'')+'</div></div>'+(a.instructions?'<p class="page-subtitle" style="margin-top:16px">'+esc(a.instructions)+'</p>':'')+'</div>'+
     (template?'<div class="workflow-strip"><div class="done"><span>1</span><strong>Template</strong></div><div class="'+(a.questionCount?"done":"current")+'"><span>2</span><strong>Question Bank</strong></div><div class="'+(a.questionCount?"current":"")+'"><span>3</span><strong>Assign</strong></div><div><span>4</span><strong>Publish</strong></div></div>':'')+
     assessmentTabs(tab)+'<div>'+body+'</div>';
 }
@@ -734,23 +734,50 @@ async function assignAssessmentModal(assessmentId,preferredSectionId=""){
   if(!d.questions.length)return toast("Add questions from the Question Bank before assigning this assessment.");
   const sections=s.sections.filter(sec=>sec.courseId===a.courseId);
   if(!sections.length)return toast("Create a teaching section for "+(a.courseCode||"this course")+" before assigning the assessment.");
+
   const modal=core().openModal({
     eyebrow:"Assign Assessment",
     title:a.title,
     wide:true,
-    body:'<form id="assignAssessmentForm" class="academic-form"><section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Choose Section</h3><p>A reusable copy will be created for this section. The original template remains unchanged.</p></div></div><div class="field"><label>Section</label><select name="sectionId">'+sections.map(sec=>'<option value="'+sec.id+'">'+esc(sec.courseCode+" — "+sec.sectionName+" • "+sec.term)+'</option>').join("")+'</select></div><div class="field"><label>Assigned Title</label><input class="title-input" name="title" value="'+esc(a.title)+'" required></div></section><section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Section Schedule</h3><p>Adjust these dates for this specific class.</p></div></div><div class="compact-field-grid"><div class="field"><label>Duration</label><div class="input-with-suffix"><input name="durationMinutes" type="number" min="0" value="'+esc(a.durationMinutes||60)+'"><span>min</span></div></div><div class="field"><label>Opens</label><input name="opensAt" type="datetime-local" value="'+esc(localDateTime(a.opensAt))+'"></div><div class="field"><label>Closes</label><input name="closesAt" type="datetime-local" value="'+esc(localDateTime(a.closesAt))+'"></div></div></section><div class="notice">The assigned copy begins as a draft. Review it, then publish it when students should receive access.</div><div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Create Assigned Copy</button></div></form>'
+    body:'<form id="assignAssessmentForm" class="academic-form">'+
+      '<div class="assignment-preview-card"><div><span>'+esc(a.type)+'</span><h3>'+esc(a.title)+'</h3><p>'+esc(a.courseCode||"Course")+' • Reusable template</p></div><div class="assignment-preview-stats"><div><strong>'+esc(d.questions.length)+'</strong><span>Questions</span></div><div><strong>'+esc(d.questions.reduce((n,q)=>n+Number(q.points||0),0))+'</strong><span>Points</span></div><div><strong>'+esc(a.durationMinutes||0)+'</strong><span>Minutes</span></div></div></div>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Destination</h3><p>Select the class receiving its own copy of this assessment.</p></div></div>'+
+        '<div class="section-choice-grid" id="assignSectionChoices">'+sections.map(sec=>'<label class="section-choice"><input type="radio" name="sectionId" value="'+sec.id+'" '+((preferredSectionId?sec.id===preferredSectionId:sec.id===sections[0].id)?'checked':'')+'><div><span>'+esc(sec.courseCode||a.courseCode)+'</span><strong>'+esc(sec.sectionName)+'</strong><small>'+esc(sec.term||"")+' • '+esc(sec.studentCount||"")+(sec.studentCount?" students":"")+'</small></div><div class="section-choice-check">✓</div></label>').join("")+'</div>'+
+        '<div class="field" style="margin-top:14px"><label>Assigned Title</label><input class="title-input" name="title" value="'+esc(a.title)+'" required></div>'+
+      '</section>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Schedule</h3><p>Set when this section will take the assessment.</p></div></div>'+
+        '<div class="compact-field-grid"><div class="field"><label>Duration</label><div class="input-with-suffix"><input name="durationMinutes" type="number" min="0" value="'+esc(a.durationMinutes||60)+'"><span>min</span></div></div><div class="field"><label>Opens</label><input name="opensAt" type="datetime-local" value="'+esc(localDateTime(a.opensAt))+'"></div><div class="field"><label>Closes</label><input name="closesAt" type="datetime-local" value="'+esc(localDateTime(a.closesAt))+'"></div></div>'+
+      '</section>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>03</span><h3>Release</h3><p>Keep it private while reviewing, or publish it to students immediately.</p></div></div>'+
+        '<div class="release-choice-grid"><label class="release-choice"><input type="radio" name="initialStatus" value="Draft" checked><div><strong>Save as Draft</strong><span>Students cannot see or start it yet.</span></div></label><label class="release-choice"><input type="radio" name="initialStatus" value="Published"><div><strong>Assign & Publish</strong><span>Create the section copy and make it available according to the schedule.</span></div></label></div>'+
+      '</section>'+
+      '<div class="assignment-copy-note"><strong>The reusable template stays unchanged.</strong><span>This creates an independent section copy with its own submissions, grading, schedule, and results.</span></div>'+
+      '<div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Assign Assessment</button></div></form>'
   });
-  if(preferredSectionId) modal.querySelector('#assignAssessmentForm select[name="sectionId"]').value=preferredSectionId;
-  modal.querySelector("#assignAssessmentForm").onsubmit=async e=>{
-    e.preventDefault();const fd=new FormData(e.currentTarget),section=sections.find(sec=>sec.id===String(fd.get("sectionId")));
+
+  const form=modal.querySelector("#assignAssessmentForm");
+  modal.querySelectorAll('.section-choice input').forEach(x=>x.addEventListener("change",()=>modal.querySelectorAll(".section-choice").forEach(label=>label.classList.toggle("selected",label.querySelector("input").checked))));
+  modal.querySelectorAll(".section-choice").forEach(label=>label.classList.toggle("selected",label.querySelector("input").checked));
+  modal.querySelectorAll('.release-choice input').forEach(x=>x.addEventListener("change",()=>modal.querySelectorAll(".release-choice").forEach(label=>label.classList.toggle("selected",label.querySelector("input").checked))));
+  modal.querySelectorAll(".release-choice").forEach(label=>label.classList.toggle("selected",label.querySelector("input").checked));
+
+  form.onsubmit=async e=>{
+    e.preventDefault();
+    const fd=new FormData(form),section=sections.find(sec=>sec.id===String(fd.get("sectionId"))),initialStatus=String(fd.get("initialStatus")||"Draft");
+    if(!section)return toast("Choose a section.");
+    const opensAt=timestampFrom(fd.get("opensAt")),closesAt=timestampFrom(fd.get("closesAt"));
+    if(opensAt&&closesAt&&opensAt.toMillis()>=closesAt.toMillis())return toast("The close time must be after the open time.");
+
+    const duplicate=P3.assessments.find(x=>x.sectionId===section.id&&x.templateSourceId===a.id);
+    if(duplicate&&!confirm("This template is already assigned to "+section.sectionName+". Assign another copy anyway?"))return;
+
     const ref=doc(collection(db,"assessments"));
     const clone={
       ...Object.fromEntries(Object.entries(a).filter(([k])=>!["id","createdAt","updatedAt"].includes(k))),
       ownerId:s.user.uid,sectionId:section.id,sectionName:section.sectionName,templateSourceId:a.id,
-      title:String(fd.get("title")).trim(),status:"Draft",durationMinutes:Number(fd.get("durationMinutes")||0),
-      opensAt:timestampFrom(fd.get("opensAt")),closesAt:timestampFrom(fd.get("closesAt")),
-      questionIds:d.questions.map(q=>q.id),questionCount:d.questions.length,totalPoints:d.questions.reduce((n,q)=>n+Number(q.points||0),0),
-      createdAt:serverTimestamp(),updatedAt:serverTimestamp()
+      title:String(fd.get("title")).trim(),status:initialStatus,durationMinutes:Number(fd.get("durationMinutes")||0),
+      opensAt,closesAt,questionIds:d.questions.map(q=>q.id),questionCount:d.questions.length,
+      totalPoints:d.questions.reduce((n,q)=>n+Number(q.points||0),0),createdAt:serverTimestamp(),updatedAt:serverTimestamp()
     };
     try{
       await setDoc(ref,clone);
@@ -767,8 +794,116 @@ async function assignAssessmentModal(assessmentId,preferredSectionId=""){
         }
         await batch.commit();
       }
-      core().closeModal();await loadAssessments();await openAssessment(ref.id);toast("Assessment assigned as a section draft. Review it, then publish when ready.");
+      if(initialStatus==="Published"){
+        await setDoc(doc(db,"sections",section.id,"assessmentRefs",ref.id),{
+          assessmentId:ref.id,title:clone.title,type:clone.type,status:"Published",
+          opensAt:clone.opensAt||null,closesAt:clone.closesAt||null,durationMinutes:clone.durationMinutes||0,updatedAt:serverTimestamp()
+        });
+      }
+      core().closeModal();await loadAssessments();await openAssessment(ref.id);
+      toast(initialStatus==="Published"?"Assessment assigned and published.":"Assessment assigned as a draft.");
     }catch(err){toast(err.message||"Unable to assign assessment.");}
+  };
+}
+
+async function editAssignedAssessmentModal(assessmentId){
+  const s=state();
+  if(!P3.current || P3.current.id!==assessmentId) await openAssessment(assessmentId);
+  const a=P3.current,d=P3.detail;
+  if(!a.sectionId)return toast("This is a reusable template, not an assigned assessment.");
+  const sections=s.sections.filter(sec=>sec.courseId===a.courseId);
+  const hasAttempts=d.submissions.length>0||d.results.length>0;
+  const modal=core().openModal({
+    eyebrow:"Edit Assignment",
+    title:a.title,
+    wide:true,
+    body:'<form id="editAssignedAssessmentForm" class="academic-form">'+
+      '<div class="assignment-preview-card"><div><span>'+esc(a.type)+'</span><h3>'+esc(a.title)+'</h3><p>'+esc(a.courseCode||"Course")+' • '+esc(a.sectionName||"Assigned Section")+'</p></div><div class="assignment-preview-stats"><div><strong>'+esc(a.questionCount||d.questions.length)+'</strong><span>Questions</span></div><div><strong>'+esc(a.totalPoints||0)+'</strong><span>Points</span></div><div><strong>'+esc(d.submissions.length)+'</strong><span>Attempts</span></div></div></div>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Assignment Details</h3><p>Edit the section-facing copy without changing the reusable template.</p></div></div>'+
+        '<div class="field"><label>Assigned Title</label><input class="title-input" name="title" value="'+esc(a.title)+'" required></div>'+
+        '<div class="field"><label>Assigned Section</label><select name="sectionId" '+(hasAttempts?'disabled':'')+'>'+sections.map(sec=>'<option value="'+sec.id+'">'+esc(sec.courseCode+" — "+sec.sectionName+" • "+sec.term)+'</option>').join("")+'</select>'+(hasAttempts?'<div class="field-help warning-text">This assessment has student activity, so its section can no longer be moved. Title and schedule can still be edited.</div>':'<div class="field-help">You may move this assigned copy to another section of the same course until a student starts it.</div>')+'</div>'+
+      '</section>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Schedule</h3><p>Adjust the live section administration settings.</p></div></div>'+
+        '<div class="compact-field-grid"><div class="field"><label>Duration</label><div class="input-with-suffix"><input name="durationMinutes" type="number" min="0" value="'+esc(a.durationMinutes||0)+'"><span>min</span></div></div><div class="field"><label>Opens</label><input name="opensAt" type="datetime-local" value="'+esc(localDateTime(a.opensAt))+'"></div><div class="field"><label>Closes</label><input name="closesAt" type="datetime-local" value="'+esc(localDateTime(a.closesAt))+'"></div></div>'+
+      '</section>'+
+      '<div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Assignment Changes</button></div></form>'
+  });
+  const form=modal.querySelector("#editAssignedAssessmentForm");
+  form.sectionId.value=a.sectionId;
+  form.onsubmit=async e=>{
+    e.preventDefault();const fd=new FormData(form);
+    const newSectionId=hasAttempts?a.sectionId:String(fd.get("sectionId")),newSection=sections.find(sec=>sec.id===newSectionId);
+    const opensAt=timestampFrom(fd.get("opensAt")),closesAt=timestampFrom(fd.get("closesAt"));
+    if(opensAt&&closesAt&&opensAt.toMillis()>=closesAt.toMillis())return toast("The close time must be after the open time.");
+    const moved=newSectionId!==a.sectionId;
+    const title=String(fd.get("title")).trim(),durationMinutes=Number(fd.get("durationMinutes")||0);
+    try{
+      const batch=writeBatch(db);
+      batch.update(doc(db,"assessments",a.id),{
+        title,durationMinutes,opensAt,closesAt,sectionId:newSectionId,sectionName:newSection.sectionName,updatedAt:serverTimestamp()
+      });
+      if(a.status==="Published"){
+        if(moved)batch.delete(doc(db,"sections",a.sectionId,"assessmentRefs",a.id));
+        batch.set(doc(db,"sections",newSectionId,"assessmentRefs",a.id),{
+          assessmentId:a.id,title,type:a.type,status:a.status,opensAt:opensAt||null,closesAt:closesAt||null,durationMinutes,updatedAt:serverTimestamp()
+        },{merge:true});
+      }
+      await batch.commit();
+      core().closeModal();await loadAssessments();await openAssessment(a.id);toast(moved?"Assessment assignment moved and updated.":"Assessment assignment updated.");
+    }catch(err){toast(err.message||"Unable to update the assigned assessment.");}
+  };
+}
+
+async function deleteRefsInBatches(refs){
+  for(let i=0;i<refs.length;i+=400){
+    const batch=writeBatch(db);
+    refs.slice(i,i+400).forEach(ref=>batch.delete(ref));
+    await batch.commit();
+  }
+}
+
+async function deleteAssignedAssessment(assessmentId){
+  if(!P3.current || P3.current.id!==assessmentId) await openAssessment(assessmentId);
+  const a=P3.current,d=P3.detail;
+  if(!a.sectionId)return toast("Only assigned section copies can be deleted here.");
+  const hasStudentData=d.submissions.length>0||d.results.length>0;
+  const modal=core().openModal({
+    eyebrow:"Delete Assigned Assessment",
+    title:a.title,
+    body:'<div class="delete-assessment-warning"><div class="delete-warning-icon">!</div><div><strong>This deletes only the assigned section copy.</strong><p>The reusable assessment template and Question Bank questions are not deleted.</p></div></div>'+
+      '<div class="detail-list" style="margin-top:16px"><div><span>Section</span><strong>'+esc(a.sectionName||"Assigned Section")+'</strong></div><div><span>Status</span><strong>'+esc(a.status||"Draft")+'</strong></div><div><span>Student Attempts</span><strong>'+esc(d.submissions.length)+'</strong></div><div><span>Results</span><strong>'+esc(d.results.length)+'</strong></div></div>'+
+      (hasStudentData?'<div class="notice danger-notice" style="margin-top:16px">This assessment contains student attempt/result data. Deleting it permanently removes those assessment records. Type <strong>DELETE</strong> below to continue.</div><div class="field" style="margin-top:14px"><label>Confirmation</label><input id="deleteAssessmentConfirm" autocomplete="off" placeholder="Type DELETE"></div>':'<div class="notice" style="margin-top:16px">This draft has no student attempt data and can be safely removed from the section.</div>'),
+    footer:'<button class="secondary-btn" data-close-modal>Cancel</button><button class="danger-btn" id="confirmDeleteAssigned" '+(hasStudentData?'disabled':'')+'>Delete Assigned Assessment</button>'
+  });
+  const button=modal.querySelector("#confirmDeleteAssigned"),input=modal.querySelector("#deleteAssessmentConfirm");
+  if(input)input.addEventListener("input",()=>button.disabled=input.value.trim()!=="DELETE");
+  button.onclick=async()=>{
+    button.disabled=true;button.textContent="Deleting…";
+    try{
+      const refs=[];
+      const questions=await getDocs(collection(db,"assessments",a.id,"questions"));questions.docs.forEach(x=>refs.push(x.ref));
+      const keys=await getDocs(collection(db,"assessments",a.id,"keys"));keys.docs.forEach(x=>refs.push(x.ref));
+      const submissions=await getDocs(collection(db,"assessments",a.id,"submissions"));
+      for(const sub of submissions.docs){
+        const events=await getDocs(collection(db,"assessments",a.id,"submissions",sub.id,"events"));events.docs.forEach(x=>refs.push(x.ref));
+        refs.push(sub.ref);
+      }
+      const results=await getDocs(collection(db,"assessments",a.id,"results"));results.docs.forEach(x=>refs.push(x.ref));
+      await deleteRefsInBatches(refs);
+
+      const sectionGradeSnap=await getDocs(collection(db,"sections",a.sectionId,"assessmentGrades"));
+      const sectionGradeRefs=sectionGradeSnap.docs.filter(x=>x.data().assessmentId===a.id).map(x=>x.ref);
+      await deleteRefsInBatches(sectionGradeRefs);
+
+      const finalBatch=writeBatch(db);
+      finalBatch.delete(doc(db,"sections",a.sectionId,"assessmentRefs",a.id));
+      finalBatch.delete(doc(db,"assessments",a.id));
+      await finalBatch.commit();
+      core().closeModal();P3.current=null;P3.detail=null;await loadAssessments();
+      if(state().currentSection?.id===a.sectionId&&$("#page-section-detail")?.classList.contains("active"))await renderSectionAssessments();
+      else{core().setPage("assessments");await renderAssessments();}
+      toast("Assigned assessment deleted. The reusable template was kept.");
+    }catch(err){button.disabled=false;button.textContent="Delete Assigned Assessment";toast(err.message||"Unable to delete the assigned assessment.");}
   };
 }
 
@@ -821,7 +956,7 @@ async function renderSectionAssessments(){
     }
     list.sort((a,b)=>(b.opensAt?.toMillis?.()||0)-(a.opensAt?.toMillis?.()||0));
     const header=s.role==="instructor"?'<div class="page-head" style="margin-bottom:16px"><div><div class="panel-title">Assigned Assessments</div><p class="page-subtitle">Assign reusable course assessments to this section, then publish when ready.</p></div><button class="primary-btn small-btn" data-phase3-action="assign-current-section" data-section="'+section.id+'">Assign Assessment</button></div>':'';
-    el.innerHTML=header+(list.length?'<div class="assessment-grid">'+list.map(a=>'<article class="assessment-card"><div class="assessment-type">'+esc(a.type)+'</div><h3>'+esc(a.title)+'</h3><p>'+esc(availability(a))+' • '+esc(a.durationMinutes||0)+' minutes</p><div class="card-actions">'+(s.role==="instructor"?'<button class="secondary-btn small-btn" data-phase3-action="open-assessment" data-id="'+a.id+'">Open Builder</button>':(a.mode==="oral"||a.mode==="disputation")?'<span class="badge gold">Instructor administered</span>':availability(a)==="Open"?'<button class="primary-btn small-btn" data-phase3-action="start-exam" data-id="'+a.id+'">Open Assessment</button>':'<span class="badge">'+esc(availability(a))+'</span>')+'</div></article>').join("")+'</div>':'<div class="empty-state"><div class="empty-symbol">A</div><h3>No assessments assigned yet.</h3><p>'+(s.role==="instructor"?"Choose a reusable assessment template for this course.":"Published assessments will appear here.")+'</p></div>');
+    el.innerHTML=header+(list.length?'<div class="assessment-grid">'+list.map(a=>'<article class="assessment-card assigned-card"><div class="assessment-card-topline"><div class="assessment-type">'+esc(a.type)+'</div><span class="badge '+(a.status==="Published"?"live":a.status==="Draft"?"gold":"")+'">'+esc(a.status||"Draft")+'</span></div><h3>'+esc(a.title)+'</h3><p>'+esc(a.questionCount||0)+' questions • '+esc(a.totalPoints||0)+' points</p><div class="assigned-schedule"><div><span>Opens</span><strong>'+esc(dateText(a.opensAt))+'</strong></div><div><span>Closes</span><strong>'+esc(dateText(a.closesAt))+'</strong></div><div><span>Duration</span><strong>'+esc(a.durationMinutes||0)+' min</strong></div></div><div class="card-actions">'+(s.role==="instructor"?'<button class="secondary-btn small-btn" data-phase3-action="edit-assignment" data-id="'+a.id+'">Edit Assignment</button><button class="secondary-btn small-btn" data-phase3-action="open-assessment" data-id="'+a.id+'">Open</button><button class="danger-btn small-btn" data-phase3-action="delete-assigned" data-id="'+a.id+'">Delete</button>':(a.mode==="oral"||a.mode==="disputation")?'<span class="badge gold">Instructor administered</span>':availability(a)==="Open"?'<button class="primary-btn small-btn" data-phase3-action="start-exam" data-id="'+a.id+'">Open Assessment</button>':'<span class="badge">'+esc(availability(a))+'</span>')+'</div></article>').join("")+'</div>':'<div class="empty-state"><div class="empty-symbol">A</div><h3>No assessments assigned yet.</h3><p>'+(s.role==="instructor"?"Choose a reusable assessment template for this course.":"Published assessments will appear here.")+'</p></div>');
   }catch(error){
     console.error("Unable to load section assessments:",error);
     el.innerHTML='<div class="empty-state"><div class="empty-symbol">!</div><h3>Assessments could not be loaded.</h3><p>Refresh after deploying the latest Firestore rules. If the problem continues, open the main Assessments workspace.</p></div>';
@@ -1148,6 +1283,8 @@ document.addEventListener("click",async e=>{
   if(a==="new-assessment")return assessmentModal();
   if(a==="assign-assessment")return assignAssessmentModal(b.dataset.id);
   if(a==="assign-current-section")return chooseAssessmentForSection(b.dataset.section);
+  if(a==="edit-assignment")return editAssignedAssessmentModal(b.dataset.id);
+  if(a==="delete-assigned")return deleteAssignedAssessment(b.dataset.id);
   if(a==="edit-item")return itemModal(P3.items.find(x=>x.id===b.dataset.id&&x.courseId===b.dataset.course));
   if(a==="open-assessment")return openAssessment(b.dataset.id);
   if(a==="back-assessments"){clearInterval(P3.timer);P3.exam=null;core().setPage("assessments");return renderAssessments();}
