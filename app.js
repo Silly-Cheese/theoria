@@ -383,6 +383,21 @@ function bulkCourseCreatorPrompt(requestText=""){
   ].join("\n");
 }
 
+function stripBulkCourseJsonFence(text){
+  let value=String(text||"").trim();
+  value=value.replace(/^\s*\`\`\`(?:json)?\s*/i,"").replace(/\s*\`\`\`\s*$/,"").trim();
+  const firstArray=value.indexOf("["),firstObject=value.indexOf("{");
+  if(firstArray>=0&&(firstObject<0||firstArray<firstObject)){
+    const last=value.lastIndexOf("]");
+    if(last>firstArray)return value.slice(firstArray,last+1);
+  }
+  if(firstObject>=0){
+    const last=value.lastIndexOf("}");
+    if(last>firstObject)return value.slice(firstObject,last+1);
+  }
+  return value;
+}
+
 function normalizeBulkCourseImport(payload){
   const rawCourses=Array.isArray(payload)?payload:(Array.isArray(payload?.courses)?payload.courses:[]);
   const existingCodes=new Set(state.courses.map(c=>String(c.code||"").trim().toUpperCase()).filter(Boolean));
@@ -581,7 +596,7 @@ function bulkCreateCoursesModal(){
   modal.querySelector("#previewBulkCourses").addEventListener("click",()=>{
     let payload;
     try{
-      payload=JSON.parse(stripFrameworkJsonFence(textarea.value));
+      payload=JSON.parse(stripBulkCourseJsonFence(textarea.value));
     }catch(error){
       normalized=null;
       summary.innerHTML='<span class="badge danger">Invalid JSON</span>';
@@ -628,11 +643,12 @@ function bulkCreateCoursesModal(){
 
     importButton.disabled=true;importButton.textContent="Creating Courses…";
     let created=0,frameworks=0;
-    const failures=[];
+    const failures=[],frameworkFailures=[];
 
     for(const row of rows){
+      const courseRef=doc(collection(db,"courses"));
+      let courseCreated=false;
       try{
-        const courseRef=doc(collection(db,"courses"));
         await setDoc(courseRef,{
           ...row.data,
           catalogCourse:true,
@@ -642,25 +658,37 @@ function bulkCreateCoursesModal(){
           createdAt:serverTimestamp(),
           updatedAt:serverTimestamp()
         });
+        courseCreated=true;
         created++;
         if(row.framework){
-          await writeNewCourseFramework(courseRef.id,row.framework);
-          frameworks++;
+          try{
+            await writeNewCourseFramework(courseRef.id,row.framework);
+            frameworks++;
+          }catch(error){
+            console.error("Framework creation failed for",row.data?.code,error);
+            frameworkFailures.push((row.data?.code||"Course")+" — course created, but its framework needs attention: "+humanizeFirebaseError(error));
+          }
         }
       }catch(error){
         console.error("Bulk course creation failed for",row.data?.code,error);
-        failures.push((row.data?.code||"Course")+" — "+humanizeFirebaseError(error));
+        if(!courseCreated)failures.push((row.data?.code||"Course")+" — "+humanizeFirebaseError(error));
       }
     }
 
     await loadWorkspace();
-    if(!failures.length){
+    if(!failures.length&&!frameworkFailures.length){
       closeModal();
       showToast("Created "+created+" catalog course"+(created===1?"":"s")+(frameworks?" with "+frameworks+" framework"+(frameworks===1?"":"s"):"")+".");
     }else{
-      importButton.disabled=false;importButton.textContent="Retry Remaining Courses";
-      results.insertAdjacentHTML("afterbegin",'<div class="notice danger-notice"><strong>Some courses could not be completed.</strong><div class="bulk-messages errors">'+failures.map(x=>'<div>✕ '+esc(x)+'</div>').join("")+'</div></div>');
-      showToast(created+" course"+(created===1?"":"s")+" created; "+failures.length+" failed.");
+      // Revalidate against the refreshed catalog so already-created codes become
+      // safe skips. This prevents accidental duplicates on a second attempt.
+      modal.querySelector("#previewBulkCourses").click();
+      const messages=[
+        ...failures.map(x=>"Not created: "+x),
+        ...frameworkFailures
+      ];
+      results.insertAdjacentHTML("afterbegin",'<div class="notice danger-notice"><strong>Bulk creation completed with issues.</strong><p>Re-run the remaining course JSON after reviewing the messages below. Courses whose shells were created are now protected from duplication; incomplete frameworks can be finished with Bulk Import Framework.</p><div class="bulk-messages errors">'+messages.map(x=>'<div>✕ '+esc(x)+'</div>').join("")+'</div></div>');
+      showToast(created+" course"+(created===1?"":"s")+" created; "+messages.length+" item"+(messages.length===1?"":"s")+" need attention.");
     }
   });
 }
