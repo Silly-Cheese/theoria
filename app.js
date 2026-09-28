@@ -3003,6 +3003,7 @@ onAuthStateChanged(auth,async user=>{
     state.isSystemOwner=false;
   }
   renderUser(user,state.profile);
+  applyOwnerUI();
   authShell.classList.add("hidden");appShell.classList.remove("hidden");
 
   // System-owner onboarding must not depend on the rest of the academic
