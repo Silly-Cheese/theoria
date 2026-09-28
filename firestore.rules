@@ -412,10 +412,7 @@ service cloud.firestore {
         allow read: if assessmentOwner(assessmentId)
           || (
             isSelf(studentId)
-            && (
-              resource.data.complete == true
-              || resource.data.released == true
-            )
+            && resource.data.complete == true
           );
         allow create, update, delete: if assessmentOwner(assessmentId);
       }
