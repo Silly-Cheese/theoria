@@ -764,6 +764,100 @@ function availability(a){
   return "Open";
 }
 
+function assessmentTypeSummary(a){
+  if(a.randomDrawEnabled&&Array.isArray(a.randomDrawPlan)&&a.randomDrawPlan.length){
+    return a.randomDrawPlan.filter(row=>Number(row.count||0)>0).map(row=>({
+      type:row.type||"Question",
+      count:Number(row.count||0),
+      available:Number(row.available||0),
+      randomized:true
+    }));
+  }
+  const counts=new Map();
+  for(const q of a.questionPool||[]){
+    const type=String(q.type||"Question");
+    counts.set(type,(counts.get(type)||0)+1);
+  }
+  if(counts.size)return [...counts.entries()].map(([type,count])=>({type,count,available:count,randomized:false}));
+  return Number(a.questionCount||0)>0?[{type:"Questions",count:Number(a.questionCount||0),available:Number(a.questionCount||0),randomized:false}]:[];
+}
+
+function assessmentStudentDetailsBody(a){
+  const types=assessmentTypeSummary(a);
+  const instructions=Array.isArray(a.instructionSteps)&&a.instructionSteps.length?a.instructionSteps:String(a.instructions||"").split("\n").map(x=>x.trim()).filter(Boolean);
+  const content=(a.contentBlueprint||[]).filter(x=>Number(x.weight||0)>0);
+  const competencies=(a.competencyBlueprint||[]).filter(x=>Number(x.weight||0)>0);
+  const parts=(a.parts||[]).filter(x=>Number(x.weight||0)>0);
+
+  return '<div class="student-assessment-preview">'+
+    '<div class="assessment-preview-guard"><div class="preview-lock">Θ</div><div><strong>Assessment contents only</strong><span>Question prompts, passages, answer choices, and answer keys remain hidden until the assessment is legitimately opened.</span></div></div>'+
+    '<div class="assessment-preview-summary"><div><span>Status</span><strong>'+esc(availability(a))+'</strong></div><div><span>Questions</span><strong>'+esc(a.questionCount||0)+'</strong></div><div><span>Points</span><strong>'+esc(a.totalPoints||0)+'</strong></div><div><span>Duration</span><strong>'+esc(a.durationMinutes||0)+' min</strong></div></div>'+
+    '<section class="student-preview-section"><div class="panel-title">Schedule</div><div class="detail-list"><div><span>Opens</span><strong>'+esc(dateText(a.opensAt))+'</strong></div><div><span>Closes</span><strong>'+esc(dateText(a.closesAt))+'</strong></div></div></section>'+
+    '<section class="student-preview-section"><div class="panel-title">Question Types</div>'+
+      (types.length?'<div class="assessment-type-breakdown">'+types.map(row=>'<div><span>'+esc(row.type)+'</span><strong>'+esc(row.count)+'</strong><small>'+(row.randomized?(row.available?esc(row.available)+' available in pool • ':'')+'random draw':'on assessment')+'</small></div>').join("")+'</div>':'<div class="empty-mini">Question-type details are not available for this legacy assessment.</div>')+
+    '</section>'+
+    (parts.length?'<section class="student-preview-section"><div class="panel-title">Assessment Parts</div><div class="preview-blueprint-list">'+parts.map(row=>'<div><span>'+esc(row.title||row.label||"Assessment Part")+'</span><strong>'+esc(row.weight||0)+'%</strong></div>').join("")+'</div></section>':'')+
+    (content.length?'<section class="student-preview-section"><div class="panel-title">Content Coverage</div><div class="preview-blueprint-list">'+content.map(row=>'<div><span>'+esc(row.label||row.title||"Content Area")+'</span><strong>'+esc(row.weight||0)+'%</strong></div>').join("")+'</div></section>':'')+
+    (competencies.length?'<section class="student-preview-section"><div class="panel-title">Competency Emphasis</div><div class="preview-blueprint-list">'+competencies.map(row=>'<div><span>'+esc(row.label||row.title||"Competency")+'</span><strong>'+esc(row.weight||0)+'%</strong></div>').join("")+'</div></section>':'')+
+    (instructions.length?'<section class="student-preview-section"><div class="panel-title">Student Instructions</div><div class="preview-instructions">'+instructions.map((step,i)=>'<div><span>'+String(i+1).padStart(2,"0")+'</span><p>'+esc(step)+'</p></div>').join("")+'</div></section>':'')+
+  '</div>';
+}
+
+async function studentAssessmentDetails(id){
+  try{
+    const snap=await getDoc(doc(db,"assessments",id));
+    if(!snap.exists())return toast("Assessment not found.");
+    const a={id:snap.id,...snap.data()};
+    if(!a.sectionId)return toast("This assessment is not assigned to a section.");
+    const modal=core().openModal({
+      eyebrow:a.type||"Assessment",
+      title:a.title||"Assessment Details",
+      wide:true,
+      body:assessmentStudentDetailsBody(a),
+      footer:'<button class="primary-btn" data-close-modal>Close</button>'
+    });
+    return modal;
+  }catch(err){toast(err.message||"Unable to load assessment details.");}
+}
+
+async function studentAssessmentResults(id){
+  const s=state();
+  try{
+    const [aSnap,subSnap,resultSnap]=await Promise.all([
+      getDoc(doc(db,"assessments",id)),
+      getDoc(doc(db,"assessments",id,"submissions",s.user.uid)),
+      getDoc(doc(db,"assessments",id,"results",s.user.uid))
+    ]);
+    if(!aSnap.exists())return toast("Assessment not found.");
+    if(!resultSnap.exists()||resultSnap.data().complete!==true)return toast("This assessment has not been fully graded yet.");
+
+    const a={id:aSnap.id,...aSnap.data()},sub=subSnap.exists()?subSnap.data():{},result=resultSnap.data();
+    const order=Array.isArray(sub.questionOrder)?sub.questionOrder:[];
+    const pool=new Map((a.questionPool||[]).map(q=>[q.id,q]));
+    const grading=result.grading||{};
+    const questionRows=order.map((qid,index)=>{
+      const meta=pool.get(qid)||{},grade=grading[qid]||{};
+      const max=Number(meta.points||0);
+      const score=grade.score!==undefined&&grade.score!==null?Number(grade.score):null;
+      return '<div class="student-result-question"><div class="result-question-number">'+(index+1)+'</div><div><span>'+esc(meta.type||"Question")+'</span><strong>'+(score===null?'Not scored':esc(score)+' / '+esc(max||"—")+' pts')+'</strong>'+(grade.comment?'<p>'+esc(grade.comment)+'</p>':'')+'</div></div>';
+    }).join("");
+
+    const parts=result.partScores?Object.values(result.partScores):[];
+    core().setPage("exam",a.title||"Assessment Results");
+    $("#examRoot").innerHTML=
+      '<div class="student-results-shell"><button class="text-btn" data-phase3-action="back-assessments">← Assessments</button>'+
+      '<div class="student-results-hero"><div><div class="eyebrow">'+esc(a.courseCode||"")+' • '+esc(a.type||"Assessment")+'</div><h1>'+esc(a.title||"Assessment")+'</h1><p>Grading is complete. This summary shows your performance without exposing answer keys.</p></div><div class="result-score-mark"><strong>'+esc(result.percent)+'%</strong><span>'+esc(result.totalScore)+' / '+esc(result.maxScore)+' points</span></div></div>'+
+      '<div class="receipt-grid student-result-meta"><div><span>Candidate Number</span><strong>'+esc(result.candidateNumber||sub.candidateNumber||"—")+'</strong></div><div><span>Status</span><strong>Graded</strong></div><div><span>Submitted</span><strong>'+esc(dateText(sub.submittedAt))+'</strong></div><div><span>Graded</span><strong>'+esc(dateText(result.gradedAt))+'</strong></div></div>'+
+      (parts.length?'<section class="student-result-section"><div class="panel-title">Assessment Part Performance</div><div class="result-domain-grid">'+parts.map(x=>'<div><span>'+esc(x.title||"Assessment Part")+'</span><strong>'+esc(x.percent)+'%</strong><small>'+esc(x.score)+' / '+esc(x.max)+' pts</small></div>').join("")+'</div></section>':'')+
+      (questionRows?'<section class="student-result-section"><div class="panel-title">Question Performance</div><p class="student-result-note">Question text and answer keys are not displayed in this results summary.</p><div class="student-result-question-list">'+questionRows+'</div></section>':'')+
+      (result.overallComment?'<section class="student-result-section"><div class="panel-title">Instructor Comment</div><div class="academic-banner"><p>'+esc(result.overallComment)+'</p></div></section>':'')+
+      '<div class="student-results-actions"><button class="secondary-btn" data-phase3-action="student-assessment-details" data-id="'+a.id+'">Assessment Details</button><button class="primary-btn" data-phase3-action="back-assessments">Return to Assessments</button></div></div>';
+  }catch(err){
+    console.error("Unable to load student assessment results:",err);
+    toast(err?.code==="permission-denied"?"Your result is still being graded or is not yet available.":(err.message||"Unable to load assessment results."));
+  }
+}
+
 async function loadAssessments(){
   const s=state();if(!s)return [];
   const list=[];
@@ -803,12 +897,26 @@ async function renderAssessments(){
     let sub=null,result=null;
     try{const x=await getDoc(doc(db,"assessments",a.id,"submissions",s.user.uid));if(x.exists())sub=x.data();}catch(_){}
     try{const x=await getDoc(doc(db,"assessments",a.id,"results",s.user.uid));if(x.exists())result=x.data();}catch(_){}
-    const status=availability(a);
-    let action='<span class="badge">'+esc(status)+'</span>';
-    if(a.mode==="oral")action='<span class="badge gold">Instructor administered</span>';
-    else if(sub?.status==="submitted"||sub?.status==="graded")action='<button class="secondary-btn small-btn" data-phase3-action="receipt" data-id="'+a.id+'">Submission Receipt</button>';
-    else if(status==="Open")action='<button class="primary-btn small-btn" data-phase3-action="start-exam" data-id="'+a.id+'">'+(sub?"Resume":"Begin")+'</button>';
-    cards.push('<article class="assessment-card"><div class="assessment-type">'+esc(a.type)+'</div><h3>'+esc(a.title)+'</h3><p>'+esc(a.courseCode||"")+' • '+esc(a.sectionName||"")+'</p><div class="assessment-card-stats"><span>'+esc(a.durationMinutes||0)+' min</span><span>'+esc(a.totalPoints||0)+' pts</span><span>'+esc(status)+'</span></div>'+(result?'<div class="released-result"><strong>'+esc(result.percent)+'%</strong><span>Released result</span></div>':'')+'<div class="card-actions">'+action+'</div></article>');
+    const status=availability(a),graded=result?.complete===true;
+    let actions='<button class="secondary-btn small-btn" data-phase3-action="student-assessment-details" data-id="'+a.id+'">View Details</button>';
+    if(graded){
+      actions='<button class="primary-btn small-btn" data-phase3-action="student-assessment-results" data-id="'+a.id+'">View Results</button>'+
+        '<button class="secondary-btn small-btn" data-phase3-action="student-assessment-details" data-id="'+a.id+'">Details</button>';
+    }else if(a.mode==="oral"){
+      actions+='<span class="badge gold">Instructor administered</span>';
+    }else if(sub?.status==="submitted"||sub?.status==="graded"){
+      actions='<button class="secondary-btn small-btn" data-phase3-action="receipt" data-id="'+a.id+'">Submission Receipt</button>'+
+        '<button class="secondary-btn small-btn" data-phase3-action="student-assessment-details" data-id="'+a.id+'">Details</button>';
+    }else if(status==="Open"){
+      actions='<button class="primary-btn small-btn" data-phase3-action="start-exam" data-id="'+a.id+'">'+(sub?"Resume":"Begin")+'</button>'+
+        '<button class="secondary-btn small-btn" data-phase3-action="student-assessment-details" data-id="'+a.id+'">Details</button>';
+    }
+    const types=assessmentTypeSummary(a);
+    cards.push('<article class="assessment-card student-assessment-card"><div class="assessment-card-topline"><div class="assessment-type">'+esc(a.type)+'</div><span class="badge '+(status==="Open"?"live":status==="Scheduled"?"gold":"")+'">'+esc(status)+'</span></div><h3>'+esc(a.title)+'</h3><p>'+esc(a.courseCode||"")+' • '+esc(a.sectionName||"")+'</p>'+
+      '<div class="assessment-card-stats"><span>'+esc(a.durationMinutes||0)+' min</span><span>'+esc(a.totalPoints||0)+' pts</span><span>'+esc(a.questionCount||0)+' questions</span></div>'+
+      (types.length?'<div class="student-card-type-list">'+types.slice(0,4).map(row=>'<span>'+esc(row.count)+' '+esc(row.type)+'</span>').join("")+(types.length>4?'<span>+'+(types.length-4)+' more</span>':'')+'</div>':'')+
+      (graded?'<div class="released-result"><strong>'+esc(result.percent)+'%</strong><span>Graded result available</span></div>':'')+
+      '<div class="card-actions">'+actions+'</div></article>');
   }
   el.innerHTML='<div class="assessment-grid">'+cards.join("")+'</div>';
 }
@@ -849,7 +957,7 @@ async function assessmentModal(existing){
       '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Administration Defaults</h3><p>These settings are copied when the template is assigned and can be adjusted for the section.</p></div></div>'+
         '<div class="compact-field-grid"><div class="field"><label>Duration</label><div class="input-with-suffix"><input name="durationMinutes" type="number" min="0" value="'+esc(existing?.durationMinutes??60)+'"><span>min</span></div></div><div class="field"><label>Opens</label><input name="opensAt" type="datetime-local" value="'+esc(localDateTime(existing?.opensAt))+'"></div><div class="field"><label>Closes</label><input name="closesAt" type="datetime-local" value="'+esc(localDateTime(existing?.closesAt))+'"></div></div>'+
         '<div class="policy-card-grid"><label class="policy-card"><input type="checkbox" name="anonymousGrading" '+(existing?.anonymousGrading!==false?'checked':'')+'><div><strong>Anonymous Grading</strong><span>Use candidate numbers while evaluating.</span></div></label><label class="policy-card"><input type="checkbox" name="backtracking" '+(existing?.backtracking!==false?'checked':'')+'><div><strong>Allow Backtracking</strong><span>Students may revisit earlier questions.</span></div></label><label class="policy-card"><input type="checkbox" name="randomizeQuestions" '+(existing?.randomizeQuestions?'checked':'')+'><div><strong>Shuffle Question Order</strong><span>Shuffle the final question order for each student.</span></div></label></div>'+
-        '<div class="field"><label>Result Release</label><select name="feedbackPolicy"><option value="manual">Instructor releases results manually</option><option value="score_only">Score only when released</option></select></div>'+
+        '<div class="field"><label>Results Visibility</label><input type="hidden" name="feedbackPolicy" value="automatic"><div class="static-field">Results become visible to the student automatically when grading is complete.</div></div>'+
       '</section>'+
       '<section class="form-section"><div class="form-section-head"><div><span>03</span><h3>Student Instructions</h3><p>Add concise instructions one line at a time.</p></div><button type="button" class="secondary-btn small-btn" id="addAssessmentInstruction">+ Add Instruction</button></div><div id="assessmentInstructions" class="structured-list"></div></section>'+
       '<section class="form-section"><div class="form-section-head"><div><span>04</span><h3>Content Blueprint</h3><p>Choose course units and assign their intended share of the assessment.</p></div><div class="inline-actions"><button type="button" class="secondary-btn small-btn" id="balanceContentBlueprint">Balance</button><button type="button" class="secondary-btn small-btn" id="addContentBlueprint">+ Add Target</button></div></div><div id="contentBlueprintRows" class="blueprint-builder"></div><div class="builder-total"><span>Total</span><strong id="contentBlueprintTotal">0%</strong></div></section>'+
@@ -863,7 +971,7 @@ async function assessmentModal(existing){
 
   const form=modal.querySelector("#assessmentForm");
   form.courseId.value=selectedCourse.id;
-  form.feedbackPolicy.value=existing?.feedbackPolicy||"manual";
+  form.feedbackPolicy.value="automatic";
 
   let selectedQuestionIds=new Set();
   const questionBox=modal.querySelector("#assessmentQuestionChoices");
@@ -1244,13 +1352,13 @@ function configureRandomDrawModal(){
 function candidatesView(){
   const d=P3.detail,a=d.assessment,subMap=new Map(d.submissions.map(x=>[x.studentId,x])),resMap=new Map(d.results.map(x=>[x.studentId,x]));
   if(!d.members.length)return '<div class="empty-state"><div class="empty-symbol">C</div><h3>No enrolled candidates.</h3></div>';
-  return '<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Candidate</th><th>Status</th><th>Result</th><th>Release</th><th>Action</th></tr></thead><tbody>'+d.members.map(m=>{
+  return '<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Candidate</th><th>Status</th><th>Result</th><th>Student Visibility</th><th>Action</th></tr></thead><tbody>'+d.members.map(m=>{
     const sub=subMap.get(m.id),res=resMap.get(m.id),name=a.anonymousGrading!==false?(sub?.candidateNumber||"Not assigned"):m.displayName;
     let action="—";
     if(!sub&&(a.mode==="oral"))action='<button class="secondary-btn small-btn" data-phase3-action="create-evaluation" data-student="'+m.id+'">Begin Evaluation</button>';
     else if(sub)action='<button class="secondary-btn small-btn" data-phase3-action="grade-candidate" data-student="'+m.id+'">Grade</button>';
-    const release=res?(res.complete===false?'<span class="badge gold">Incomplete</span>':'<button class="text-btn" data-phase3-action="toggle-release" data-student="'+m.id+'">'+(res.released?"Unrelease":"Release")+'</button>'):"—";
-    return '<tr><td><strong>'+esc(name)+'</strong></td><td><span class="badge">'+esc(sub?.status||"Not started")+'</span></td><td>'+(res?'<strong>'+esc(res.percent)+'%</strong>':'—')+'</td><td>'+release+'</td><td>'+action+'</td></tr>';
+    const visibility=res?(res.complete===false?'<span class="badge gold">Private while grading</span>':'<span class="badge live">Visible to student</span>'):"—";
+    return '<tr><td><strong>'+esc(name)+'</strong></td><td><span class="badge">'+esc(sub?.status||"Not started")+'</span></td><td>'+(res?'<strong>'+esc(res.percent)+'%</strong>':'—')+'</td><td>'+visibility+'</td><td>'+action+'</td></tr>';
   }).join("")+'</tbody></table></div>';
 }
 
@@ -1995,7 +2103,7 @@ function metrics(a,d,grading,sub){
 }
 
 async function persistResult(sub,grading,existing,overallComment=existing?.overallComment||""){
-  const d=P3.detail,a=d.assessment,m=metrics(a,d,grading,sub),released=existing?.released||false,batch=writeBatch(db);
+  const d=P3.detail,a=d.assessment,m=metrics(a,d,grading,sub),released=m.complete?true:(existing?.released||false),batch=writeBatch(db);
   batch.set(doc(db,"assessments",a.id,"results",sub.studentId),{studentId:sub.studentId,candidateNumber:sub.candidateNumber,totalScore:m.total,maxScore:m.max,percent:m.percent,grading,partScores:m.partScores,released,complete:m.complete,overallComment,gradedAt:serverTimestamp(),gradedBy:state().user.uid},{merge:true});
   if(m.complete){
     batch.update(doc(db,"assessments",a.id,"submissions",sub.studentId),{status:"graded",updatedAt:serverTimestamp()});
