@@ -644,7 +644,7 @@ async function assessmentModal(existing){
     contentBox.innerHTML="";competencyBox.innerHTML="";
     targetOptions("content").slice(0,Math.min(4,targetOptions("content").length)).forEach(x=>addBlueprintRow("content",{...x,weight:0}));
     targetOptions("competency").slice(0,Math.min(4,targetOptions("competency").length)).forEach(x=>addBlueprintRow("competency",{...x,weight:0}));
-    selectedQuestionIds.clear();
+    selectedQuestionIds.clear();drawCounts.clear();
     await loadBankQuestions(selectedCourse);
     populateQuestionTypes();renderBankQuestions();updateQuestionSummary();
   };
@@ -661,14 +661,46 @@ async function assessmentModal(existing){
     if(competencyBlueprint.length&&roundBlueprint(totalWeight(competencyBlueprint))!==100)return toast("Competency blueprint must total 100%.");
     const instructionSteps=[...instructionBox.querySelectorAll(".structured-input")].map(x=>x.value.trim()).filter(Boolean);
     const chosenQuestions=existing?[]:bankQuestions.filter(q=>selectedQuestionIds.has(q.id));
+    const randomDrawEnabled=!existing&&!!randomDrawToggle?.checked;
+    let randomDrawPlan=[];
+    let plannedQuestionCount=chosenQuestions.length;
+    let plannedTotalPoints=chosenQuestions.reduce((n,q)=>n+Number(q.pointsDefault||1),0);
+
+    if(!existing&&randomDrawEnabled){
+      if(!chosenQuestions.length)return toast("Select at least one Question Bank question for the random pool.");
+      const groups=selectedGroups();
+      randomDrawPlan=[...groups.entries()].map(([questionType,questions])=>({
+        type:questionType,
+        count:Math.max(0,Math.floor(Number(drawCounts.get(questionType)||0))),
+        available:questions.length,
+        pointsPerQuestion:questions.length?Number(questions[0].pointsDefault||1):0
+      })).filter(x=>x.count>0);
+
+      if(!randomDrawPlan.length)return toast("Set at least one random draw count above zero.");
+      for(const row of randomDrawPlan){
+        if(row.count>row.available)return toast("The "+row.type+" draw exceeds the number of selected questions.");
+        const group=groups.get(row.type)||[];
+        const pointValues=[...new Set(group.map(q=>Number(q.pointsDefault||1)))];
+        if(pointValues.length!==1)return toast("All selected "+row.type+" questions must use the same point value for randomized exams. Adjust their Question Bank points first.");
+        row.pointsPerQuestion=pointValues[0];
+      }
+      plannedQuestionCount=randomDrawPlan.reduce((n,row)=>n+row.count,0);
+      plannedTotalPoints=randomDrawPlan.reduce((n,row)=>n+(row.count*row.pointsPerQuestion),0);
+    }
+
     const data={
       ownerId:s.user.uid,courseId:course.id,courseCode:course.code,courseTitle:course.title,
       sectionId:existing?.sectionId||"",sectionName:existing?.sectionName||"",templateSourceId:existing?.templateSourceId||"",
       title:String(fd.get("title")).trim(),type,mode:type==="Oral Examination"?"oral":"written",
       status:existing?.status||"Draft",durationMinutes:Number(fd.get("durationMinutes")||0),opensAt:timestampFrom(fd.get("opensAt")),closesAt:timestampFrom(fd.get("closesAt")),
-      instructions:instructionSteps.join("\n"),instructionSteps,anonymousGrading:form.elements.anonymousGrading.checked,backtracking:form.elements.backtracking.checked,randomizeQuestions:form.elements.randomizeQuestions.checked,
+      instructions:instructionSteps.join("\n"),instructionSteps,anonymousGrading:form.elements.anonymousGrading.checked,backtracking:form.elements.backtracking.checked,randomizeQuestions:randomDrawEnabled?true:form.elements.randomizeQuestions.checked,
+      randomDrawEnabled:existing?!!existing.randomDrawEnabled:randomDrawEnabled,
+      randomDrawPlan:existing?(existing.randomDrawPlan||[]):randomDrawPlan,
       feedbackPolicy:String(fd.get("feedbackPolicy")),contentBlueprint,competencyBlueprint,parts:existing?.parts?.length?existing.parts:defaultParts(type),
-      questionIds:existing?.questionIds||[],questionCount:Number(existing?.questionCount||0),totalPoints:Number(existing?.totalPoints||0),updatedAt:serverTimestamp()
+      questionIds:existing?.questionIds||[],questionPool:existing?(existing.questionPool||[]):[],
+      poolQuestionCount:existing?Number(existing.poolQuestionCount||existing.questionIds?.length||0):chosenQuestions.length,
+      questionCount:existing?Number(existing.questionCount||0):plannedQuestionCount,
+      totalPoints:existing?Number(existing.totalPoints||0):plannedTotalPoints,updatedAt:serverTimestamp()
     };
     try{
       let id=existing?.id;
@@ -679,8 +711,13 @@ async function assessmentModal(existing){
         id=assessmentRef.id;
         const questionRefs=chosenQuestions.map(()=>doc(collection(db,"assessments",id,"questions")));
         const questionIds=questionRefs.map(r=>r.id);
-        const totalPoints=chosenQuestions.reduce((n,q)=>n+Number(q.pointsDefault||1),0);
-        await setDoc(assessmentRef,{...data,questionIds,questionCount:chosenQuestions.length,totalPoints,createdAt:serverTimestamp()});
+        const questionPool=chosenQuestions.map((item,index)=>({
+          id:questionRefs[index].id,
+          itemId:item.id,
+          type:item.type,
+          points:Number(item.pointsDefault||1)
+        }));
+        await setDoc(assessmentRef,{...data,questionIds,questionPool,poolQuestionCount:chosenQuestions.length,questionCount:plannedQuestionCount,totalPoints:plannedTotalPoints,createdAt:serverTimestamp()});
         for(let offset=0;offset<chosenQuestions.length;offset+=180){
           const batch=writeBatch(db),chunk=chosenQuestions.slice(offset,offset+180);
           chunk.forEach((item,index)=>{
@@ -698,7 +735,7 @@ async function assessmentModal(existing){
           await batch.commit();
         }
       }
-      core().closeModal();await openAssessment(id);toast(existing?"Assessment updated.":(chosenQuestions.length?"Assessment template created with "+chosenQuestions.length+" Question Bank question"+(chosenQuestions.length===1?"":"s")+".":"Assessment template created. You can add questions from the Questions tab."));
+      core().closeModal();await openAssessment(id);toast(existing?"Assessment updated.":(chosenQuestions.length?(randomDrawEnabled?"Randomized assessment template created from a "+chosenQuestions.length+"-question pool; each student receives "+plannedQuestionCount+".":"Assessment template created with "+chosenQuestions.length+" Question Bank question"+(chosenQuestions.length===1?"":"s")+"."):"Assessment template created. You can add questions from the Questions tab."));
     }catch(err){toast(err.message||"Unable to save assessment.");}
   };
 }
