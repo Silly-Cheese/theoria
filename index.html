@@ -114,7 +114,6 @@
           </div>
           <div class="page-actions">
             <button class="secondary-btn student-only" data-go="sections">Join Section</button>
-            <button class="secondary-btn instructor-only owner-setup-only hidden" id="systemOwnerSetupBtn">System Owner Setup</button>
             <button class="primary-btn instructor-only" id="homeCreateSection">Create Section</button>
           </div>
         </div>
@@ -134,7 +133,7 @@
       <section id="page-courses" class="page">
         <div class="page-head">
           <div><div class="eyebrow">Curriculum</div><h1 class="page-title">Course Catalog</h1><p class="page-subtitle">Official Theoria courses with shared frameworks and master Question Banks.</p></div>
-          <button class="primary-btn instructor-only owner-only hidden" id="createCourseBtn">Create Catalog Course</button>
+          <div class="page-actions owner-only hidden"><button class="secondary-btn instructor-only" id="bulkCreateCoursesBtn">Bulk Add with AI</button><button class="primary-btn instructor-only" id="createCourseBtn">Create Catalog Course</button></div>
         </div>
         <div id="coursesContent"></div>
       </section>
@@ -215,8 +214,8 @@
 
   <div id="modalRoot"></div>
   <div id="toast" class="toast"></div>
-  <script type="module" src="./app.js?v=20260928-owner2"></script>
-  <script type="module" src="./phase3.js?v=20260928-owner2"></script>
-  <script type="module" src="./phase4.js?v=20260928-owner2"></script>
+  <script type="module" src="./app.js?v=20260928-bulkcourses1"></script>
+  <script type="module" src="./phase3.js?v=20260928-bulkcourses1"></script>
+  <script type="module" src="./phase4.js?v=20260928-bulkcourses1"></script>
 </body>
 </html>
