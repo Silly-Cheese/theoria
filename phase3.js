@@ -133,6 +133,12 @@ async function loadItems(){
   if(!s||s.role!=="instructor")return [];
   const all=[];
   for(const c of s.courses){
+    if(!c.ownerId){
+      try{
+        await updateDoc(doc(db,"courses",c.id),{ownerId:s.user.uid,updatedAt:serverTimestamp()});
+        c.ownerId=s.user.uid;
+      }catch(_){}
+    }
     const snap=await getDocs(collection(db,"courses",c.id,"items"));
     snap.docs.forEach(d=>all.push({id:d.id,courseId:c.id,courseCode:c.code,courseTitle:c.title,...d.data()}));
   }
@@ -385,6 +391,19 @@ async function assessmentModal(existing){
   const types=["Academic Exercise","Unit Evaluation","Semester I Examination","Comprehensive Final Examination","Oral Examination","Disputation"];
   let selectedCourse=s.courses.find(c=>c.id===existing?.courseId)||s.courses[0];
   let fw=await framework(selectedCourse.id);
+  let bankQuestions=[];
+  const loadBankQuestions=async course=>{
+    if(!course.ownerId){
+      try{
+        await updateDoc(doc(db,"courses",course.id),{ownerId:s.user.uid,updatedAt:serverTimestamp()});
+        course.ownerId=s.user.uid;
+      }catch(_){}
+    }
+    const snap=await getDocs(collection(db,"courses",course.id,"items"));
+    bankQuestions=snap.docs.map(d=>({id:d.id,courseId:course.id,...d.data()}))
+      .sort((a,b)=>String(a.topicNumber||"").localeCompare(String(b.topicNumber||""),undefined,{numeric:true})||String(a.prompt||"").localeCompare(String(b.prompt||"")));
+  };
+  if(!existing) await loadBankQuestions(selectedCourse);
   const currentType=existing?.type||"Unit Evaluation";
   const typeTiles=types.map((type,i)=>'<label class="type-tile '+(currentType===type?'selected':'')+'"><input type="radio" name="type" value="'+esc(type)+'" '+(currentType===type?'checked':'')+'><span class="type-tile-mark">'+String(i+1).padStart(2,"0")+'</span><span>'+esc(type)+'</span></label>').join("");
   const initialInstructions=Array.isArray(existing?.instructionSteps)&&existing.instructionSteps.length?existing.instructionSteps:(existing?.instructions?[existing.instructions]:[""]);
@@ -408,12 +427,51 @@ async function assessmentModal(existing){
       '<section class="form-section"><div class="form-section-head"><div><span>03</span><h3>Student Instructions</h3><p>Add concise instructions one line at a time.</p></div><button type="button" class="secondary-btn small-btn" id="addAssessmentInstruction">+ Add Instruction</button></div><div id="assessmentInstructions" class="structured-list"></div></section>'+
       '<section class="form-section"><div class="form-section-head"><div><span>04</span><h3>Content Blueprint</h3><p>Choose course units and assign their intended share of the assessment.</p></div><div class="inline-actions"><button type="button" class="secondary-btn small-btn" id="balanceContentBlueprint">Balance</button><button type="button" class="secondary-btn small-btn" id="addContentBlueprint">+ Add Target</button></div></div><div id="contentBlueprintRows" class="blueprint-builder"></div><div class="builder-total"><span>Total</span><strong id="contentBlueprintTotal">0%</strong></div></section>'+
       '<section class="form-section"><div class="form-section-head"><div><span>05</span><h3>Competency Blueprint</h3><p>Define the academic competencies this assessment is intended to measure.</p></div><div class="inline-actions"><button type="button" class="secondary-btn small-btn" id="balanceCompetencyBlueprint">Balance</button><button type="button" class="secondary-btn small-btn" id="addCompetencyBlueprint">+ Add Target</button></div></div><div id="competencyBlueprintRows" class="blueprint-builder"></div><div class="builder-total"><span>Total</span><strong id="competencyBlueprintTotal">0%</strong></div></section>'+
+      (!existing?'<section class="form-section question-bank-builder"><div class="form-section-head"><div><span>06</span><h3>Questions</h3><p>Select the questions that belong on this assessment before creating the template.</p></div><div class="question-selection-summary"><strong id="selectedQuestionCount">0</strong><span>questions</span><b id="selectedQuestionPoints">0 pts</b></div></div><div class="question-bank-toolbar"><div class="field"><label>Search Question Bank</label><input id="assessmentQuestionSearch" placeholder="Search prompt, topic, competency, or tag"></div><div class="field"><label>Question Type</label><select id="assessmentQuestionType"><option value="">All question types</option></select></div></div><div id="assessmentQuestionChoices" class="assessment-question-picker"></div></section>':'')+
       '<div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">'+(existing?"Save Assessment":"Create Template")+'</button></div></form>'
   });
 
   const form=modal.querySelector("#assessmentForm");
   form.courseId.value=selectedCourse.id;
   form.feedbackPolicy.value=existing?.feedbackPolicy||"manual";
+
+  let selectedQuestionIds=new Set();
+  const questionBox=modal.querySelector("#assessmentQuestionChoices");
+  const questionSearch=modal.querySelector("#assessmentQuestionSearch");
+  const questionType=modal.querySelector("#assessmentQuestionType");
+  const updateQuestionSummary=()=>{
+    if(existing)return;
+    const selected=bankQuestions.filter(q=>selectedQuestionIds.has(q.id));
+    modal.querySelector("#selectedQuestionCount").textContent=String(selected.length);
+    modal.querySelector("#selectedQuestionPoints").textContent=selected.reduce((n,q)=>n+Number(q.pointsDefault||1),0)+" pts";
+  };
+  const renderBankQuestions=()=>{
+    if(existing||!questionBox)return;
+    const q=String(questionSearch?.value||"").trim().toLowerCase(),type=String(questionType?.value||"");
+    const filtered=bankQuestions.filter(item=>(!type||item.type===type)&&(!q||[item.prompt,item.topicTitle,item.topicNumber,(item.competencyCodes||[]).join(" "),(item.tags||[]).join(" ")].join(" ").toLowerCase().includes(q)));
+    questionBox.innerHTML=filtered.length?filtered.map(item=>
+      '<label class="assessment-question-choice '+(selectedQuestionIds.has(item.id)?'selected':'')+'">'+
+        '<input type="checkbox" value="'+item.id+'" '+(selectedQuestionIds.has(item.id)?'checked':'')+'>'+
+        '<div class="question-choice-copy"><div class="question-choice-meta"><span>'+esc(item.type||"Question")+'</span><span>'+esc(item.topicNumber||"No topic")+'</span><span>'+esc(item.pointsDefault||1)+' pts</span></div><strong>'+esc(item.prompt||"Untitled question")+'</strong>'+
+        ((item.competencyCodes||[]).length?'<div class="item-tags">'+item.competencyCodes.map(c=>'<span>'+esc(c)+'</span>').join("")+'</div>':'')+
+        '</div><div class="question-select-mark">✓</div></label>'
+    ).join(""):'<div class="empty-state compact-empty"><div class="empty-symbol">Q</div><h3>No matching questions.</h3><p>'+(bankQuestions.length?"Adjust the search or filter.":"Create questions in the Question Bank for this course first.")+'</p></div>';
+    questionBox.querySelectorAll('input[type="checkbox"]').forEach(input=>input.onchange=()=>{
+      if(input.checked)selectedQuestionIds.add(input.value);else selectedQuestionIds.delete(input.value);
+      input.closest(".assessment-question-choice").classList.toggle("selected",input.checked);
+      updateQuestionSummary();
+    });
+  };
+  const populateQuestionTypes=()=>{
+    if(existing||!questionType)return;
+    const types=[...new Set(bankQuestions.map(x=>x.type).filter(Boolean))].sort();
+    questionType.innerHTML='<option value="">All question types</option>'+types.map(t=>'<option value="'+esc(t)+'">'+esc(t)+'</option>').join("");
+  };
+  if(!existing){
+    populateQuestionTypes();renderBankQuestions();updateQuestionSummary();
+    questionSearch.addEventListener("input",renderBankQuestions);
+    questionType.addEventListener("change",renderBankQuestions);
+  }
 
   const instructionBox=modal.querySelector("#assessmentInstructions");
   const addInstruction=(value="")=>{
@@ -464,6 +522,9 @@ async function assessmentModal(existing){
     contentBox.innerHTML="";competencyBox.innerHTML="";
     targetOptions("content").slice(0,Math.min(4,targetOptions("content").length)).forEach(x=>addBlueprintRow("content",{...x,weight:0}));
     targetOptions("competency").slice(0,Math.min(4,targetOptions("competency").length)).forEach(x=>addBlueprintRow("competency",{...x,weight:0}));
+    selectedQuestionIds.clear();
+    await loadBankQuestions(selectedCourse);
+    populateQuestionTypes();renderBankQuestions();updateQuestionSummary();
   };
 
   const readBlueprint=kind=>{
@@ -477,6 +538,7 @@ async function assessmentModal(existing){
     if(contentBlueprint.length&&roundBlueprint(totalWeight(contentBlueprint))!==100)return toast("Content blueprint must total 100%.");
     if(competencyBlueprint.length&&roundBlueprint(totalWeight(competencyBlueprint))!==100)return toast("Competency blueprint must total 100%.");
     const instructionSteps=[...instructionBox.querySelectorAll(".structured-input")].map(x=>x.value.trim()).filter(Boolean);
+    const chosenQuestions=existing?[]:bankQuestions.filter(q=>selectedQuestionIds.has(q.id));
     const data={
       ownerId:s.user.uid,courseId:course.id,courseCode:course.code,courseTitle:course.title,
       sectionId:existing?.sectionId||"",sectionName:existing?.sectionName||"",templateSourceId:existing?.templateSourceId||"",
@@ -488,9 +550,33 @@ async function assessmentModal(existing){
     };
     try{
       let id=existing?.id;
-      if(existing)await updateDoc(doc(db,"assessments",id),data);
-      else id=(await addDoc(collection(db,"assessments"),{...data,createdAt:serverTimestamp()})).id;
-      core().closeModal();await openAssessment(id);toast(existing?"Assessment updated.":"Assessment template created. Add questions from the Question Bank, then assign it to a section.");
+      if(existing){
+        await updateDoc(doc(db,"assessments",id),data);
+      }else{
+        const assessmentRef=doc(collection(db,"assessments"));
+        id=assessmentRef.id;
+        const questionRefs=chosenQuestions.map(()=>doc(collection(db,"assessments",id,"questions")));
+        const questionIds=questionRefs.map(r=>r.id);
+        const totalPoints=chosenQuestions.reduce((n,q)=>n+Number(q.pointsDefault||1),0);
+        await setDoc(assessmentRef,{...data,questionIds,questionCount:chosenQuestions.length,totalPoints,createdAt:serverTimestamp()});
+        for(let offset=0;offset<chosenQuestions.length;offset+=180){
+          const batch=writeBatch(db),chunk=chosenQuestions.slice(offset,offset+180);
+          chunk.forEach((item,index)=>{
+            const ref=questionRefs[offset+index],order=offset+index+1;
+            batch.set(ref,{
+              itemId:item.id,order,partId:(data.parts?.[0]?.id||"main"),type:item.type,prompt:item.prompt,
+              stimulus:item.stimulus||"",sourceTitle:item.sourceTitle||"",options:item.options||[],points:Number(item.pointsDefault||1),
+              topicId:item.topicId||"",topicTitle:item.topicTitle||"",topicNumber:item.topicNumber||"",
+              competencyIds:item.competencyIds||[],competencyCodes:item.competencyCodes||[],createdAt:serverTimestamp()
+            });
+            batch.set(doc(db,"assessments",id,"keys",ref.id),{
+              itemId:item.id,correctAnswer:item.correctAnswer??"",explanation:item.explanation||"",rubric:item.rubric||[],createdAt:serverTimestamp()
+            });
+          });
+          await batch.commit();
+        }
+      }
+      core().closeModal();await openAssessment(id);toast(existing?"Assessment updated.":(chosenQuestions.length?"Assessment template created with "+chosenQuestions.length+" Question Bank question"+(chosenQuestions.length===1?"":"s")+".":"Assessment template created. You can add questions from the Questions tab."));
     }catch(err){toast(err.message||"Unable to save assessment.");}
   };
 }
