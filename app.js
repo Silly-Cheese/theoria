@@ -194,10 +194,10 @@ function renderHome(){
     ? '<div class="stat"><div class="stat-label">Active Sections</div><div class="stat-value">'+count+'</div><div class="stat-note">Teaching spaces</div></div>'+
       '<div class="stat"><div class="stat-label">Course Frameworks</div><div class="stat-value">'+state.courses.length+'</div><div class="stat-note">Reusable curricula</div></div>'+
       '<div class="stat"><div class="stat-label">Assessment Engine</div><div class="stat-value">Live</div><div class="stat-note">Phase 3 active</div></div>'+
-      '<div class="stat"><div class="stat-label">Academic Records</div><div class="stat-value">IV</div><div class="stat-note">Certification phase</div></div>'
+      '<div class="stat"><div class="stat-label">Academic Records</div><div class="stat-value">Live</div><div class="stat-note">Certification & audit active</div></div>'
     : '<div class="stat"><div class="stat-label">Enrolled Sections</div><div class="stat-value">'+count+'</div><div class="stat-note">Current courses</div></div>'+
       '<div class="stat"><div class="stat-label">Course Frameworks</div><div class="stat-value">'+state.courses.length+'</div><div class="stat-note">Available through sections</div></div>'+
-      '<div class="stat"><div class="stat-label">Current Mastery</div><div class="stat-value">—</div><div class="stat-note">Analytics arrive in Phase 4</div></div>'+
+      '<div class="stat"><div class="stat-label">Current Mastery</div><div class="stat-value">Live</div><div class="stat-note">Competency analytics active</div></div>'+
       '<div class="stat"><div class="stat-label">Final Record</div><div class="stat-value">—</div><div class="stat-note">Not yet certified</div></div>';
 
   $("#homeSections").innerHTML = state.sections.length
