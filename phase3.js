@@ -153,7 +153,7 @@ function itemCard(item){
     '<span class="badge">'+esc(item.difficulty||"Moderate")+'</span></div>'+
     '<div class="item-tags"><span>'+esc(item.topicNumber||"No topic")+'</span><span>'+esc(item.cognitiveLevel||"Application")+'</span><span>'+esc(item.pointsDefault||1)+' pts</span>'+
     (item.competencyCodes||[]).map(x=>'<span>'+esc(x)+'</span>').join("")+'</div>'+
-    '<div class="card-actions"><button class="secondary-btn small-btn" data-phase3-action="edit-item" data-course="'+item.courseId+'" data-id="'+item.id+'">Edit</button></div></article>';
+    '<div class="card-actions"><button class="secondary-btn small-btn" data-phase3-action="edit-item" data-course="'+item.courseId+'" data-id="'+item.id+'">Edit</button><button class="danger-btn small-btn" data-phase3-action="delete-bank-question" data-course="'+item.courseId+'" data-id="'+item.id+'">Delete</button></div></article>';
 }
 
 async function renderItemBank(){
@@ -178,6 +178,24 @@ async function renderItemBank(){
   $("#itemTypeFilter").addEventListener("change",filter);
   $("#itemSearch").addEventListener("input",filter);
   filter();
+}
+
+async function deleteBankQuestion(courseId,itemId){
+  const item=P3.items.find(x=>x.courseId===courseId&&x.id===itemId);
+  if(!item)return toast("Question not found.");
+  const modal=core().openModal({
+    eyebrow:"Delete Question",
+    title:"Remove from Question Bank",
+    body:'<div class="delete-assessment-warning"><div class="delete-warning-icon">!</div><div><strong>This removes the reusable Question Bank copy.</strong><p>Assessments that already copied this question keep their existing snapshot and answer key. Future assessments will no longer be able to select it from the bank.</p></div></div>'+
+      '<div class="question-delete-preview"><span>'+esc(item.type||"Question")+'</span><strong>'+esc(item.prompt||"Untitled question")+'</strong><small>'+esc(item.courseCode||"Course")+' • '+esc(item.pointsDefault||1)+' pts</small></div>',
+    footer:'<button class="secondary-btn" data-close-modal>Cancel</button><button class="danger-btn" id="confirmDeleteBankQuestion">Delete Question</button>'
+  });
+  modal.querySelector("#confirmDeleteBankQuestion").onclick=async()=>{
+    try{
+      await deleteDoc(doc(db,"courses",courseId,"items",itemId));
+      core().closeModal();await renderItemBank();toast("Question deleted from the Question Bank.");
+    }catch(err){toast(err.message||"Unable to delete the question.");}
+  };
 }
 
 async function itemModal(existing){
@@ -1359,6 +1377,7 @@ document.addEventListener("click",async e=>{
   if(a==="assign-current-section")return chooseAssessmentForSection(b.dataset.section);
   if(a==="edit-assignment")return editAssignedAssessmentModal(b.dataset.id);
   if(a==="delete-assigned")return deleteAssignedAssessment(b.dataset.id);
+  if(a==="delete-bank-question")return deleteBankQuestion(b.dataset.course,b.dataset.id);
   if(a==="edit-item")return itemModal(P3.items.find(x=>x.id===b.dataset.id&&x.courseId===b.dataset.course));
   if(a==="open-assessment")return openAssessment(b.dataset.id);
   if(a==="back-assessments"){clearInterval(P3.timer);P3.exam=null;core().setPage("assessments");return renderAssessments();}
