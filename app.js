@@ -541,12 +541,21 @@ async function loadSectionData(section){
     const gradeSnap=await getDocs(query(collection(db,"sections",section.id,"grades"),where("studentId","==",state.user.uid)));
     grades=gradeSnap.docs.map(d=>({id:d.id,...d.data()}));
   }
+  const assignments=assignmentSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(a.dueDate||"").localeCompare(String(b.dueDate||"")));
+  let assignmentSubmissions=[];
+  if(state.role==="student"){
+    for(const assignment of assignments){
+      try{
+        const sub=await getDoc(doc(db,"sections",section.id,"assignments",assignment.id,"submissions",state.user.uid));
+        if(sub.exists()) assignmentSubmissions.push({id:sub.id,assignmentId:assignment.id,...sub.data()});
+      }catch(_){}
+    }
+  }
   return {
-    course, framework,
-    assignments:assignmentSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(a.dueDate||"").localeCompare(String(b.dueDate||""))),
+    course, framework, assignments,
     resources:resourceSnap.docs.map(d=>({id:d.id,...d.data()})),
     members:members.sort((a,b)=>String(a.displayName||"").localeCompare(String(b.displayName||""))),
-    grades
+    grades, assignmentSubmissions
   };
 }
 
@@ -579,12 +588,31 @@ function renderFrameworkReadOnly(){
   return competencyPanel+'<div class="unit-list">'+fw.units.map((u,i)=>'<article class="unit-card"><div class="unit-head"><div><div class="unit-number">Unit '+esc(u.order||i+1)+'</div><h3>'+esc(u.title)+'</h3>'+(u.description?'<div class="topic-detail">'+esc(u.description)+'</div>':'')+'</div></div><div class="topic-list">'+((u.topics||[]).length?sortByOrder(u.topics).map(t=>'<div class="topic-row"><div class="topic-index">'+esc(t.number||"")+'</div><div><div class="topic-title">'+esc(t.title)+'</div>'+(t.learningObjective?'<div class="topic-detail"><strong>Learning Objective:</strong> '+esc(t.learningObjective)+'</div>':'')+(t.essentialKnowledge?'<div class="topic-detail"><strong>Essential Knowledge:</strong> '+esc(t.essentialKnowledge)+'</div>':'')+(t.competencyCodes?.length?'<div class="topic-detail"><strong>Competencies:</strong> '+esc(t.competencyCodes.join(", "))+'</div>':'')+'</div></div>').join(""):'<div class="empty-mini">No topics yet.</div>')+'</div></article>').join("")+'</div>';
 }
 
+function assignmentDueState(assignment){
+  if(!assignment.dueDate)return {label:"No due date",late:false};
+  const due=new Date(assignment.dueDate+"T23:59:59");
+  const late=Date.now()>due.getTime();
+  return {label:"Due "+formatDate(assignment.dueDate),late};
+}
+
 function renderAssignments(){
   const items=state.sectionData.assignments.filter(a=>state.role==="instructor" || a.status!=="Draft");
-  const list=items.length ? '<div class="assignment-list">'+items.map(a=>
-    '<div class="assignment-row"><div><div class="card-kicker">'+esc(a.type||"Assignment")+'</div><h4>'+esc(a.title)+'</h4>'+(a.description?'<p>'+esc(a.description)+'</p>':'')+(a.instructionSteps?.length?'<div class="assignment-step-preview">'+a.instructionSteps.slice(0,3).map((step,i)=>'<div><span>'+String(i+1).padStart(2,"0")+'</span>'+esc(step)+'</div>').join("")+(a.instructionSteps.length>3?'<small>+'+(a.instructionSteps.length-3)+' more step'+(a.instructionSteps.length-3===1?"":"s")+'</small>':'')+'</div>':'')+'<div class="assignment-meta"><span>'+esc(a.points||0)+' points</span><span>Due '+esc(formatDate(a.dueDate))+'</span>'+(a.requirements?.length?'<span>'+a.requirements.length+' requirement'+(a.requirements.length===1?"":"s")+'</span>':'')+'<span class="badge '+(a.status==="Published"?'live':'gold')+'">'+esc(a.status||"Published")+'</span></div></div>'+(state.role==="instructor"?'<div class="inline-actions"><button class="text-btn" data-action="edit-assignment" data-id="'+a.id+'">Edit</button></div>':'')+'</div>'
-  ).join("")+'</div>' : '<div class="empty-state"><div class="empty-symbol">A</div><h3>No assignments yet.</h3><p>'+(state.role==="instructor"?"Create coursework, readings, written responses, research milestones, or academic exercises.":"Nothing has been assigned in this section yet.")+'</p></div>';
-  return '<div class="page-head" style="margin-bottom:16px"><div><div class="panel-title">Coursework</div></div>'+(state.role==="instructor"?'<button class="primary-btn small-btn" data-action="create-assignment">Create Assignment</button>':'')+'</div>'+list;
+  const submissionMap=new Map((state.sectionData.assignmentSubmissions||[]).map(x=>[x.assignmentId,x]));
+  const gradeMap=new Map((state.sectionData.grades||[]).map(g=>[g.assignmentId,g]));
+  const list=items.length ? '<div class="assignment-list">'+items.map(a=>{
+    const due=assignmentDueState(a),submission=submissionMap.get(a.id),grade=gradeMap.get(a.id);
+    const studentStatus=grade?"Graded":submission?.status==="submitted"?"Submitted":submission?.status==="draft"?"Draft saved":due.late?"Late / Not submitted":"Not started";
+    const statusClass=grade?"live":submission?.status==="submitted"?"live":submission?.status==="draft"?"gold":due.late?"danger":"";
+    return '<div class="assignment-row coursework-card"><div><div class="card-kicker">'+esc(a.type||"Assignment")+'</div><h4>'+esc(a.title)+'</h4>'+(a.description?'<p>'+esc(a.description)+'</p>':'')+
+      (a.instructionSteps?.length?'<div class="assignment-step-preview">'+a.instructionSteps.slice(0,3).map((step,i)=>'<div><span>'+String(i+1).padStart(2,"0")+'</span>'+esc(step)+'</div>').join("")+(a.instructionSteps.length>3?'<small>+'+(a.instructionSteps.length-3)+' more step'+(a.instructionSteps.length-3===1?"":"s")+'</small>':'')+'</div>':'')+
+      '<div class="assignment-meta"><span>'+esc(a.points||0)+' points</span><span class="'+(due.late&&!submission?"late-text":"")+'">'+esc(due.label)+'</span>'+(a.requirements?.length?'<span>'+a.requirements.length+' requirement'+(a.requirements.length===1?"":"s")+'</span>':'')+'<span>'+esc(a.submissionMode||"Text + Link")+'</span>'+(state.role==="instructor"?'<span class="badge '+(a.status==="Published"?'live':'gold')+'">'+esc(a.status||"Published")+'</span>':'<span class="badge '+statusClass+'">'+esc(studentStatus)+'</span>')+'</div>'+
+      (grade&&state.role==="student"?'<div class="assignment-grade-preview"><strong>'+esc(grade.score)+' / '+esc(a.points||0)+'</strong>'+(grade.comment?'<span>'+esc(grade.comment)+'</span>':'')+'</div>':'')+
+      '</div><div class="inline-actions">'+
+      (state.role==="instructor"?'<button class="secondary-btn small-btn" data-action="assignment-submissions" data-id="'+a.id+'">Submissions</button><button class="text-btn" data-action="edit-assignment" data-id="'+a.id+'">Edit</button>':
+        (a.submissionMode==="No Online Submission"?'<span class="badge">Instructor-managed</span>':'<button class="primary-btn small-btn" data-action="open-student-assignment" data-id="'+a.id+'">'+(submission?.status==="submitted"?(a.allowResubmission?"View / Revise":"View Submission"):(submission?.status==="draft"?"Continue Assignment":"Open Assignment"))+'</button>'))+
+      '</div></div>';
+  }).join("")+'</div>' : '<div class="empty-state"><div class="empty-symbol">A</div><h3>No assignments yet.</h3><p>'+(state.role==="instructor"?"Create coursework, readings, written responses, research milestones, or academic exercises.":"Nothing has been assigned in this section yet.")+'</p></div>';
+  return '<div class="page-head" style="margin-bottom:16px"><div><div class="panel-title">Coursework</div><p class="page-subtitle">'+(state.role==="instructor"?"Create, collect, review, and grade student coursework.":"Open assignments here, save drafts, and submit your work directly in Theoria.")+'</p></div>'+(state.role==="instructor"?'<button class="primary-btn small-btn" data-action="create-assignment">Create Assignment</button>':'')+'</div>'+list;
 }
 
 function renderResources(){
@@ -680,6 +708,7 @@ function openAssignmentModal(existing){
         '<div class="compact-field-grid"><div class="field"><label>Points</label><div class="input-with-suffix"><input type="number" min="0" step="0.1" name="points" value="'+esc(existing?.points??100)+'" required><span>pts</span></div></div>'+
         '<div class="field"><label>Due Date</label><input type="date" name="dueDate" value="'+esc(existing?.dueDate||"")+'"></div>'+
         '<div class="field"><label>Status</label><select name="status"><option>Published</option><option>Draft</option></select></div></div>'+
+        '<div class="compact-field-grid" style="margin-top:12px"><div class="field"><label>Student Submission</label><select name="submissionMode"><option>Text + Link</option><option>Text Response</option><option>Link / Document</option><option>Completion Confirmation</option><option>No Online Submission</option></select></div><div class="field"><label class="checkbox-line submission-setting"><input type="checkbox" name="allowResubmission" '+(existing?.allowResubmission?'checked':'')+'> Allow students to revise after submitting</label></div></div>'+
       '</section>'+
       '<section class="form-section"><div class="form-section-head"><div><span>03</span><h3>Student Directions</h3><p>Build clear instructions one step at a time instead of writing one giant block.</p></div></div>'+
         '<div class="field"><label>Short Overview</label><input name="description" value="'+esc(existing?.description||"")+'" placeholder="One sentence describing what students are doing."></div>'+
@@ -691,6 +720,7 @@ function openAssignmentModal(existing){
 
   const form=modal.querySelector("#assignmentForm");
   form.status.value=existing?.status||"Published";
+  form.submissionMode.value=existing?.submissionMode||"Text + Link";
 
   const renderRow=(container,value,index,kind)=>{
     const row=document.createElement("div");
@@ -722,6 +752,8 @@ function openAssignmentModal(existing){
       description:String(fd.get("description")||"").trim(),
       instructionSteps,
       requirements,
+      submissionMode:String(fd.get("submissionMode")||"Text + Link"),
+      allowResubmission:form.elements.allowResubmission.checked,
       updatedAt:serverTimestamp()
     };
     try{
@@ -730,6 +762,118 @@ function openAssignmentModal(existing){
       closeModal(); state.sectionData=await loadSectionData(state.currentSection);renderSectionDetail("assignments");showToast("Assignment saved.");
     }catch(error){showToast(humanizeFirebaseError(error));}
   });
+}
+
+async function openStudentAssignmentModal(assignmentId){
+  const assignment=state.sectionData.assignments.find(x=>x.id===assignmentId);
+  if(!assignment)return showToast("Assignment not found.");
+  const mode=assignment.submissionMode||"Text + Link";
+  let submission=(state.sectionData.assignmentSubmissions||[]).find(x=>x.assignmentId===assignmentId)||null;
+  if(!submission){
+    try{
+      const snap=await getDoc(doc(db,"sections",state.currentSection.id,"assignments",assignmentId,"submissions",state.user.uid));
+      if(snap.exists())submission={id:snap.id,assignmentId,...snap.data()};
+    }catch(_){}
+  }
+  const locked=submission?.status==="submitted"&&!assignment.allowResubmission;
+  const due=assignmentDueState(assignment);
+  const showText=["Text + Link","Text Response"].includes(mode),showLink=["Text + Link","Link / Document"].includes(mode),completion=mode==="Completion Confirmation";
+  const modal=openModal({
+    eyebrow:"Coursework",
+    title:assignment.title,
+    wide:true,
+    body:'<div class="student-assignment-layout"><div class="assignment-brief">'+
+      '<div class="assignment-brief-head"><div><span>'+esc(assignment.type||"Assignment")+'</span><h3>'+esc(assignment.title)+'</h3></div><div class="assignment-brief-points"><strong>'+esc(assignment.points||0)+'</strong><span>points</span></div></div>'+
+      (assignment.description?'<p class="assignment-overview">'+esc(assignment.description)+'</p>':'')+
+      '<div class="assignment-brief-meta"><div><span>Due</span><strong class="'+(due.late?'late-text':'')+'">'+esc(formatDate(assignment.dueDate))+'</strong></div><div><span>Submission</span><strong>'+esc(mode)+'</strong></div><div><span>Status</span><strong>'+esc(submission?.status==="submitted"?"Submitted":submission?.status==="draft"?"Draft saved":"Not started")+'</strong></div></div>'+
+      (assignment.instructionSteps?.length?'<div class="assignment-full-steps"><div class="eyebrow">Instructions</div>'+assignment.instructionSteps.map((step,i)=>'<div class="assignment-full-step"><span>'+String(i+1).padStart(2,"0")+'</span><p>'+esc(step)+'</p></div>').join("")+'</div>':'')+
+      (assignment.requirements?.length?'<div class="assignment-requirements"><div class="eyebrow">Requirements</div>'+assignment.requirements.map(req=>'<div>✓ '+esc(req)+'</div>').join("")+'</div>':'')+
+      '</div><div class="assignment-response-panel">'+
+      '<div class="panel-title">'+(locked?"Submitted Work":"Your Submission")+'</div><p class="page-subtitle">'+(locked?"This submission is locked because revision after submission is disabled.":"Your work is saved to this section in Firestore.")+'</p>'+
+      '<form id="studentAssignmentForm">'+
+      (showText?'<div class="field"><label>Written Response</label><textarea class="assignment-response-editor" name="responseText" placeholder="Write your response here…" '+(locked?'disabled':'')+'>'+esc(submission?.responseText||"")+'</textarea></div>':'')+
+      (showLink?'<div class="field"><label>Document / Research Link</label><input type="url" name="responseUrl" value="'+esc(submission?.responseUrl||"")+'" placeholder="https://" '+(locked?'disabled':'')+'></div>':'')+
+      (completion?'<label class="completion-confirmation"><input type="checkbox" name="completionAck" '+(submission?.status==="submitted"?'checked':'')+' '+(locked?'disabled':'')+'><div><strong>I completed this assignment.</strong><span>Check this box and submit to record completion.</span></div></label>':'')+
+      (submission?.submittedAt?'<div class="submission-timestamp">Submitted '+esc(formatDate(submission.submittedAt))+'</div>':'')+
+      (!locked?'<div class="assignment-submit-actions">'+(!completion?'<button type="button" class="secondary-btn" id="saveAssignmentDraft">Save Draft</button>':'')+'<button type="submit" class="primary-btn">'+(submission?.status==="submitted"?"Resubmit Assignment":"Submit Assignment")+'</button></div>':'')+
+      '</form></div></div>'
+  });
+  if(locked)return;
+  const form=modal.querySelector("#studentAssignmentForm");
+  const save=async status=>{
+    const fd=new FormData(form),responseText=String(fd.get("responseText")||"").trim(),responseUrl=String(fd.get("responseUrl")||"").trim();
+    if(status==="submitted"){
+      if(showText&&!responseText&&mode==="Text Response")return showToast("Enter your written response before submitting.");
+      if(showLink&&!responseUrl&&mode==="Link / Document")return showToast("Add the document or research link before submitting.");
+      if(mode==="Text + Link"&&!responseText&&!responseUrl)return showToast("Enter a response or provide a document link before submitting.");
+      if(completion&&!form.elements.completionAck.checked)return showToast("Confirm that you completed the assignment.");
+      if(!confirm("Submit this assignment?"+(assignment.allowResubmission?" You may revise it later.":" You will not be able to revise it afterward.")))return;
+    }
+    const ref=doc(db,"sections",state.currentSection.id,"assignments",assignmentId,"submissions",state.user.uid);
+    const existingSnap=await getDoc(ref);
+    const data={
+      studentId:state.user.uid,
+      studentName:state.profile.displayName||state.user.displayName||"Student",
+      responseText,responseUrl,status,
+      updatedAt:serverTimestamp(),
+      submittedAt:status==="submitted"?serverTimestamp():null
+    };
+    if(!existingSnap.exists())data.createdAt=serverTimestamp();
+    try{
+      await setDoc(ref,data,{merge:true});
+      closeModal();state.sectionData=await loadSectionData(state.currentSection);renderSectionDetail("assignments");
+      showToast(status==="submitted"?"Assignment submitted.":"Draft saved.");
+    }catch(error){showToast(humanizeFirebaseError(error));}
+  };
+  modal.querySelector("#saveAssignmentDraft")?.addEventListener("click",()=>save("draft"));
+  form.addEventListener("submit",e=>{e.preventDefault();save("submitted");});
+}
+
+async function openAssignmentSubmissionsModal(assignmentId){
+  const assignment=state.sectionData.assignments.find(x=>x.id===assignmentId);
+  if(!assignment)return;
+  try{
+    const snap=await getDocs(collection(db,"sections",state.currentSection.id,"assignments",assignmentId,"submissions"));
+    const submissions=snap.docs.map(d=>({id:d.id,...d.data()}));
+    const map=new Map(submissions.map(x=>[x.studentId,x]));
+    const modal=openModal({
+      eyebrow:"Assignment Submissions",
+      title:assignment.title,
+      wide:true,
+      body:'<div class="submission-summary-strip"><div><strong>'+submissions.filter(x=>x.status==="submitted").length+'</strong><span>Submitted</span></div><div><strong>'+submissions.filter(x=>x.status==="draft").length+'</strong><span>Drafts</span></div><div><strong>'+state.sectionData.members.length+'</strong><span>Students</span></div></div>'+
+        '<div class="submission-roster">'+state.sectionData.members.map(student=>{const sub=map.get(student.id),grade=state.sectionData.grades.find(g=>g.assignmentId===assignmentId&&g.studentId===student.id);return '<div class="submission-roster-row"><div><strong>'+esc(student.displayName||"Student")+'</strong><span>'+esc(sub?.status==="submitted"?"Submitted":sub?.status==="draft"?"Draft in progress":"Not submitted")+(sub?.submittedAt?" • "+formatDate(sub.submittedAt):"")+'</span></div><div class="inline-actions">'+(grade?'<span class="badge live">'+esc(grade.score)+' / '+esc(assignment.points||0)+'</span>':'')+(sub?'<button class="secondary-btn small-btn" data-action="review-assignment-submission" data-assignment="'+assignmentId+'" data-student="'+student.id+'">Review</button>':'<span class="badge">No work</span>')+'</div></div>';}).join("")+'</div>'
+    });
+  }catch(error){showToast(humanizeFirebaseError(error));}
+}
+
+async function openAssignmentSubmissionReview(assignmentId,studentId){
+  const assignment=state.sectionData.assignments.find(x=>x.id===assignmentId);
+  const student=state.sectionData.members.find(x=>x.id===studentId);
+  if(!assignment||!student)return;
+  try{
+    const snap=await getDoc(doc(db,"sections",state.currentSection.id,"assignments",assignmentId,"submissions",studentId));
+    if(!snap.exists())return showToast("No submission was found.");
+    const sub=snap.data(),grade=state.sectionData.grades.find(g=>g.assignmentId===assignmentId&&g.studentId===studentId);
+    const modal=openModal({
+      eyebrow:"Review Submission",
+      title:(student.displayName||"Student")+" — "+assignment.title,
+      wide:true,
+      body:'<div class="review-submission-layout"><div class="review-work"><div class="submission-status-line"><span class="badge '+(sub.status==="submitted"?"live":"gold")+'">'+esc(sub.status)+'</span>'+(sub.submittedAt?'<span>Submitted '+esc(formatDate(sub.submittedAt))+'</span>':'')+'</div>'+
+        (sub.responseText?'<div class="submitted-response"><div class="eyebrow">Written Response</div><p>'+esc(sub.responseText).replace(/\n/g,"<br>")+'</p></div>':'<div class="empty-mini">No written response.</div>')+
+        (sub.responseUrl?'<a class="submission-link" href="'+esc(sub.responseUrl)+'" target="_blank" rel="noopener">Open submitted document / link ↗</a>':'')+
+        '</div><div class="review-grade-panel"><div class="panel-title">Grade Submission</div><form id="submissionGradeForm"><div class="field"><label>Score / '+esc(assignment.points||0)+'</label><input type="number" min="0" max="'+esc(assignment.points||0)+'" step="0.1" name="score" value="'+esc(grade?.score??"")+'" required></div><div class="field"><label>Instructor Feedback</label><textarea class="editor-compact" rows="4" name="comment">'+esc(grade?.comment||"")+'</textarea></div><button class="primary-btn full-btn" type="submit">Save Grade & Feedback</button></form></div></div>'
+    });
+    modal.querySelector("#submissionGradeForm").addEventListener("submit",async e=>{
+      e.preventDefault();const fd=new FormData(e.currentTarget),score=Number(fd.get("score"));
+      try{
+        await setDoc(doc(db,"sections",state.currentSection.id,"grades",assignmentId+"_"+studentId),{
+          assignmentId,studentId,studentName:student.displayName||"Student",assignmentTitle:assignment.title,
+          score,maxPoints:Number(assignment.points||0),comment:String(fd.get("comment")||"").trim(),updatedAt:serverTimestamp()
+        },{merge:true});
+        closeModal();state.sectionData=await loadSectionData(state.currentSection);renderSectionDetail("assignments");showToast("Grade and feedback saved.");
+      }catch(error){showToast(humanizeFirebaseError(error));}
+    });
+  }catch(error){showToast(humanizeFirebaseError(error));}
 }
 
 function openResourceModal(existing){
@@ -971,6 +1115,9 @@ document.addEventListener("click",async event=>{
   if(action==="section-tab") return renderSectionDetail(btn.dataset.tab);
   if(action==="create-assignment") return openAssignmentModal();
   if(action==="edit-assignment") return openAssignmentModal(state.sectionData.assignments.find(x=>x.id===btn.dataset.id));
+  if(action==="open-student-assignment") return openStudentAssignmentModal(btn.dataset.id);
+  if(action==="assignment-submissions") return openAssignmentSubmissionsModal(btn.dataset.id);
+  if(action==="review-assignment-submission") return openAssignmentSubmissionReview(btn.dataset.assignment,btn.dataset.student);
   if(action==="create-resource") return openResourceModal();
   if(action==="edit-resource") return openResourceModal(state.sectionData.resources.find(x=>x.id===btn.dataset.id));
   if(action==="set-grade") return openGradeModal(btn.dataset.assignment,btn.dataset.student);
