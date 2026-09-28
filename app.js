@@ -1075,6 +1075,127 @@ function renderFrameworkReadOnly(){
   return competencyPanel+'<div class="unit-list">'+fw.units.map((u,i)=>'<article class="unit-card"><div class="unit-head"><div><div class="unit-number">Unit '+esc(u.order||i+1)+'</div><h3>'+esc(u.title)+'</h3>'+(u.description?'<div class="topic-detail">'+esc(u.description)+'</div>':'')+'</div></div><div class="topic-list">'+((u.topics||[]).length?sortByOrder(u.topics).map(t=>'<div class="topic-row"><div class="topic-index">'+esc(t.number||"")+'</div><div><div class="topic-title">'+esc(t.title)+'</div>'+(t.learningObjective?'<div class="topic-detail"><strong>Learning Objective:</strong> '+esc(t.learningObjective)+'</div>':'')+(t.essentialKnowledge?'<div class="topic-detail"><strong>Essential Knowledge:</strong> '+esc(t.essentialKnowledge)+'</div>':'')+(t.competencyCodes?.length?'<div class="topic-detail"><strong>Competencies:</strong> '+esc(t.competencyCodes.join(", "))+'</div>':'')+'</div></div>').join(""):'<div class="empty-mini">No topics yet.</div>')+'</div></article>').join("")+'</div>';
 }
 
+const SORT_STOP_WORDS=new Set([
+  "the","a","an","and","or","but","of","to","in","on","for","with","from","by","at","as","is","are","was","were","be","been","being",
+  "this","that","these","those","it","its","their","his","her","our","your","into","through","about","than","then","what","which","who",
+  "how","why","when","where","students","student","should","will","can","could","would","may","understand","analyze","evaluate","explain"
+]);
+
+function frameworkSortTokens(value){
+  return String(value||"")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^a-z0-9\s-]/g," ")
+    .split(/\s+/)
+    .map(x=>x.replace(/^-+|-+$/g,""))
+    .filter(x=>x.length>2&&!SORT_STOP_WORDS.has(x));
+}
+
+function resolveFrameworkPlacement(record,framework){
+  const units=framework?.units||[];
+  if(record?.unitId){
+    const unit=units.find(u=>u.id===record.unitId);
+    if(unit){
+      const topic=record.topicId?(unit.topics||[]).find(t=>t.id===record.topicId):null;
+      return {unit,topic:topic||null,source:"stored"};
+    }
+  }
+  const topicNumber=String(record?.topicNumber||"").trim().toLowerCase();
+  if(topicNumber){
+    for(const unit of units){
+      const topic=(unit.topics||[]).find(t=>String(t.number||"").trim().toLowerCase()===topicNumber);
+      if(topic)return {unit,topic,source:"topic-number"};
+    }
+    const prefix=Number(topicNumber.split(".")[0]);
+    const unit=units.find(u=>Number(u.order)===prefix);
+    if(unit)return {unit,topic:null,source:"topic-prefix"};
+  }
+  if(record?.unitNumber){
+    const unit=units.find(u=>Number(u.order)===Number(record.unitNumber));
+    if(unit)return {unit,topic:null,source:"unit-number"};
+  }
+  return {unit:null,topic:null,source:"none"};
+}
+
+function suggestFrameworkPlacement(record,framework){
+  const exact=resolveFrameworkPlacement(record,framework);
+  if(exact.topic)return {...exact,score:1,confidence:"Exact"};
+  const units=framework?.units||[];
+  const recordText=[
+    record?.title,record?.prompt,record?.description,record?.stimulus,record?.sourceTitle,
+    ...(record?.instructionSteps||[]),...(record?.requirements||[]),...(record?.tags||[]),
+    ...(record?.competencyCodes||[])
+  ].filter(Boolean).join(" ");
+  const tokens=new Set(frameworkSortTokens(recordText));
+  const recordComps=new Set((record?.competencyCodes||[]).map(x=>String(x).trim().toUpperCase()));
+  let best={unit:exact.unit||null,topic:null,score:exact.unit?0.22:0,confidence:exact.unit?"Medium":"Low"};
+
+  for(const unit of units){
+    const unitTokens=new Set(frameworkSortTokens([unit.title,unit.description].filter(Boolean).join(" ")));
+    let unitHits=0;
+    unitTokens.forEach(t=>{if(tokens.has(t))unitHits++;});
+    const unitBase=unitTokens.size?Math.min(.22,(unitHits/unitTokens.size)*.22):0;
+
+    for(const topic of unit.topics||[]){
+      const titleTokens=new Set(frameworkSortTokens(topic.title));
+      const bodyTokens=new Set(frameworkSortTokens([topic.learningObjective,topic.essentialKnowledge].filter(Boolean).join(" ")));
+      let titleHits=0,bodyHits=0;
+      titleTokens.forEach(t=>{if(tokens.has(t))titleHits++;});
+      bodyTokens.forEach(t=>{if(tokens.has(t))bodyHits++;});
+      const titleScore=titleTokens.size?Math.min(.48,(titleHits/titleTokens.size)*.48):0;
+      const bodyScore=bodyTokens.size?Math.min(.22,(bodyHits/Math.max(4,Math.min(bodyTokens.size,18)))*.22):0;
+      const topicComps=new Set((topic.competencyCodes||[]).map(x=>String(x).trim().toUpperCase()));
+      let compHits=0;topicComps.forEach(code=>{if(recordComps.has(code))compHits++;});
+      const compScore=Math.min(.18,compHits*.06);
+      const phrase=String(topic.title||"").trim().toLowerCase();
+      const phraseScore=phrase&&recordText.toLowerCase().includes(phrase)?.28:0;
+      const score=Math.min(1,unitBase+titleScore+bodyScore+compScore+phraseScore);
+      if(score>best.score)best={unit,topic,score,confidence:score>=.55?"High":score>=.3?"Medium":"Low"};
+    }
+  }
+  return best;
+}
+
+function frameworkPlacementOptions(framework,selectedValue=""){
+  let html='<option value="" '+(!selectedValue?'selected':'')+'>Unsorted / leave unchanged</option>';
+  for(const unit of framework?.units||[]){
+    const unitValue="unit:"+unit.id;
+    html+='<optgroup label="Unit '+esc(unit.order||"")+' — '+esc(unit.title||"Unit")+'">';
+    html+='<option value="'+unitValue+'" '+(selectedValue===unitValue?'selected':'')+'>Unit '+esc(unit.order||"")+' — General / no topic</option>';
+    for(const topic of unit.topics||[]){
+      const value="topic:"+unit.id+":"+topic.id;
+      html+='<option value="'+value+'" '+(selectedValue===value?'selected':'')+'>'+esc(topic.number||"")+' — '+esc(topic.title||"Topic")+'</option>';
+    }
+    html+='</optgroup>';
+  }
+  return html;
+}
+
+function placementDataFromValue(value,framework){
+  const parts=String(value||"").split(":");
+  if(parts[0]==="unit"){
+    const unit=(framework?.units||[]).find(u=>u.id===parts[1]);
+    return unit?{unitId:unit.id,unitTitle:unit.title||"",unitNumber:Number(unit.order||0),topicId:"",topicTitle:"",topicNumber:""}:null;
+  }
+  if(parts[0]==="topic"){
+    const unit=(framework?.units||[]).find(u=>u.id===parts[1]);
+    const topic=(unit?.topics||[]).find(t=>t.id===parts[2]);
+    return unit&&topic?{unitId:unit.id,unitTitle:unit.title||"",unitNumber:Number(unit.order||0),topicId:topic.id,topicTitle:topic.title||"",topicNumber:topic.number||""}:null;
+  }
+  return null;
+}
+
+function unitFolderGroups(items,framework){
+  const groups=[];
+  for(const unit of framework?.units||[]){
+    const members=items.filter(item=>resolveFrameworkPlacement(item,framework).unit?.id===unit.id);
+    if(members.length)groups.push({id:unit.id,unit,label:"Unit "+(unit.order||"")+" — "+(unit.title||"Unit"),items:members});
+  }
+  const unsorted=items.filter(item=>!resolveFrameworkPlacement(item,framework).unit);
+  if(unsorted.length)groups.push({id:"unsorted",unit:null,label:"Unsorted",items:unsorted});
+  return groups;
+}
+
 function assignmentDueState(assignment){
   if(!assignment.dueDate)return {label:"No due date",late:false};
   const due=new Date(assignment.dueDate+"T23:59:59");
@@ -2350,6 +2471,11 @@ window.TheoriaCore = {
   openSection,
   loadSectionData,
   renderSectionDetail,
+  suggestFrameworkPlacement,
+  frameworkPlacementOptions,
+  placementDataFromValue,
+  resolveFrameworkPlacement,
+  unitFolderGroups,
   reloadCurrentSection:async(tab="overview")=>{
     if(!state.currentSection) return;
     state.sectionData=await loadSectionData(state.currentSection);
