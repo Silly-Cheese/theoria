@@ -516,6 +516,16 @@ function portfolioHtml(portfolio){
   return (portfolio.featuredWorks||[]).map(x=>'<div class="portfolio-entry"><span>'+esc(x.type)+'</span><strong>'+esc(x.title)+'</strong><b>'+esc(x.percent)+'%</b></div>').join("")+(portfolio.instructorComment?'<div class="portfolio-comment"><div class="eyebrow">Instructor Commentary</div><p>'+esc(portfolio.instructorComment)+'</p></div>':'');
 }
 
+async function refreshRecordContext(sectionId){
+  invalidate(sectionId);
+  if(P4.reportsSectionId===sectionId && $("#page-reports")?.classList.contains("active")){
+    return renderReportsPage(sectionId);
+  }
+  if(state().currentSection?.id===sectionId){
+    return state().role==="instructor" ? renderRecords(sectionId) : renderStudentRecord(sectionId);
+  }
+}
+
 function newAppealModal(sectionId){
   const bundlePromise=loadSectionBundle(sectionId);
   bundlePromise.then(bundle=>{
@@ -530,7 +540,7 @@ function newAppealModal(sectionId){
     });
     modal.querySelector("#appealForm").addEventListener("submit",async e=>{
       e.preventDefault();const fd=new FormData(e.currentTarget),[targetType,targetId,title]=String(fd.get("target")).split("|");
-      try{await addDoc(collection(db,"sections",sectionId,"appeals"),{studentId:uid,studentName:state().profile.displayName||state().user.displayName||"Student",targetType,targetId,title,reason:String(fd.get("reason")||"").trim(),status:"Pending",createdAt:serverTimestamp(),updatedAt:serverTimestamp()});core().closeModal();invalidate(sectionId);toast("Grade appeal submitted.");await renderStudentRecord(sectionId);}catch(err){toast(err.message||"Unable to submit appeal.");}
+      try{await addDoc(collection(db,"sections",sectionId,"appeals"),{studentId:uid,studentName:state().profile.displayName||state().user.displayName||"Student",targetType,targetId,title,reason:String(fd.get("reason")||"").trim(),status:"Pending",createdAt:serverTimestamp(),updatedAt:serverTimestamp()});core().closeModal();toast("Grade appeal submitted.");await refreshRecordContext(sectionId);}catch(err){toast(err.message||"Unable to submit appeal.");}
     });
   });
 }
@@ -544,7 +554,7 @@ async function reviewAppealModal(sectionId,appealId){
   });
   modal.querySelector("#appealReviewForm").addEventListener("submit",async e=>{
     e.preventDefault();const fd=new FormData(e.currentTarget);
-    try{await updateDoc(doc(db,"sections",sectionId,"appeals",appealId),{status:String(fd.get("status")),decision:String(fd.get("decision")).trim(),decidedAt:serverTimestamp(),decidedBy:state().user.uid,updatedAt:serverTimestamp()});core().closeModal();invalidate(sectionId);toast("Appeal decision saved.");await renderRecords(sectionId);}catch(err){toast(err.message||"Unable to save decision.");}
+    try{await updateDoc(doc(db,"sections",sectionId,"appeals",appealId),{status:String(fd.get("status")),decision:String(fd.get("decision")).trim(),decidedAt:serverTimestamp(),decidedBy:state().user.uid,updatedAt:serverTimestamp()});core().closeModal();toast("Appeal decision saved.");await refreshRecordContext(sectionId);}catch(err){toast(err.message||"Unable to save decision.");}
   });
 }
 
