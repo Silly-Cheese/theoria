@@ -343,7 +343,7 @@ async function renderAnalytics(sectionId){
   const attention=bundle.mastery.filter(x=>x.overallPercent!==null&&x.overallPercent<70).sort((a,b)=>a.overallPercent-b.overallPercent);
 
   el.innerHTML='<div class="section-summary"><div class="summary-block"><div class="summary-label">Students</div><div class="summary-value">'+bundle.members.length+'</div></div><div class="summary-block"><div class="summary-label">Coursework Avg</div><div class="summary-value">'+(classCoursework===null?"—":classCoursework+"%")+'</div></div><div class="summary-block"><div class="summary-label">Mastery Avg</div><div class="summary-value">'+(classMastery===null?"—":classMastery+"%")+'</div></div><div class="summary-block"><div class="summary-label">Scored Items</div><div class="summary-value">'+questionRows.length+'</div></div></div>'+
-    '<div class="grid-2"><div class="panel"><div class="panel-head"><div class="panel-title">Questions Needing Review</div></div><div class="panel-body">'+(weak.length?weak.map(q=>'<button class="analysis-row" data-phase4-action="question-analysis" data-assessment="'+esc(q.assessment)+'" data-number="'+esc(q.number)+'"><div><strong>'+esc(q.assessment)+' • Q'+esc(q.number)+'</strong><span>'+esc(q.prompt.slice(0,95))+(q.prompt.length>95?"…":"")+'</span></div><b>'+esc(q.percent)+'%</b></button>').join(""):'<div class="empty-mini">No scored question data yet.</div>')+'</div></div>'+
+    '<div class="grid-2"><div class="panel"><div class="panel-head"><div class="panel-title">Questions Needing Review</div></div><div class="panel-body">'+(weak.length?weak.map(q=>'<div class="analysis-row"><div><strong>'+esc(q.assessment)+' • Q'+esc(q.number)+'</strong><span>'+esc(q.prompt.slice(0,95))+(q.prompt.length>95?"…":"")+'</span></div><b>'+esc(q.percent)+'%</b></div>').join(""):'<div class="empty-mini">No scored question data yet.</div>')+'</div></div>'+
     '<div class="panel"><div class="panel-head"><div class="panel-title">Students Needing Support</div></div><div class="panel-body">'+(attention.length?attention.map(m=>'<div class="analysis-row"><div><strong>'+esc(m.studentName)+'</strong><span>'+esc(m.evidenceCount||0)+' mastery evidence points</span></div><b>'+esc(m.overallPercent)+'%</b></div>').join(""):'<div class="empty-mini">No students are currently below the 70% mastery threshold.</div>')+'</div></div></div>'+
     '<div class="panel" style="margin-top:18px"><div class="panel-head"><div class="panel-title">Item Analysis</div></div><div class="data-table-wrap" style="border:0"><table class="data-table"><thead><tr><th>Assessment / Item</th><th>Type</th><th>Responses</th><th>Mean Performance</th><th>Response Pattern</th></tr></thead><tbody>'+questionRows.map(q=>'<tr><td><strong>'+esc(q.assessment)+' • Q'+esc(q.number)+'</strong><span class="grade-sub">'+esc(q.prompt.slice(0,80))+'</span></td><td>'+esc(q.type)+'</td><td>'+q.responses+'</td><td><strong>'+esc(q.percent)+'%</strong></td><td>'+esc(Object.entries(q.choices).slice(0,4).map(([k,v])=>k+": "+v).join(" • ")||"Written response")+'</td></tr>').join("")+'</tbody></table></div></div>';
 }
@@ -367,7 +367,7 @@ async function buildRecordSnapshot(bundle,studentId){
   const mastery=bundle.mastery.find(x=>x.id===studentId);
   const scale=bundle.section.gradingPolicy?.gradeScale||DEFAULT_SCALE;
   return {
-    studentId,studentName:member?.displayName||"Student",studentEmail:member?.email||"",
+    studentId,studentName:member?.displayName||"Student",studentEmail:member?.email||"",sectionId:bundle.section.id,
     courseId:bundle.section.courseId,courseCode:bundle.section.courseCode||"",courseTitle:bundle.section.courseTitle||"",
     sectionName:bundle.section.sectionName||"",term:bundle.section.term||"",
     pathway:calc.pathway,
@@ -434,16 +434,16 @@ function recordStatusCard(bundle,member){
     '<td>'+(calc.coursework.percent===null?"—":calc.coursework.percent+"%")+'</td><td>'+(calc.semester.percent===null?"—":calc.semester.percent+"%")+'</td><td>'+(calc.comprehensive.percent===null?"—":calc.comprehensive.percent+"%")+'</td>'+
     '<td><strong>'+(calc.final===null?(calc.projection===null?"—":calc.projection+"%*"):calc.final+"%")+'</strong></td><td>'+(mastery?.overallPercent===null||mastery?.overallPercent===undefined?"—":mastery.overallPercent+"%")+'</td>'+
     '<td><span class="badge '+(record?.status==="Certified"?'live':calc.ready?'gold':'')+'">'+esc(record?.status|| (calc.ready?"Ready":"Incomplete"))+'</span></td>'+
-    '<td><div class="inline-actions"><button class="text-btn" data-phase4-action="record-audit" data-student="'+member.id+'">Audit</button>'+(calc.ready?'<button class="primary-btn small-btn" data-phase4-action="certify-record" data-student="'+member.id+'">'+(record?.status==="Certified"?"Recalculate / Amend":"Certify")+'</button>':'')+'<button class="text-btn" data-phase4-action="portfolio" data-student="'+member.id+'">Portfolio</button></div></td></tr>';
+    '<td><div class="inline-actions"><button class="text-btn" data-phase4-action="record-audit" data-section="'+bundle.section.id+'" data-student="'+member.id+'">Audit</button>'+(calc.ready?'<button class="primary-btn small-btn" data-phase4-action="certify-record" data-section="'+bundle.section.id+'" data-student="'+member.id+'">'+(record?.status==="Certified"?"Recalculate / Amend":"Certify")+'</button>':'')+'<button class="text-btn" data-phase4-action="portfolio" data-section="'+bundle.section.id+'" data-student="'+member.id+'">Portfolio</button></div></td></tr>';
 }
 
-async function renderRecords(sectionId){
-  const el=$("#phase4SectionTab");if(!el)return;
+async function renderRecords(sectionId,targetSelector="#phase4SectionTab"){
+  const el=$(targetSelector);if(!el)return;
   const bundle=await loadSectionBundle(sectionId);
   const pending=bundle.appeals.filter(x=>x.status==="Pending"||x.status==="Under Review");
   el.innerHTML='<div class="section-summary"><div class="summary-block"><div class="summary-label">Students</div><div class="summary-value">'+bundle.members.length+'</div></div><div class="summary-block"><div class="summary-label">Ready to Certify</div><div class="summary-value">'+bundle.members.filter(m=>finalCalculation(bundle,m.id).ready).length+'</div></div><div class="summary-block"><div class="summary-label">Certified</div><div class="summary-value">'+bundle.records.filter(r=>r.status==="Certified").length+'</div></div><div class="summary-block"><div class="summary-label">Open Appeals</div><div class="summary-value">'+pending.length+'</div></div></div>'+
     '<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Student</th><th>Coursework</th><th>Semester Exam</th><th>Comprehensive</th><th>Final / Projection</th><th>Mastery</th><th>Record</th><th>Action</th></tr></thead><tbody>'+bundle.members.map(m=>recordStatusCard(bundle,m)).join("")+'</tbody></table></div>'+
-    '<div class="panel" style="margin-top:18px"><div class="panel-head"><div class="panel-title">Grade Appeals</div></div><div class="panel-body">'+(pending.length?pending.map(a=>'<div class="appeal-row"><div><strong>'+esc(a.studentName||"Student")+' — '+esc(a.title||"Grade Appeal")+'</strong><span>'+esc(a.reason||"")+'</span><small>'+esc(a.targetType||"Coursework")+' • '+esc(a.status)+'</small></div><button class="secondary-btn small-btn" data-phase4-action="review-appeal" data-id="'+a.id+'">Review</button></div>').join(""):'<div class="empty-mini">No unresolved grade appeals.</div>')+'</div></div>';
+    '<div class="panel" style="margin-top:18px"><div class="panel-head"><div class="panel-title">Grade Appeals</div></div><div class="panel-body">'+(pending.length?pending.map(a=>'<div class="appeal-row"><div><strong>'+esc(a.studentName||"Student")+' — '+esc(a.title||"Grade Appeal")+'</strong><span>'+esc(a.reason||"")+'</span><small>'+esc(a.targetType||"Coursework")+' • '+esc(a.status)+'</small></div><button class="secondary-btn small-btn" data-phase4-action="review-appeal" data-section="'+sectionId+'" data-id="'+a.id+'">Review</button></div>').join(""):'<div class="empty-mini">No unresolved grade appeals.</div>')+'</div></div>';
 }
 
 function auditModal(sectionId,studentId){
@@ -490,17 +490,17 @@ async function recordHistoryModal(sectionId,studentId){
   });
 }
 
-async function renderStudentRecord(sectionId){
-  const el=$("#phase4SectionTab");if(!el)return;
+async function renderStudentRecord(sectionId,targetSelector="#phase4SectionTab"){
+  const el=$(targetSelector);if(!el)return;
   const bundle=await loadSectionBundle(sectionId),uid=state().user.uid,calc=finalCalculation(bundle,uid),record=recordFor(bundle,uid),portfolio=portfolioFor(bundle,uid),mastery=bundle.mastery.find(x=>x.id===uid);
   const appeals=bundle.appeals.sort((a,b)=>(b.createdAt?.toMillis?.()||0)-(a.createdAt?.toMillis?.()||0));
   el.innerHTML='<div class="record-calculation"><div><span>Coursework</span><strong>'+(calc.coursework.percent===null?"—":calc.coursework.percent+"%")+'</strong></div><div><span>Semester I Exam</span><strong>'+(calc.semester.percent===null?"—":calc.semester.percent+"%")+'</strong></div><div><span>Comprehensive Final</span><strong>'+(calc.comprehensive.percent===null?"—":calc.comprehensive.percent+"%")+'</strong></div><div><span>Current Projection</span><strong>'+(calc.projection===null?"—":calc.projection+"%")+'</strong></div></div>'+
     (record?formalRecordHtml(record,portfolio,mastery,true):'<div class="academic-banner"><div class="kicker">Academic Record</div><h3>Your final grade has not been certified.</h3><p>Your current grades and pathway remain visible while required components are completed.</p></div>'+componentHtml(calc))+
-    '<div class="grid-2" style="margin-top:18px"><div class="panel"><div class="panel-head"><div class="panel-title">Academic Portfolio</div></div><div class="panel-body">'+portfolioHtml(portfolio)+'</div></div><div class="panel"><div class="panel-head"><div class="panel-title">Grade Appeals</div><button class="panel-link" data-phase4-action="new-appeal">New Appeal</button></div><div class="panel-body">'+(appeals.length?appeals.map(a=>'<div class="appeal-mini"><strong>'+esc(a.title||"Grade Appeal")+'</strong><span>'+esc(a.status||"Pending")+' • '+esc(dateText(a.createdAt))+'</span><p>'+esc(a.reason||"")+'</p>'+(a.decision?'<small>Decision: '+esc(a.decision)+'</small>':'')+'</div>').join(""):'<div class="empty-mini">No grade appeals submitted.</div>')+'</div></div></div>';
+    '<div class="grid-2" style="margin-top:18px"><div class="panel"><div class="panel-head"><div class="panel-title">Academic Portfolio</div></div><div class="panel-body">'+portfolioHtml(portfolio)+'</div></div><div class="panel"><div class="panel-head"><div class="panel-title">Grade Appeals</div><button class="panel-link" data-phase4-action="new-appeal" data-section="'+sectionId+'">New Appeal</button></div><div class="panel-body">'+(appeals.length?appeals.map(a=>'<div class="appeal-mini"><strong>'+esc(a.title||"Grade Appeal")+'</strong><span>'+esc(a.status||"Pending")+' • '+esc(dateText(a.createdAt))+'</span><p>'+esc(a.reason||"")+'</p>'+(a.decision?'<small>Decision: '+esc(a.decision)+'</small>':'')+'</div>').join(""):'<div class="empty-mini">No grade appeals submitted.</div>')+'</div></div></div>';
 }
 
 function formalRecordHtml(record,portfolio,mastery,studentView=false){
-  return '<article class="formal-record" id="formalAcademicRecord"><div class="record-seal">Θ</div><div class="record-heading"><div class="eyebrow">Theoria Academic Record</div><h2>'+esc(record.courseCode)+' — '+esc(record.courseTitle)+'</h2><p>'+esc(record.sectionName)+' • '+esc(record.term)+'</p></div><div class="record-identity"><div><span>Student</span><strong>'+esc(record.studentName)+'</strong></div><div><span>Record ID</span><strong>'+esc(record.recordId)+'</strong></div><div><span>Status</span><strong>'+esc(record.status)+'</strong></div><div><span>Version</span><strong>'+esc(record.version||1)+'</strong></div></div><div class="record-final"><div><span>Certified Final Grade</span><strong>'+esc(record.letterGrade)+'</strong><small>'+esc(record.finalPercent)+'%</small></div><div><span>Academic Mastery</span><strong>'+(record.masteryPercent===null||record.masteryPercent===undefined?"—":esc(record.masteryPercent)+"%")+'</strong><small>Separate from grade</small></div><div><span>Grading Pathway</span><strong class="record-path">'+esc(record.pathway==="examination"?"Examination":"Composite")+'</strong></div></div><div class="record-breakdown"><div><span>Coursework</span><strong>'+(record.courseworkPercent===null?"N/A":esc(record.courseworkPercent)+"%")+'</strong></div><div><span>Semester I Examination</span><strong>'+esc(record.semesterExamPercent)+'%</strong></div><div><span>Comprehensive Final Examination</span><strong>'+esc(record.comprehensiveExamPercent)+'%</strong></div></div><div class="record-footer"><p>This record documents academic performance within Theoria. It does not represent outside accreditation unless separately established by the issuing institution.</p><div class="inline-actions"><button class="secondary-btn small-btn" data-phase4-action="print-record">Print Record</button>'+(studentView?'<button class="text-btn" data-phase4-action="record-history" data-student="'+esc(record.studentId)+'">View Amendment History</button>':'')+'</div></div></article>';
+  return '<article class="formal-record" id="formalAcademicRecord"><div class="record-seal">Θ</div><div class="record-heading"><div class="eyebrow">Theoria Academic Record</div><h2>'+esc(record.courseCode)+' — '+esc(record.courseTitle)+'</h2><p>'+esc(record.sectionName)+' • '+esc(record.term)+'</p></div><div class="record-identity"><div><span>Student</span><strong>'+esc(record.studentName)+'</strong></div><div><span>Record ID</span><strong>'+esc(record.recordId)+'</strong></div><div><span>Status</span><strong>'+esc(record.status)+'</strong></div><div><span>Version</span><strong>'+esc(record.version||1)+'</strong></div></div><div class="record-final"><div><span>Certified Final Grade</span><strong>'+esc(record.letterGrade)+'</strong><small>'+esc(record.finalPercent)+'%</small></div><div><span>Academic Mastery</span><strong>'+(record.masteryPercent===null||record.masteryPercent===undefined?"—":esc(record.masteryPercent)+"%")+'</strong><small>Separate from grade</small></div><div><span>Grading Pathway</span><strong class="record-path">'+esc(record.pathway==="examination"?"Examination":"Composite")+'</strong></div></div><div class="record-breakdown"><div><span>Coursework</span><strong>'+(record.courseworkPercent===null?"N/A":esc(record.courseworkPercent)+"%")+'</strong></div><div><span>Semester I Examination</span><strong>'+esc(record.semesterExamPercent)+'%</strong></div><div><span>Comprehensive Final Examination</span><strong>'+esc(record.comprehensiveExamPercent)+'%</strong></div></div><div class="record-footer"><p>This record documents academic performance within Theoria. It does not represent outside accreditation unless separately established by the issuing institution.</p><div class="inline-actions"><button class="secondary-btn small-btn" data-phase4-action="print-record">Print Record</button>'+(studentView?'<button class="text-btn" data-phase4-action="record-history" data-section="'+esc(record.sectionId||"")+'" data-student="'+esc(record.studentId)+'">View Amendment History</button>':'')+'</div></div></article>';
 }
 
 function portfolioHtml(portfolio){
@@ -553,17 +553,10 @@ async function renderReportsPage(sectionId=P4.reportsSectionId){
   const bundle=await loadSectionBundle(sectionId);
   if(s.role==="instructor"){
     el.innerHTML='<button class="text-btn" data-phase4-action="reports-back">← All Sections</button><div class="detail-hero"><div class="eyebrow">'+esc(bundle.section.courseCode||"Course")+' • '+esc(bundle.section.term||"")+'</div><h1 class="detail-title">'+esc(bundle.section.courseTitle||"Section")+'</h1><p class="page-subtitle">Final-grade audits, certification, portfolios, and record amendments.</p></div><div id="reportsRecordBody"></div>';
-    const target=$("#reportsRecordBody");
-    const old=$("#phase4SectionTab");
-    const temp=document.createElement("div");temp.id="phase4SectionTab";target.appendChild(temp);
-    await renderRecords(sectionId);
-    temp.id="reportsRecordEmbedded";
-    if(old)old.id="phase4SectionTab";
+    await renderRecords(sectionId,"#reportsRecordBody");
   }else{
     el.innerHTML='<button class="text-btn" data-phase4-action="reports-back">← All Sections</button><div class="detail-hero"><div class="eyebrow">'+esc(bundle.section.courseCode||"Course")+' • '+esc(bundle.section.term||"")+'</div><h1 class="detail-title">'+esc(bundle.section.courseTitle||"Section")+'</h1><p class="page-subtitle">Your progress, portfolio, and certified academic record.</p></div><div id="studentReportBody"></div>';
-    const original=$("#phase4SectionTab"),temp=document.createElement("div");temp.id="phase4SectionTab";$("#studentReportBody").appendChild(temp);
-    await renderStudentRecord(sectionId);
-    temp.id="studentReportEmbedded";if(original)original.id="phase4SectionTab";
+    await renderStudentRecord(sectionId,"#studentReportBody");
   }
 }
 
@@ -613,12 +606,12 @@ document.addEventListener("click",async e=>{
   if(a==="mastery-student")return masteryStudentModal(b.dataset.student);
   if(a==="open-report-section"){P4.reportsSectionId=b.dataset.section;return renderReportsPage(b.dataset.section);}
   if(a==="reports-back"){P4.reportsSectionId=null;return renderReportsPage();}
-  if(a==="record-audit")return auditModal(state().currentSection?.id||P4.reportsSectionId,b.dataset.student);
-  if(a==="certify-record")return certifyRecord(state().currentSection?.id||P4.reportsSectionId,b.dataset.student);
-  if(a==="portfolio")return portfolioModal(state().currentSection?.id||P4.reportsSectionId,b.dataset.student);
-  if(a==="record-history")return recordHistoryModal(state().currentSection?.id||P4.reportsSectionId,b.dataset.student);
-  if(a==="new-appeal")return newAppealModal(state().currentSection?.id||P4.reportsSectionId);
-  if(a==="review-appeal")return reviewAppealModal(state().currentSection?.id||P4.reportsSectionId,b.dataset.id);
+  if(a==="record-audit")return auditModal(b.dataset.section||P4.reportsSectionId||state().currentSection?.id,b.dataset.student);
+  if(a==="certify-record")return certifyRecord(b.dataset.section||P4.reportsSectionId||state().currentSection?.id,b.dataset.student);
+  if(a==="portfolio")return portfolioModal(b.dataset.section||P4.reportsSectionId||state().currentSection?.id,b.dataset.student);
+  if(a==="record-history")return recordHistoryModal(b.dataset.section||P4.reportsSectionId||state().currentSection?.id,b.dataset.student);
+  if(a==="new-appeal")return newAppealModal(b.dataset.section||P4.reportsSectionId||state().currentSection?.id);
+  if(a==="review-appeal")return reviewAppealModal(b.dataset.section||P4.reportsSectionId||state().currentSection?.id,b.dataset.id);
   if(a==="print-record"){window.print();return;}
 });
 
