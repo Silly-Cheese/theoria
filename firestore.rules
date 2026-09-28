@@ -1,33 +1,124 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() { return request.auth != null; }
-    function isSelf(uid) { return signedIn() && request.auth.uid == uid; }
-    function userData() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
-    function hasRole(role) { return signedIn() && userData().role == role; }
+    function signedIn() {
+      return request.auth != null;
+    }
 
-    match /users/{uid} {
-      allow create: if isSelf(uid) && request.resource.data.role in ['student', 'instructor'];
-      allow read: if isSelf(uid);
-      allow update: if isSelf(uid) && request.resource.data.role == resource.data.role;
+    function uid() {
+      return request.auth.uid;
+    }
+
+    function isSelf(userId) {
+      return signedIn() && uid() == userId;
+    }
+
+    function userData() {
+      return get(/databases/$(database)/documents/users/$(uid())).data;
+    }
+
+    function isInstructor() {
+      return signedIn() && userData().role == 'instructor';
+    }
+
+    function courseOwner(courseId) {
+      return signedIn()
+        && get(/databases/$(database)/documents/courses/$(courseId)).data.ownerId == uid();
+    }
+
+    function sectionOwner(sectionId) {
+      return signedIn()
+        && get(/databases/$(database)/documents/sections/$(sectionId)).data.ownerId == uid();
+    }
+
+    function sectionMember(sectionId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/sections/$(sectionId)/members/$(uid()));
+    }
+
+    match /users/{userId} {
+      allow create: if isSelf(userId)
+        && request.resource.data.role in ['student', 'instructor'];
+      allow read: if isSelf(userId);
+      allow update: if isSelf(userId)
+        && request.resource.data.role == resource.data.role;
       allow delete: if false;
+
+      match /enrollments/{sectionId} {
+        allow read, create, update, delete: if isSelf(userId);
+      }
     }
 
     match /courses/{courseId} {
       allow read: if signedIn();
-      allow create, update, delete: if hasRole('instructor');
+      allow create: if isInstructor()
+        && request.resource.data.ownerId == uid();
+      allow update, delete: if courseOwner(courseId);
+
+      match /units/{unitId} {
+        allow read: if signedIn();
+        allow create, update, delete: if courseOwner(courseId);
+
+        match /topics/{topicId} {
+          allow read: if signedIn();
+          allow create, update, delete: if courseOwner(courseId);
+        }
+      }
+
+      match /competencies/{competencyId} {
+        allow read: if signedIn();
+        allow create, update, delete: if courseOwner(courseId);
+      }
     }
 
     match /sections/{sectionId} {
       allow read: if signedIn();
-      allow create, update, delete: if hasRole('instructor');
-      match /members/{uid} {
-        allow read: if signedIn();
-        allow create: if isSelf(uid);
-        allow update, delete: if hasRole('instructor') || isSelf(uid);
+      allow create: if isInstructor()
+        && request.resource.data.ownerId == uid();
+      allow update, delete: if sectionOwner(sectionId);
+
+      match /members/{userId} {
+        allow read: if sectionOwner(sectionId) || isSelf(userId);
+        allow create: if isSelf(userId)
+          && request.resource.data.userId == uid()
+          && request.resource.data.role == 'student'
+          && get(/databases/$(database)/documents/sections/$(sectionId)).data.joinOpen == true;
+        allow update: if sectionOwner(sectionId)
+          || (isSelf(userId) && request.resource.data.role == resource.data.role);
+        allow delete: if sectionOwner(sectionId) || isSelf(userId);
+      }
+
+      match /assignments/{assignmentId} {
+        allow read: if sectionOwner(sectionId) || sectionMember(sectionId);
+        allow create, update, delete: if sectionOwner(sectionId);
+      }
+
+      match /resources/{resourceId} {
+        allow read: if sectionOwner(sectionId) || sectionMember(sectionId);
+        allow create, update, delete: if sectionOwner(sectionId);
+      }
+
+      match /grades/{gradeId} {
+        allow read: if sectionOwner(sectionId)
+          || (sectionMember(sectionId) && resource.data.studentId == uid());
+        allow create, update, delete: if sectionOwner(sectionId);
       }
     }
 
-    match /{document=**} { allow read, write: if false; }
+    match /joinCodes/{code} {
+      allow read: if signedIn();
+      allow create: if isInstructor()
+        && sectionOwner(request.resource.data.sectionId);
+      allow update: if isInstructor()
+        && sectionOwner(resource.data.sectionId)
+        && request.resource.data.sectionId == resource.data.sectionId;
+      allow delete: if isInstructor()
+        && sectionOwner(resource.data.sectionId);
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
   }
 }
