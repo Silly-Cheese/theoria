@@ -29,7 +29,6 @@ const firebaseConfig = {
   apiKey: "AIzaSyAMAHfaKZOqMxFsTENzTx6XzfHtqGQl6RM",
   authDomain: "theoria-79433.firebaseapp.com",
   projectId: "theoria-79433",
-  storageBucket: "theoria-79433.firebasestorage.app",
   messagingSenderId: "177649286844",
   appId: "1:177649286844:web:c978ed8f99aed6dc62dab9"
 };
