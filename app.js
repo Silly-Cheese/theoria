@@ -95,8 +95,11 @@ function switchAuthTab(tab){
 }
 
 async function loadProfile(user){
-  const snap = await getDoc(doc(db,"users",user.uid));
-  if(snap.exists()) return snap.data();
+  for(let attempt=0; attempt<6; attempt++){
+    const snap = await getDoc(doc(db,"users",user.uid));
+    if(snap.exists()) return snap.data();
+    await new Promise(resolve => setTimeout(resolve,200));
+  }
   return {
     displayName:user.displayName || (user.email ? user.email.split("@")[0] : "Theoria User"),
     email:user.email,
@@ -760,7 +763,24 @@ registerForm.addEventListener("submit",async event=>{
   try{
     const credential=await createUserWithEmailAndPassword(auth,email,password);
     await updateProfile(credential.user,{displayName:name});
-    await setDoc(doc(db,"users",credential.user.uid),{displayName:name,email,role:state.role,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+    const userRef=doc(db,"users",credential.user.uid);
+    const profileBase={displayName:name,email,createdAt:serverTimestamp(),updatedAt:serverTimestamp()};
+    if(state.role==="instructor"){
+      const ownerRef=doc(db,"system","owner");
+      const ownerSnap=await getDoc(ownerRef);
+      if(!ownerSnap.exists()){
+        const batch=writeBatch(db);
+        batch.set(userRef,{...profileBase,role:"instructor",bootstrapOwner:true});
+        batch.set(ownerRef,{uid:credential.user.uid,displayName:name,email,createdAt:serverTimestamp()});
+        await batch.commit();
+      }else{
+        state.role="student";
+        await setDoc(userRef,{...profileBase,role:"student"});
+        showToast("An instructor owner already exists. This account was created as a student.");
+      }
+    }else{
+      await setDoc(userRef,{...profileBase,role:"student"});
+    }
   }catch(error){authError.textContent=humanizeFirebaseError(error);}
   finally{button.disabled=false;button.textContent="Create Theoria account";}
 });
@@ -830,7 +850,16 @@ onAuthStateChanged(auth,async user=>{
     state.profile=null;state.courses=[];state.sections=[];state.currentCourse=null;state.currentSection=null;
     authShell.classList.remove("hidden");appShell.classList.add("hidden");closeModal();return;
   }
-  try{state.profile=await loadProfile(user);}
+  try{
+    state.profile=await loadProfile(user);
+    if(state.profile.role==="instructor"){
+      const ownerRef=doc(db,"system","owner");
+      const ownerSnap=await getDoc(ownerRef);
+      if(!ownerSnap.exists()){
+        await setDoc(ownerRef,{uid:user.uid,displayName:state.profile.displayName||user.displayName||"Instructor",email:user.email,createdAt:serverTimestamp()});
+      }
+    }
+  }
   catch(error){console.error("Unable to load Theoria profile:",error);state.profile={displayName:user.displayName||"Theoria User",email:user.email,role:"student"};}
   renderUser(user,state.profile);
   authShell.classList.add("hidden");appShell.classList.remove("hidden");
