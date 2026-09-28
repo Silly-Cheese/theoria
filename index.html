@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#191817">
+  <meta name="description" content="Theoria — Advanced Theological Studies">
+  <title>Theoria — Advanced Theological Studies</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <section id="authShell" class="auth-shell">
+    <aside class="auth-brand-panel">
+      <div class="brand-lockup">
+        <div class="brand-mark">Θ</div>
+        <div class="brand-name">Theoria</div>
+        <div class="brand-sub">Advanced Theological Studies</div>
+      </div>
+      <div class="auth-quote">
+        <h1>Rigorous study.<br>Serious formation.</h1>
+        <p>A purpose-built academic environment for advanced theology, biblical studies, apologetics, historical inquiry, research, and cumulative examination.</p>
+      </div>
+      <div class="auth-foot">Scholarship • Exegesis • Argumentation • Synthesis</div>
+    </aside>
+
+    <main class="auth-form-panel">
+      <div class="auth-card">
+        <div class="eyebrow">Theoria Academic Platform</div>
+        <h2 id="authHeading">Welcome back.</h2>
+        <p class="intro" id="authIntro">Sign in to continue to your sections, academic work, and progress.</p>
+        <div class="auth-tabs">
+          <button class="auth-tab active" data-auth-tab="signin">Sign in</button>
+          <button class="auth-tab" data-auth-tab="register">Create account</button>
+        </div>
+
+        <form id="signInForm">
+          <div class="field"><label for="signInEmail">Email address</label><input id="signInEmail" type="email" autocomplete="email" required></div>
+          <div class="field"><label for="signInPassword">Password</label><input id="signInPassword" type="password" autocomplete="current-password" required></div>
+          <button class="primary-btn full-btn" type="submit">Sign in to Theoria</button>
+        </form>
+
+        <form id="registerForm" class="hidden">
+          <div class="field"><label for="registerName">Full name</label><input id="registerName" type="text" autocomplete="name" required></div>
+          <div class="field"><label for="registerEmail">Email address</label><input id="registerEmail" type="email" autocomplete="email" required></div>
+          <div class="field"><label for="registerPassword">Password</label><input id="registerPassword" type="password" autocomplete="new-password" minlength="6" required></div>
+          <div class="field">
+            <label>Academic role</label>
+            <div class="role-picker">
+              <button type="button" class="role-option selected" data-role="student"><strong>Student</strong><span>Join sections and complete academic work.</span></button>
+              <button type="button" class="role-option" data-role="instructor"><strong>Instructor</strong><span>Create courses, sections, and assessments.</span></button>
+            </div>
+          </div>
+          <button class="primary-btn full-btn" type="submit">Create Theoria account</button>
+        </form>
+        <div id="authError" class="form-error"></div>
+      </div>
+    </main>
+  </section>
+
+  <section id="appShell" class="hidden">
+    <aside id="sidebar" class="sidebar">
+      <div class="side-brand">
+        <div class="side-brand-mark">Θ</div>
+        <div><div class="side-brand-name">THEORIA</div><span class="side-brand-sub">Advanced Theological Studies</span></div>
+      </div>
+      <div class="side-scroll">
+        <nav>
+          <div class="nav-group">
+            <div class="nav-label">Workspace</div>
+            <button class="nav-item active" data-page="home"><span class="nav-icon">⌂</span>Home</button>
+            <button class="nav-item" data-page="courses"><span class="nav-icon">▤</span>Courses</button>
+            <button class="nav-item" data-page="sections"><span class="nav-icon">◫</span>Sections</button>
+          </div>
+          <div class="nav-group instructor-only">
+            <div class="nav-label">Academics</div>
+            <button class="nav-item" data-page="itembank"><span class="nav-icon">⌘</span>Item Bank</button>
+            <button class="nav-item" data-page="assessments"><span class="nav-icon">✓</span>Assessments</button>
+          </div>
+          <div class="nav-group">
+            <div class="nav-label">Progress</div>
+            <button class="nav-item" data-page="mastery"><span class="nav-icon">◇</span>Mastery</button>
+            <button class="nav-item" data-page="reports"><span class="nav-icon">▥</span>Reports</button>
+          </div>
+          <div class="nav-group">
+            <div class="nav-label">Scholar</div>
+            <button class="nav-item" data-page="library"><span class="nav-icon">≡</span>Library</button>
+            <button class="nav-item" data-page="scripture"><span class="nav-icon">†</span>Scripture</button>
+          </div>
+        </nav>
+      </div>
+      <div class="sidebar-profile">
+        <div id="profileAvatar" class="avatar">T</div>
+        <div class="profile-copy"><strong id="profileName">Theoria User</strong><span id="profileRole">Student</span></div>
+        <button id="signOutBtn" class="profile-menu-btn" title="Sign out">⋯</button>
+      </div>
+    </aside>
+
+    <header class="topbar">
+      <div class="topbar-left">
+        <button id="mobileMenuBtn" class="mobile-menu" aria-label="Open navigation">☰</button>
+        <div class="breadcrumb">THEORIA / <strong id="breadcrumbCurrent">Home</strong></div>
+      </div>
+      <div class="top-actions">
+        <button id="quickJoinBtn" class="secondary-btn student-only">Join a Section</button>
+        <button id="quickCreateBtn" class="primary-btn instructor-only">Create Section</button>
+        <button class="icon-btn" title="Notifications">○</button>
+      </div>
+    </header>
+
+    <main class="main">
+      <section id="page-home" class="page active">
+        <div class="page-head">
+          <div>
+            <div class="eyebrow">Academic Workspace</div>
+            <h1 id="welcomeTitle" class="page-title">Welcome.</h1>
+            <p id="welcomeSubtitle" class="page-subtitle">Your theological studies, sections, and academic progress in one place.</p>
+          </div>
+          <div class="page-actions">
+            <button class="secondary-btn student-only" data-go="sections">View Sections</button>
+            <button class="primary-btn instructor-only" data-go="sections">Manage Sections</button>
+          </div>
+        </div>
+
+        <div class="stat-row">
+          <div class="stat"><div class="stat-label">Active Sections</div><div class="stat-value">0</div><div class="stat-note">Phase 2 enrollment data</div></div>
+          <div class="stat"><div class="stat-label">Current Mastery</div><div class="stat-value">—</div><div class="stat-note">No mastery evidence yet</div></div>
+          <div class="stat"><div class="stat-label">Open Assessments</div><div class="stat-value">0</div><div class="stat-note">Assessment engine arrives in Phase 3</div></div>
+          <div class="stat"><div class="stat-label">Academic Record</div><div class="stat-value">—</div><div class="stat-note">No certified results</div></div>
+        </div>
+
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-head"><div class="panel-title">Your Sections</div><button class="panel-link" data-go="sections">View all</button></div>
+            <div class="panel-body">
+              <div class="empty-state">
+                <div class="empty-symbol">Θ</div>
+                <h3>No active sections yet.</h3>
+                <p class="student-only">Join a section with the code provided by your instructor. Your current units, assignments, and examinations will appear here.</p>
+                <p class="instructor-only">Your active teaching sections will appear here. Course and section creation arrives in Phase 2.</p>
+                <button class="primary-btn student-only" data-go="sections">Join a Section</button>
+                <button class="primary-btn instructor-only" data-go="sections">Open Sections</button>
+              </div>
+            </div>
+          </div>
+          <aside class="panel">
+            <div class="panel-head"><div class="panel-title">Academic Attention</div></div>
+            <div class="panel-body">
+              <div class="attention-list">
+                <div class="attention-item"><div class="attention-number">0</div><div class="attention-copy"><strong>Items awaiting attention</strong><span>Your academic alerts will appear here as sections become active.</span></div></div>
+                <div class="attention-item"><div class="attention-number">—</div><div class="attention-copy"><strong>Next examination</strong><span>No examination has been scheduled.</span></div></div>
+                <div class="attention-item"><div class="attention-number">—</div><div class="attention-copy"><strong>Mastery focus</strong><span>Competency evidence has not yet been recorded.</span></div></div>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section id="page-courses" class="page">
+        <div class="page-head"><div><div class="eyebrow">Curriculum</div><h1 class="page-title">Courses</h1><p class="page-subtitle">Reusable academic frameworks for advanced theological instruction.</p></div><button class="primary-btn instructor-only" id="createCourseBtn">Create Course</button></div>
+        <div class="academic-banner"><div class="kicker">Course Architecture</div><h3>Framework before assignments.</h3><p>Theoria courses are designed around Units, Topics, Learning Objectives, Essential Knowledge, and Academic Competencies. Full course-framework creation arrives in Phase 2.</p></div>
+        <div class="empty-state"><div class="empty-symbol">C</div><h3>No courses have been created.</h3><p class="instructor-only">Phase 2 will let you build reusable course frameworks and create teaching sections from them.</p><p class="student-only">Courses associated with your enrolled sections will appear here.</p></div>
+      </section>
+
+      <section id="page-sections" class="page">
+        <div class="page-head"><div><div class="eyebrow">Enrollment</div><h1 class="page-title">Sections</h1><p class="page-subtitle">The live teaching spaces connecting instructors, students, and academic work.</p></div><button class="primary-btn instructor-only" id="createSectionBtn">Create Section</button></div>
+        <div class="join-card student-only">
+          <div class="eyebrow">Join a Section</div>
+          <h2 style="font-family:'Libre Baskerville',serif;font-weight:400;margin:8px 0 7px">Enter your instructor's join code.</h2>
+          <p class="page-subtitle">Section enrollment will be fully activated in Phase 2. The join-code experience is already established here.</p>
+          <div class="join-code-input"><input id="joinCodeInput" maxlength="12" placeholder="THR-7K4M2" aria-label="Join code"><button id="joinCodeBtn" class="primary-btn">Continue</button></div>
+          <div class="fineprint">Codes are not case-sensitive. You will review the section before your enrollment is confirmed.</div>
+        </div>
+        <div class="empty-state instructor-only"><div class="empty-symbol">S</div><h3>No teaching sections yet.</h3><p>Phase 2 will add section creation, academic terms, join codes, QR enrollment, rosters, and section-level administration.</p></div>
+      </section>
+
+      <section id="page-itembank" class="page"><div class="page-head"><div><div class="eyebrow">Assessment Design</div><h1 class="page-title">Item Bank</h1><p class="page-subtitle">A rigorous repository for theological assessment items and source-based question sets.</p></div></div><div class="empty-state"><div class="empty-symbol">I</div><h3>The Item Bank is reserved for Phase 3.</h3><p>Question metadata, source sets, competencies, difficulty, cognitive level, and assessment assembly will arrive with the examination engine.</p></div></section>
+
+      <section id="page-assessments" class="page"><div class="page-head"><div><div class="eyebrow">Evaluation</div><h1 class="page-title">Assessments</h1><p class="page-subtitle">Academic exercises, unit evaluations, semester examinations, and comprehensive finals.</p></div></div><div class="empty-state"><div class="empty-symbol">A</div><h3>No assessments yet.</h3><p>Phase 3 introduces assessment blueprints, written-response grading, anonymous candidate numbers, oral examinations, and grading pathways.</p></div></section>
+
+      <section id="page-mastery" class="page"><div class="page-head"><div><div class="eyebrow">Academic Competencies</div><h1 class="page-title">Mastery</h1><p class="page-subtitle">Evidence of what students understand and what they can actually do.</p></div></div><div class="academic-banner"><div class="kicker">Distinct from grades</div><h3>Mastery is not the gradebook.</h3><p>Theoria will separately report competency evidence in exegesis, historical analysis, theological synthesis, philosophical reasoning, research, and academic writing.</p></div></section>
+
+      <section id="page-reports" class="page"><div class="page-head"><div><div class="eyebrow">Academic Record</div><h1 class="page-title">Reports</h1><p class="page-subtitle">Performance, mastery, and formal certified academic records.</p></div></div><div class="empty-state"><div class="empty-symbol">R</div><h3>Reports will develop with your academic data.</h3><p>Phase 4 adds performance reports, examination-domain analysis, final-grade audits, certification, portfolios, and completion records.</p></div></section>
+
+      <section id="page-library" class="page"><div class="page-head"><div><div class="eyebrow">Scholar</div><h1 class="page-title">Library</h1><p class="page-subtitle">Curated theological sources, readings, documents, and research material.</p></div></div><div class="empty-state"><div class="empty-symbol">L</div><h3>Your scholarly library begins here.</h3><p>Primary sources, instructor readings, citations, and research collections will be connected to course topics in later phases.</p></div></section>
+
+      <section id="page-scripture" class="page"><div class="page-head"><div><div class="eyebrow">Scholar</div><h1 class="page-title">Scripture</h1><p class="page-subtitle">A dedicated Scripture workspace designed to support theological study.</p></div></div><div class="empty-state"><div class="empty-symbol">†</div><h3>Scripture workspace reserved.</h3><p>The initial shell leaves room for passage reading, course-linked references, instructor annotations, and later original-language support.</p></div></section>
+    </main>
+  </section>
+
+  <div id="toast" class="toast"></div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
