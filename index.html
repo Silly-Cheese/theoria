@@ -186,13 +186,18 @@
       </section>
 
       <section id="page-mastery" class="page">
-        <div class="page-head"><div><div class="eyebrow">Academic Competencies</div><h1 class="page-title">Mastery</h1><p class="page-subtitle">Competencies are defined in Phase 2; mastery calculation and analytics arrive in Phase 4.</p></div></div>
-        <div class="academic-banner"><div class="kicker">Framework Ready</div><h3>Mastery stays separate from grades.</h3><p>Course competencies can now be created and attached to topics. Formal mastery evidence will later aggregate across assessments and written work.</p></div>
+        <div class="page-head">
+          <div><div class="eyebrow">Academic Competencies</div><h1 class="page-title">Mastery</h1><p class="page-subtitle">Evidence-based competency performance across theological assessments.</p></div>
+          <button class="primary-btn instructor-only" id="refreshMasteryBtn">Recalculate Mastery</button>
+        </div>
+        <div id="masteryContent"></div>
       </section>
 
       <section id="page-reports" class="page">
-        <div class="page-head"><div><div class="eyebrow">Academic Record</div><h1 class="page-title">Reports</h1><p class="page-subtitle">Live gradebook data begins in Phase 2; certification and formal records arrive in Phase 4.</p></div></div>
-        <div class="empty-state"><div class="empty-symbol">IV</div><h3>Formal reporting is reserved for Phase 4.</h3><p>Section gradebooks are available inside each section now.</p></div>
+        <div class="page-head">
+          <div><div class="eyebrow">Academic Records</div><h1 class="page-title">Reports & Records</h1><p class="page-subtitle">Progress reports, final-grade audits, portfolios, and certified course records.</p></div>
+        </div>
+        <div id="reportsContent"></div>
       </section>
 
       <section id="page-library" class="page">
@@ -211,5 +216,6 @@
   <div id="toast" class="toast"></div>
   <script type="module" src="./app.js"></script>
   <script type="module" src="./phase3.js"></script>
+  <script type="module" src="./phase4.js"></script>
 </body>
 </html>
