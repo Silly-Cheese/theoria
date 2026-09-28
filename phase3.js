@@ -1058,11 +1058,17 @@ async function startExam(id,confirmed=false){
     const snap=await getDoc(doc(db,"assessments",id));if(!snap.exists())return toast("Assessment not found.");
     const a={id:snap.id,...snap.data()};
     if(a.mode==="oral"||a.mode==="disputation")return toast("This evaluation is instructor administered.");
+    if(a.status!=="Published"&&a.status!=="Closed")return toast("This assessment has not been published to students.");
+    if(a.status==="Closed")return toast("This assessment has been closed by the instructor.");
+    const now=Date.now(),opens=a.opensAt?.toMillis?.()||0,closes=a.closesAt?.toMillis?.()||0;
+    if(opens&&now<opens)return toast("This assessment opens "+dateText(a.opensAt)+".");
+    if(closes&&now>closes)return toast("The assessment window closed "+dateText(a.closesAt)+".");
     let subSnap=await getDoc(doc(db,"assessments",id,"submissions",s.user.uid)),sub=subSnap.exists()?{id:subSnap.id,...subSnap.data()}:null;
     if(sub&&sub.status!=="in_progress")return receipt(id);
 
     const memberSnap=await getDoc(doc(db,"sections",a.sectionId,"members",s.user.uid));
-    const acc=memberSnap.exists()?(memberSnap.data().accommodations||{}):{};
+    if(!memberSnap.exists())return toast("You are not enrolled in the section assigned to this assessment.");
+    const acc=memberSnap.data().accommodations||{};
     if(!sub&&!confirmed){
       const minutes=Math.round(Number(a.durationMinutes||0)*Number(acc.timeMultiplier||1));
       const modal=core().openModal({
@@ -1095,7 +1101,10 @@ async function startExam(id,confirmed=false){
     const all=qSnap.docs.map(d=>({id:d.id,...d.data()})),order=sub.questionOrder||all.map(q=>q.id),questions=order.map(qid=>all.find(q=>q.id===qid)).filter(Boolean);
     if(!questions.length)return toast("No examination questions are available.");
     launchExam(a,questions,sub);
-  }catch(err){toast(err.message||"This assessment is not available.");}
+  }catch(err){
+    console.error("Unable to start assessment:",err);
+    toast(err?.code==="permission-denied"?"The assessment could not be opened because your student access is not authorized. Ask the instructor to confirm that it is published to your enrolled section.":(err.message||"This assessment is not available."));
+  }
 }
 
 function launchExam(assessment,questions,submission){
