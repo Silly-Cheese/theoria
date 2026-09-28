@@ -702,7 +702,15 @@ async function joinSection(section,code){
       email:state.user.email,
       role:"student",
       joinedAt:serverTimestamp(),
-      status:"enrolled"
+      status:"enrolled",
+      accommodations:{
+        timeMultiplier:1,
+        breaks:false,
+        calculator:false,
+        largeText:false,
+        reducedDistractions:false,
+        notes:""
+      }
     });
     batch.set(doc(db,"users",state.user.uid,"enrollments",section.id),{
       sectionId:section.id,courseId:section.courseId,courseCode:section.courseCode,courseTitle:section.courseTitle,
