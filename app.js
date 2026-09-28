@@ -538,7 +538,7 @@ function renderFrameworkReadOnly(){
 function renderAssignments(){
   const items=state.sectionData.assignments.filter(a=>state.role==="instructor" || a.status!=="Draft");
   const list=items.length ? '<div class="assignment-list">'+items.map(a=>
-    '<div class="assignment-row"><div><h4>'+esc(a.title)+'</h4><p>'+esc(a.description||"")+'</p><div class="assignment-meta"><span>'+esc(a.type||"Assignment")+'</span><span>'+esc(a.points||0)+' points</span><span>Due '+esc(formatDate(a.dueDate))+'</span><span class="badge '+(a.status==="Published"?'live':'gold')+'">'+esc(a.status||"Published")+'</span></div></div>'+(state.role==="instructor"?'<div class="inline-actions"><button class="text-btn" data-action="edit-assignment" data-id="'+a.id+'">Edit</button></div>':'')+'</div>'
+    '<div class="assignment-row"><div><div class="card-kicker">'+esc(a.type||"Assignment")+'</div><h4>'+esc(a.title)+'</h4>'+(a.description?'<p>'+esc(a.description)+'</p>':'')+(a.instructionSteps?.length?'<div class="assignment-step-preview">'+a.instructionSteps.slice(0,3).map((step,i)=>'<div><span>'+String(i+1).padStart(2,"0")+'</span>'+esc(step)+'</div>').join("")+(a.instructionSteps.length>3?'<small>+'+(a.instructionSteps.length-3)+' more step'+(a.instructionSteps.length-3===1?"":"s")+'</small>':'')+'</div>':'')+'<div class="assignment-meta"><span>'+esc(a.points||0)+' points</span><span>Due '+esc(formatDate(a.dueDate))+'</span>'+(a.requirements?.length?'<span>'+a.requirements.length+' requirement'+(a.requirements.length===1?"":"s")+'</span>':'')+'<span class="badge '+(a.status==="Published"?'live':'gold')+'">'+esc(a.status||"Published")+'</span></div></div>'+(state.role==="instructor"?'<div class="inline-actions"><button class="text-btn" data-action="edit-assignment" data-id="'+a.id+'">Edit</button></div>':'')+'</div>'
   ).join("")+'</div>' : '<div class="empty-state"><div class="empty-symbol">A</div><h3>No assignments yet.</h3><p>'+(state.role==="instructor"?"Create coursework, readings, written responses, research milestones, or academic exercises.":"Nothing has been assigned in this section yet.")+'</p></div>';
   return '<div class="page-head" style="margin-bottom:16px"><div><div class="panel-title">Coursework</div></div>'+(state.role==="instructor"?'<button class="primary-btn small-btn" data-action="create-assignment">Create Assignment</button>':'')+'</div>'+list;
 }
@@ -618,17 +618,68 @@ function renderSectionDetail(tab="overview"){
 }
 
 function openAssignmentModal(existing){
+  const types=["Academic Exercise","Written Response","Research Assignment","Reading Response","Exegetical Exercise","Primary Source Analysis","Argument Analysis","Seminar Preparation","Assignment"];
+  const steps=Array.isArray(existing?.instructionSteps)&&existing.instructionSteps.length ? existing.instructionSteps : [""];
+  const requirements=Array.isArray(existing?.requirements)&&existing.requirements.length ? existing.requirements : [];
+  const typeTiles=types.map((type,index)=>'<label class="type-tile '+((existing?.type||"Assignment")===type?'selected':'')+'"><input type="radio" name="type" value="'+esc(type)+'" '+((existing?.type||"Assignment")===type?'checked':'')+'><span class="type-tile-mark">'+String(index+1).padStart(2,"0")+'</span><span>'+esc(type)+'</span></label>').join("");
+
   const modal=openModal({
     eyebrow:"Section Coursework",
     title:existing?"Edit Assignment":"Create Assignment",
     wide:true,
-    body:'<form id="assignmentForm"><div class="form-grid"><div class="field span-2"><label>Title</label><input name="title" value="'+esc(existing?.title||"")+'" required></div><div class="field"><label>Type</label><select name="type"><option>Academic Exercise</option><option>Written Response</option><option>Research Assignment</option><option>Reading Response</option><option>Exegetical Exercise</option><option>Primary Source Analysis</option><option>Argument Analysis</option><option>Seminar Preparation</option><option>Assignment</option></select></div><div class="field"><label>Points</label><input type="number" min="0" step="0.1" name="points" value="'+esc(existing?.points??100)+'" required></div><div class="field"><label>Due Date</label><input type="date" name="dueDate" value="'+esc(existing?.dueDate||"")+'"></div><div class="field"><label>Status</label><select name="status"><option>Published</option><option>Draft</option></select></div><div class="field span-2"><label>Instructions</label><textarea name="description">'+esc(existing?.description||"")+'</textarea></div></div><div class="modal-foot" style="margin:24px -24px -24px"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Assignment</button></div></form>'
+    body:'<form id="assignmentForm" class="academic-form">'+
+      '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Assignment Identity</h3><p>Name the work and choose its academic purpose.</p></div></div>'+
+        '<div class="field"><label>Assignment Title</label><input class="title-input" name="title" value="'+esc(existing?.title||"")+'" placeholder="e.g. Nicene Creed Primary Source Analysis" required></div>'+
+        '<div class="field"><label>Assignment Type</label><div class="type-tile-grid">'+typeTiles+'</div></div>'+
+      '</section>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Scoring & Schedule</h3><p>Set the practical details without leaving the page.</p></div></div>'+
+        '<div class="compact-field-grid"><div class="field"><label>Points</label><div class="input-with-suffix"><input type="number" min="0" step="0.1" name="points" value="'+esc(existing?.points??100)+'" required><span>pts</span></div></div>'+
+        '<div class="field"><label>Due Date</label><input type="date" name="dueDate" value="'+esc(existing?.dueDate||"")+'"></div>'+
+        '<div class="field"><label>Status</label><select name="status"><option>Published</option><option>Draft</option></select></div></div>'+
+      '</section>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>03</span><h3>Student Directions</h3><p>Build clear instructions one step at a time instead of writing one giant block.</p></div></div>'+
+        '<div class="field"><label>Short Overview</label><input name="description" value="'+esc(existing?.description||"")+'" placeholder="One sentence describing what students are doing."></div>'+
+        '<div class="structured-builder"><div class="structured-builder-head"><div><strong>Instruction Steps</strong><span>Students see these in order.</span></div><button type="button" class="secondary-btn small-btn" id="addAssignmentStep">+ Add Step</button></div><div id="assignmentSteps" class="structured-list"></div></div>'+
+        '<div class="structured-builder"><div class="structured-builder-head"><div><strong>Requirements</strong><span>Optional deliverables, format rules, or source requirements.</span></div><button type="button" class="secondary-btn small-btn" id="addAssignmentRequirement">+ Add Requirement</button></div><div id="assignmentRequirements" class="structured-list"></div></div>'+
+      '</section>'+
+      '<div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Assignment</button></div></form>'
   });
+
   const form=modal.querySelector("#assignmentForm");
-  if(existing){form.type.value=existing.type||"Assignment";form.status.value=existing.status||"Published";}
+  form.status.value=existing?.status||"Published";
+
+  const renderRow=(container,value,index,kind)=>{
+    const row=document.createElement("div");
+    row.className="structured-row";
+    row.dataset.kind=kind;
+    row.innerHTML='<div class="structured-index">'+String(index+1).padStart(2,"0")+'</div><input class="structured-input" value="'+esc(value||"")+'" placeholder="'+(kind==="step"?"Explain what the student should do…":"e.g. Cite at least two primary sources")+'"><button type="button" class="row-remove" aria-label="Remove">×</button>';
+    row.querySelector(".row-remove").addEventListener("click",()=>{row.remove();renumber(container);});
+    container.appendChild(row);
+  };
+  const renumber=container=>[...container.querySelectorAll(".structured-row")].forEach((row,i)=>row.querySelector(".structured-index").textContent=String(i+1).padStart(2,"0"));
+  const stepBox=modal.querySelector("#assignmentSteps"),reqBox=modal.querySelector("#assignmentRequirements");
+  steps.forEach((x,i)=>renderRow(stepBox,x,i,"step"));
+  requirements.forEach((x,i)=>renderRow(reqBox,x,i,"requirement"));
+  modal.querySelector("#addAssignmentStep").addEventListener("click",()=>renderRow(stepBox,"",stepBox.children.length,"step"));
+  modal.querySelector("#addAssignmentRequirement").addEventListener("click",()=>renderRow(reqBox,"",reqBox.children.length,"requirement"));
+  modal.querySelectorAll('.type-tile input').forEach(input=>input.addEventListener("change",()=>modal.querySelectorAll(".type-tile").forEach(tile=>tile.classList.toggle("selected",tile.contains(input)&&input.checked))));
+
   form.addEventListener("submit",async e=>{
-    e.preventDefault();const fd=new FormData(form);
-    const data={title:String(fd.get("title")).trim(),type:String(fd.get("type")),points:Number(fd.get("points")),dueDate:String(fd.get("dueDate")||""),status:String(fd.get("status")),description:String(fd.get("description")).trim(),updatedAt:serverTimestamp()};
+    e.preventDefault();
+    const fd=new FormData(form);
+    const instructionSteps=[...stepBox.querySelectorAll(".structured-input")].map(x=>x.value.trim()).filter(Boolean);
+    const requirements=[...reqBox.querySelectorAll(".structured-input")].map(x=>x.value.trim()).filter(Boolean);
+    const data={
+      title:String(fd.get("title")).trim(),
+      type:String(fd.get("type")||"Assignment"),
+      points:Number(fd.get("points")),
+      dueDate:String(fd.get("dueDate")||""),
+      status:String(fd.get("status")),
+      description:String(fd.get("description")||"").trim(),
+      instructionSteps,
+      requirements,
+      updatedAt:serverTimestamp()
+    };
     try{
       if(existing) await updateDoc(doc(db,"sections",state.currentSection.id,"assignments",existing.id),data);
       else await addDoc(collection(db,"sections",state.currentSection.id,"assignments"),{...data,createdAt:serverTimestamp()});
