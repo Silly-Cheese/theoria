@@ -21,6 +21,7 @@ import {
   where,
   orderBy,
   writeBatch,
+  Timestamp,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
@@ -45,6 +46,6 @@ export {
   signOut,
   updateProfile,
   doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc,
-  collection, getDocs, query, where, orderBy, writeBatch,
+  collection, getDocs, query, where, orderBy, writeBatch, Timestamp,
   serverTimestamp
 };
