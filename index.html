@@ -162,13 +162,27 @@
       </section>
 
       <section id="page-itembank" class="page">
-        <div class="page-head"><div><div class="eyebrow">Assessment Design</div><h1 class="page-title">Item Bank</h1><p class="page-subtitle">A rigorous repository for theological assessment items and source-based question sets.</p></div></div>
-        <div class="empty-state"><div class="empty-symbol">III</div><h3>Reserved for Phase 3.</h3><p>The course framework and competencies created now will become the metadata backbone for the Item Bank and examination engine.</p></div>
+        <div class="page-head">
+          <div><div class="eyebrow">Assessment Design</div><h1 class="page-title">Item Bank</h1><p class="page-subtitle">Reusable theological assessment items tagged to course content and academic competencies.</p></div>
+          <button class="primary-btn instructor-only" id="createItemBtn">Create Item</button>
+        </div>
+        <div id="itemBankContent"></div>
       </section>
 
       <section id="page-assessments" class="page">
-        <div class="page-head"><div><div class="eyebrow">Evaluation</div><h1 class="page-title">Assessments</h1><p class="page-subtitle">Unit evaluations, semester examinations, and comprehensive finals arrive next.</p></div></div>
-        <div class="empty-state"><div class="empty-symbol">III</div><h3>Assessment engine reserved for Phase 3.</h3><p>Assignments and gradebook records work now; formal assessment blueprints and examination workflows come next.</p></div>
+        <div class="page-head">
+          <div><div class="eyebrow">Evaluation</div><h1 class="page-title">Assessments</h1><p class="page-subtitle">Academic exercises, unit evaluations, formal examinations, oral exams, and disputations.</p></div>
+          <button class="primary-btn instructor-only" id="createAssessmentBtn">Create Assessment</button>
+        </div>
+        <div id="assessmentsContent"></div>
+      </section>
+
+      <section id="page-assessment-detail" class="page">
+        <div id="assessmentDetail"></div>
+      </section>
+
+      <section id="page-exam" class="page">
+        <div id="examRoot"></div>
       </section>
 
       <section id="page-mastery" class="page">
@@ -196,5 +210,6 @@
   <div id="modalRoot"></div>
   <div id="toast" class="toast"></div>
   <script type="module" src="./app.js"></script>
+  <script type="module" src="./phase3.js"></script>
 </body>
 </html>
