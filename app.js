@@ -546,7 +546,7 @@ function renderAssignments(){
 function renderResources(){
   const items=state.sectionData.resources;
   const list=items.length?'<div class="resource-list">'+items.map(r=>
-    '<div class="resource-row"><div><h4>'+esc(r.title)+'</h4><p>'+esc(r.notes||"")+'</p><div class="resource-meta"><span>'+esc(r.type||"Reading")+'</span>'+(r.url?'<a class="link" target="_blank" rel="noopener" href="'+esc(r.url)+'">Open Resource ↗</a>':'')+'</div></div>'+(state.role==="instructor"?'<div class="inline-actions"><button class="text-btn" data-action="edit-resource" data-id="'+r.id+'">Edit</button></div>':'')+'</div>'
+    '<div class="resource-row"><div><div class="card-kicker">'+esc(r.type||"Reading")+'</div><h4>'+esc(r.title)+'</h4>'+(r.citation?'<div class="resource-citation">'+esc(r.citation)+'</div>':'')+(r.notes?'<p>'+esc(r.notes)+'</p>':'')+'<div class="resource-meta">'+(r.url?'<a class="link" target="_blank" rel="noopener" href="'+esc(r.url)+'">Open Resource ↗</a>':'<span>No external link</span>')+'</div></div>'+(state.role==="instructor"?'<div class="inline-actions"><button class="text-btn" data-action="edit-resource" data-id="'+r.id+'">Edit</button></div>':'')+'</div>'
   ).join("")+'</div>':'<div class="empty-state"><div class="empty-symbol">R</div><h3>No resources yet.</h3><p>'+(state.role==="instructor"?"Add primary sources, Scripture readings, articles, books, or research links.":"Your instructor has not added resources yet.")+'</p></div>';
   return '<div class="page-head" style="margin-bottom:16px"><div><div class="panel-title">Readings & Resources</div></div>'+(state.role==="instructor"?'<button class="primary-btn small-btn" data-action="create-resource">Add Resource</button>':'')+'</div>'+list;
 }
