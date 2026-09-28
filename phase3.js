@@ -663,15 +663,27 @@ async function setStatus(status){
 
 async function renderSectionAssessments(){
   const s=state(),section=s.currentSection,el=$("#phase3SectionTab");if(!s||!section||!el)return;
-  let list=[];
-  if(s.role==="instructor"){
-    const snap=await getDocs(query(collection(db,"assessments"),where("sectionId","==",section.id)));
-    list=snap.docs.map(d=>({id:d.id,...d.data()}));
-  }else{
-    const refs=await getDocs(collection(db,"sections",section.id,"assessmentRefs"));
-    for(const r of refs.docs){try{const a=await getDoc(doc(db,"assessments",r.id));if(a.exists())list.push({id:a.id,...a.data()});}catch(_){}}
+  el.innerHTML='<div class="empty-mini">Loading section assessments…</div>';
+  try{
+    let list=[];
+    if(s.role==="instructor"){
+      const snap=await getDocs(query(collection(db,"assessments"),where("ownerId","==",s.user.uid)));
+      list=snap.docs.map(d=>({id:d.id,...d.data()})).filter(a=>a.sectionId===section.id);
+    }else{
+      const refs=await getDocs(collection(db,"sections",section.id,"assessmentRefs"));
+      for(const r of refs.docs){
+        try{
+          const a=await getDoc(doc(db,"assessments",r.id));
+          if(a.exists())list.push({id:a.id,...a.data()});
+        }catch(_){}
+      }
+    }
+    list.sort((a,b)=>(b.opensAt?.toMillis?.()||0)-(a.opensAt?.toMillis?.()||0));
+    el.innerHTML=list.length?'<div class="assessment-grid">'+list.map(a=>'<article class="assessment-card"><div class="assessment-type">'+esc(a.type)+'</div><h3>'+esc(a.title)+'</h3><p>'+esc(availability(a))+' • '+esc(a.durationMinutes||0)+' minutes</p><div class="card-actions">'+(s.role==="instructor"?'<button class="secondary-btn small-btn" data-phase3-action="open-assessment" data-id="'+a.id+'">Open Builder</button>':(a.mode==="oral"||a.mode==="disputation")?'<span class="badge gold">Instructor administered</span>':availability(a)==="Open"?'<button class="primary-btn small-btn" data-phase3-action="start-exam" data-id="'+a.id+'">Open Assessment</button>':'<span class="badge">'+esc(availability(a))+'</span>')+'</div></article>').join("")+'</div>':'<div class="empty-state"><div class="empty-symbol">A</div><h3>No section assessments yet.</h3><p>'+(s.role==="instructor"?"Create one from the Assessments workspace, then it will appear here.":"Published assessments will appear here.")+'</p></div>';
+  }catch(error){
+    console.error("Unable to load section assessments:",error);
+    el.innerHTML='<div class="empty-state"><div class="empty-symbol">!</div><h3>Assessments could not be loaded.</h3><p>Refresh after deploying the latest Firestore rules. If the problem continues, open the main Assessments workspace.</p></div>';
   }
-  el.innerHTML=list.length?'<div class="assessment-grid">'+list.map(a=>'<article class="assessment-card"><div class="assessment-type">'+esc(a.type)+'</div><h3>'+esc(a.title)+'</h3><p>'+esc(availability(a))+' • '+esc(a.durationMinutes||0)+' minutes</p><div class="card-actions">'+(s.role==="instructor"?'<button class="secondary-btn small-btn" data-phase3-action="open-assessment" data-id="'+a.id+'">Open Builder</button>':(a.mode==="oral"||a.mode==="disputation")?'<span class="badge gold">Instructor administered</span>':availability(a)==="Open"?'<button class="primary-btn small-btn" data-phase3-action="start-exam" data-id="'+a.id+'">Open Assessment</button>':'<span class="badge">'+esc(availability(a))+'</span>')+'</div></article>').join("")+'</div>':'<div class="empty-state"><div class="empty-symbol">A</div><h3>No section assessments yet.</h3></div>';
 }
 
 async function renderGradingPolicy(){
