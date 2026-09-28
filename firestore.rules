@@ -201,6 +201,10 @@ service cloud.firestore {
               && request.resource.data.studentId == uid()
               && request.resource.data.studentId == resource.data.studentId
               && request.resource.data.status in ['draft', 'submitted']
+              && (
+                resource.data.status == 'draft'
+                || get(/databases/$(database)/documents/sections/$(sectionId)/assignments/$(assignmentId)).data.allowResubmission == true
+              )
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
                 'responseText',
                 'responseUrl',
