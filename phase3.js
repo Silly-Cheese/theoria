@@ -213,6 +213,288 @@ async function renderItemBank(){
   filter();
 }
 
+
+function stripJsonFence(text){
+  let value=String(text||"").trim();
+  value=value.replace(/^\s*```(?:json)?\s*/i,"").replace(/\s*```\s*$/,"").trim();
+  const firstArray=value.indexOf("["),lastArray=value.lastIndexOf("]");
+  const firstObject=value.indexOf("{"),lastObject=value.lastIndexOf("}");
+  if(firstArray>=0&&lastArray>firstArray)return value.slice(firstArray,lastArray+1);
+  if(firstObject>=0&&lastObject>firstObject)return value.slice(firstObject,lastObject+1);
+  return value;
+}
+
+function normalizeBulkType(value){
+  const raw=String(value||"").trim().toLowerCase();
+  const aliases={
+    "mcq":"Multiple Choice","multiple choice":"Multiple Choice","multiple-choice":"Multiple Choice",
+    "multiple select":"Multiple Select","multiple-select":"Multiple Select","select all that apply":"Multiple Select","msq":"Multiple Select",
+    "short response":"Short Response","short answer":"Short Response","short-response":"Short Response",
+    "essay":"Essay",
+    "passage analysis":"Passage Analysis","scripture analysis":"Passage Analysis",
+    "primary source analysis":"Primary Source Analysis","source analysis":"Primary Source Analysis",
+    "argument analysis":"Argument Analysis",
+    "oral prompt":"Oral Prompt","oral":"Oral Prompt",
+    "disputation prompt":"Disputation Prompt","disputation":"Disputation Prompt"
+  };
+  return aliases[raw]||String(value||"").trim();
+}
+
+function bulkPromptForCourse(course,fw){
+  const topicLines=[];
+  for(const unit of fw.units){
+    for(const topic of unit.topics||[]){
+      topicLines.push((topic.number||topic.id)+" — "+topic.title);
+    }
+  }
+  const competencyLines=(fw.competencies||[]).map(c=>c.code+" — "+c.name);
+  return [
+    "Create a question set for Theoria for the course: "+(course.code||"")+" — "+(course.title||"")+".",
+    "",
+    "Return ONLY valid JSON. Do not use Markdown fences, commentary, headings, or explanatory prose.",
+    "Return either a JSON array of question objects or an object with a single \"questions\" array.",
+    "",
+    "Each question object may use these fields:",
+    "{",
+    '  "type": "Multiple Choice | Multiple Select | Short Response | Essay | Passage Analysis | Primary Source Analysis | Argument Analysis | Oral Prompt | Disputation Prompt",',
+    '  "prompt": "question text",',
+    '  "options": ["first option", "second option", "third option", "fourth option"],',
+    '  "correctAnswer": "A",',
+    '  "difficulty": "Foundational | Moderate | Advanced",',
+    '  "cognitiveLevel": "Recall | Understanding | Application | Analysis | Evaluation | Synthesis",',
+    '  "pointsDefault": 1,',
+    '  "topicNumber": "1.1",',
+    '  "competencyCodes": ["ARG-3"],',
+    '  "tags": ["tag-one", "tag-two"],',
+    '  "sourceTitle": "optional source/citation",',
+    '  "sourceSet": "optional source-set name",',
+    '  "stimulus": "optional excerpt or source text",',
+    '  "explanation": "answer-key explanation or scoring guidance",',
+    '  "rubric": [{"criterion":"criterion name","points":4}]',
+    "}",
+    "",
+    "Rules:",
+    "- Multiple Choice must include at least 2 options and exactly one correctAnswer letter.",
+    "- Multiple Select must include at least 2 options and correctAnswer must be an array of letters, such as [\"A\",\"C\"].",
+    "- For non-objective questions, omit options and correctAnswer unless genuinely needed.",
+    "- Use only the topic numbers and competency codes listed below when assigning them.",
+    "- Keep points consistent within question types if the questions may be used in randomized exams.",
+    "",
+    "AVAILABLE TOPICS:",
+    ...(topicLines.length?topicLines:["No topics are currently defined. Leave topicNumber empty."]),
+    "",
+    "AVAILABLE COMPETENCIES:",
+    ...(competencyLines.length?competencyLines:["No competencies are currently defined. Leave competencyCodes empty."])
+  ].join("\n");
+}
+
+function normalizeBulkQuestion(raw,index,fw){
+  const errors=[],warnings=[];
+  if(!raw||typeof raw!=="object"||Array.isArray(raw))return {index,errors:["Question is not a JSON object."],warnings:[],data:null};
+
+  const type=normalizeBulkType(raw.type);
+  const allowedTypes=["Multiple Choice","Multiple Select","Short Response","Essay","Passage Analysis","Primary Source Analysis","Argument Analysis","Oral Prompt","Disputation Prompt"];
+  if(!allowedTypes.includes(type))errors.push("Unsupported question type: "+String(raw.type||"(missing)"));
+
+  const prompt=String(raw.prompt||raw.question||"").trim();
+  if(!prompt)errors.push("Prompt is required.");
+
+  const difficultyAllowed=["Foundational","Moderate","Advanced"];
+  const difficulty=difficultyAllowed.includes(String(raw.difficulty||""))?String(raw.difficulty):"Moderate";
+  if(raw.difficulty&&!difficultyAllowed.includes(String(raw.difficulty)))warnings.push("Difficulty defaulted to Moderate.");
+
+  const cognitiveAllowed=["Recall","Understanding","Application","Analysis","Evaluation","Synthesis"];
+  const cognitiveLevel=cognitiveAllowed.includes(String(raw.cognitiveLevel||""))?String(raw.cognitiveLevel):"Application";
+  if(raw.cognitiveLevel&&!cognitiveAllowed.includes(String(raw.cognitiveLevel)))warnings.push("Cognitive level defaulted to Application.");
+
+  const pointsRaw=Number(raw.pointsDefault??raw.points??1);
+  const pointsDefault=Number.isFinite(pointsRaw)&&pointsRaw>=0?pointsRaw:1;
+  if(!Number.isFinite(pointsRaw)||pointsRaw<0)warnings.push("Points defaulted to 1.");
+
+  let options=Array.isArray(raw.options)?raw.options.map((option,i)=>{
+    if(option&&typeof option==="object")return {id:String(option.id||String.fromCharCode(65+i)).toUpperCase(),text:String(option.text??option.label??"").trim()};
+    return {id:String.fromCharCode(65+i),text:String(option??"").trim()};
+  }).filter(x=>x.text):[];
+
+  let correctAnswer=raw.correctAnswer??raw.answer??"";
+  const resolveAnswer=value=>{
+    const v=String(value??"").trim();
+    if(!v)return "";
+    const upper=v.toUpperCase();
+    if(/^[A-Z]$/.test(upper))return upper;
+    const match=options.find(o=>o.text.trim().toLowerCase()===v.toLowerCase());
+    return match?.id||upper;
+  };
+
+  if(type==="Multiple Choice"){
+    if(options.length<2)errors.push("Multiple Choice requires at least 2 options.");
+    correctAnswer=resolveAnswer(Array.isArray(correctAnswer)?correctAnswer[0]:correctAnswer);
+    if(!correctAnswer)errors.push("Multiple Choice requires a correct answer.");
+    if(correctAnswer&&!options.some(o=>o.id===correctAnswer))errors.push("Correct answer does not match an option.");
+  }else if(type==="Multiple Select"){
+    if(options.length<2)errors.push("Multiple Select requires at least 2 options.");
+    const arr=(Array.isArray(correctAnswer)?correctAnswer:String(correctAnswer||"").split(",")).map(resolveAnswer).filter(Boolean);
+    correctAnswer=[...new Set(arr)].sort();
+    if(!correctAnswer.length)errors.push("Multiple Select requires at least one correct answer.");
+    if(correctAnswer.some(id=>!options.some(o=>o.id===id)))errors.push("One or more correct answers do not match an option.");
+  }else{
+    options=[];
+    correctAnswer="";
+  }
+
+  const topicNumber=String(raw.topicNumber||raw.topic||"").trim();
+  let matchedTopic=null,matchedUnit=null;
+  if(topicNumber){
+    for(const unit of fw.units){
+      const topic=(unit.topics||[]).find(t=>String(t.number||"").trim().toLowerCase()===topicNumber.toLowerCase());
+      if(topic){matchedTopic=topic;matchedUnit=unit;break;}
+    }
+    if(!matchedTopic)warnings.push("Topic "+topicNumber+" was not found and will be left unassigned.");
+  }
+
+  let competencyCodes=Array.isArray(raw.competencyCodes)?raw.competencyCodes:String(raw.competencyCodes||"").split(",");
+  competencyCodes=competencyCodes.map(x=>String(x).trim().toUpperCase()).filter(Boolean);
+  const competencyMap=new Map((fw.competencies||[]).map(c=>[String(c.code||"").trim().toUpperCase(),c]));
+  const matchedCompetencies=competencyCodes.map(code=>competencyMap.get(code)).filter(Boolean);
+  const unknownCodes=competencyCodes.filter(code=>!competencyMap.has(code));
+  if(unknownCodes.length)warnings.push("Unknown competencies ignored: "+unknownCodes.join(", "));
+
+  let tags=Array.isArray(raw.tags)?raw.tags:String(raw.tags||"").split(",");
+  tags=tags.map(x=>String(x).trim()).filter(Boolean);
+
+  const rubric=Array.isArray(raw.rubric)?raw.rubric.map(row=>({
+    criterion:String(row?.criterion||row?.name||"").trim(),
+    points:Number(row?.points||0)
+  })).filter(row=>row.criterion):[];
+
+  return {
+    index,errors,warnings,
+    data:{
+      type,difficulty,cognitiveLevel,
+      unitId:matchedUnit?.id||"",unitTitle:matchedUnit?.title||"",
+      topicId:matchedTopic?.id||"",topicTitle:matchedTopic?.title||"",topicNumber:matchedTopic?.number||"",
+      competencyIds:matchedCompetencies.map(c=>c.id),
+      competencyCodes:matchedCompetencies.map(c=>c.code),
+      pointsDefault,tags,
+      sourceTitle:String(raw.sourceTitle||"").trim(),
+      sourceSet:String(raw.sourceSet||"").trim(),
+      stimulus:String(raw.stimulus||"").trim(),
+      prompt,options,correctAnswer,
+      explanation:String(raw.explanation||"").trim(),
+      rubric
+    }
+  };
+}
+
+async function bulkImportQuestionsModal(){
+  const s=state();
+  if(!s?.courses?.length)return toast("Create a course before importing questions.");
+
+  let selectedCourse=s.courses[0];
+  let fw=await framework(selectedCourse.id);
+  let parsedRows=[];
+
+  const modal=core().openModal({
+    eyebrow:"Question Bank",
+    title:"Bulk Import Questions",
+    wide:true,
+    body:'<div class="academic-form">'+
+      '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Choose Course</h3><p>Theoria maps imported topic numbers and competency codes against this course framework.</p></div></div><div class="field"><label>Course</label><select id="bulkImportCourse">'+s.courses.map(c=>'<option value="'+c.id+'">'+esc(c.code+" — "+c.title)+'</option>').join("")+'</select></div><div class="bulk-import-prompt-row"><div><strong>Generate in ChatGPT</strong><span>Copy a course-aware prompt that tells ChatGPT exactly how to format the full question set.</span></div><button type="button" class="secondary-btn" id="copyBulkPrompt">Copy ChatGPT Import Prompt</button></div></section>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Add Question Set</h3><p>Paste one complete JSON set from ChatGPT or upload a .json file. You do not need to paste questions individually.</p></div></div><div class="compact-field-grid"><div class="field"><label>JSON File</label><input id="bulkQuestionFile" type="file" accept=".json,application/json"></div><div class="field"><label>Expected Format</label><div class="static-field">JSON array or {"questions":[...]}</div></div></div><div class="field"><label>Paste Complete Question Set</label><textarea id="bulkQuestionJson" class="bulk-json-editor" spellcheck="false" placeholder='[{"type":"Multiple Choice","prompt":"...","options":["..."],"correctAnswer":"A"}]'></textarea></div><button type="button" class="primary-btn" id="previewBulkQuestions">Validate & Preview</button></section>'+
+      '<section class="form-section" id="bulkPreviewSection"><div class="form-section-head"><div><span>03</span><h3>Import Preview</h3><p>Nothing is saved until you confirm the import.</p></div><div id="bulkPreviewSummary"></div></div><div id="bulkPreviewResults"><div class="empty-mini">Paste or upload a question set, then validate it.</div></div></section>'+
+      '<div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button type="button" class="primary-btn" id="importBulkQuestions" disabled>Import Questions</button></div></div>'
+  });
+
+  const courseSelect=modal.querySelector("#bulkImportCourse");
+  const textarea=modal.querySelector("#bulkQuestionJson");
+  const fileInput=modal.querySelector("#bulkQuestionFile");
+  const summary=modal.querySelector("#bulkPreviewSummary");
+  const results=modal.querySelector("#bulkPreviewResults");
+  const importButton=modal.querySelector("#importBulkQuestions");
+
+  const resetPreview=()=>{
+    parsedRows=[];summary.innerHTML="";results.innerHTML='<div class="empty-mini">Validate the current question set before importing.</div>';importButton.disabled=true;importButton.textContent="Import Questions";
+  };
+
+  courseSelect.addEventListener("change",async()=>{
+    selectedCourse=s.courses.find(c=>c.id===courseSelect.value)||s.courses[0];
+    fw=await framework(selectedCourse.id);
+    resetPreview();
+  });
+
+  modal.querySelector("#copyBulkPrompt").addEventListener("click",async()=>{
+    const prompt=bulkPromptForCourse(selectedCourse,fw);
+    try{
+      await navigator.clipboard.writeText(prompt);
+      toast("Course-aware ChatGPT import prompt copied.");
+    }catch(_){
+      textarea.value=prompt;
+      toast("Clipboard access was unavailable, so the prompt was placed in the editor.");
+    }
+  });
+
+  fileInput.addEventListener("change",async()=>{
+    const file=fileInput.files?.[0];if(!file)return;
+    try{textarea.value=await file.text();resetPreview();}catch(_){toast("The JSON file could not be read.");}
+  });
+
+  modal.querySelector("#previewBulkQuestions").addEventListener("click",()=>{
+    let payload;
+    try{
+      const parsed=JSON.parse(stripJsonFence(textarea.value));
+      payload=Array.isArray(parsed)?parsed:(Array.isArray(parsed?.questions)?parsed.questions:null);
+      if(!payload)throw new Error("Expected a JSON array or an object with a questions array.");
+    }catch(error){
+      parsedRows=[];summary.innerHTML='<span class="badge danger">Invalid JSON</span>';results.innerHTML='<div class="notice danger-notice">'+esc(error.message||"The question set is not valid JSON.")+'</div>';importButton.disabled=true;return;
+    }
+
+    parsedRows=payload.map((row,index)=>normalizeBulkQuestion(row,index,fw));
+    const valid=parsedRows.filter(row=>row.data&&!row.errors.length);
+    const invalid=parsedRows.filter(row=>row.errors.length);
+    const warnings=parsedRows.filter(row=>row.warnings.length);
+    summary.innerHTML='<div class="bulk-preview-counts"><span><strong>'+valid.length+'</strong> valid</span><span><strong>'+invalid.length+'</strong> invalid</span><span><strong>'+warnings.length+'</strong> warnings</span></div>';
+
+    results.innerHTML=parsedRows.length?'<div class="bulk-preview-list">'+parsedRows.map(row=>
+      '<div class="bulk-preview-row '+(row.errors.length?'invalid':row.warnings.length?'warning':'valid')+'"><div class="bulk-preview-number">'+(row.index+1)+'</div><div><strong>'+esc(row.data?.prompt||"Invalid question")+'</strong><span>'+esc(row.data?.type||"")+(row.data?.topicNumber?' • Topic '+esc(row.data.topicNumber):'')+'</span>'+
+      (row.errors.length?'<div class="bulk-messages errors">'+row.errors.map(x=>'<div>✕ '+esc(x)+'</div>').join("")+'</div>':'')+
+      (row.warnings.length?'<div class="bulk-messages warnings">'+row.warnings.map(x=>'<div>! '+esc(x)+'</div>').join("")+'</div>':'')+
+      '</div></div>'
+    ).join("")+'</div>':'<div class="empty-mini">No questions were found in the JSON.</div>';
+
+    importButton.disabled=!valid.length;
+    importButton.textContent=valid.length?"Import "+valid.length+" Valid Question"+(valid.length===1?"":"s"):"Import Questions";
+  });
+
+  importButton.addEventListener("click",async()=>{
+    const valid=parsedRows.filter(row=>row.data&&!row.errors.length);
+    if(!valid.length)return;
+    importButton.disabled=true;importButton.textContent="Importing…";
+    try{
+      for(let offset=0;offset<valid.length;offset+=400){
+        const batch=writeBatch(db);
+        valid.slice(offset,offset+400).forEach(row=>{
+          const ref=doc(collection(db,"courses",selectedCourse.id,"items"));
+          batch.set(ref,{
+            ownerId:s.user.uid,
+            courseId:selectedCourse.id,
+            ...row.data,
+            createdAt:serverTimestamp(),
+            updatedAt:serverTimestamp()
+          });
+        });
+        await batch.commit();
+      }
+      core().closeModal();
+      await renderItemBank();
+      const skipped=parsedRows.length-valid.length;
+      toast(valid.length+" question"+(valid.length===1?"":"s")+" imported"+(skipped?" • "+skipped+" invalid skipped":"")+".");
+    }catch(error){
+      importButton.disabled=false;importButton.textContent="Import "+valid.length+" Valid Question"+(valid.length===1?"":"s");
+      toast(error.message||"Unable to import the question set.");
+    }
+  });
+}
+
 async function deleteBankQuestion(courseId,itemId){
   const item=P3.items.find(x=>x.courseId===courseId&&x.id===itemId);
   if(!item)return toast("Question not found.");
@@ -1723,6 +2005,7 @@ document.addEventListener("click",async e=>{
   if(a==="assign-current-section")return chooseAssessmentForSection(b.dataset.section);
   if(a==="edit-assignment")return editAssignedAssessmentModal(b.dataset.id);
   if(a==="delete-assigned"||a==="delete-assessment")return deleteAssessment(b.dataset.id);
+  if(a==="bulk-import-questions")return bulkImportQuestionsModal();
   if(a==="delete-bank-question")return deleteBankQuestion(b.dataset.course,b.dataset.id);
   if(a==="edit-item")return itemModal(P3.items.find(x=>x.id===b.dataset.id&&x.courseId===b.dataset.course));
   if(a==="open-assessment")return openAssessment(b.dataset.id);
