@@ -899,7 +899,7 @@ async function assignAssessmentModal(assessmentId,preferredSectionId=""){
     title:a.title,
     wide:true,
     body:'<form id="assignAssessmentForm" class="academic-form">'+
-      '<div class="assignment-preview-card"><div><span>'+esc(a.type)+'</span><h3>'+esc(a.title)+'</h3><p>'+esc(a.courseCode||"Course")+' • Reusable template</p></div><div class="assignment-preview-stats"><div><strong>'+esc(d.questions.length)+'</strong><span>Questions</span></div><div><strong>'+esc(d.questions.reduce((n,q)=>n+Number(q.points||0),0))+'</strong><span>Points</span></div><div><strong>'+esc(a.durationMinutes||0)+'</strong><span>Minutes</span></div></div></div>'+
+      '<div class="assignment-preview-card"><div><span>'+esc(a.type)+'</span><h3>'+esc(a.title)+'</h3><p>'+esc(a.courseCode||"Course")+' • '+(a.randomDrawEnabled?'Randomized question pool':'Reusable template')+'</p></div><div class="assignment-preview-stats"><div><strong>'+esc(a.randomDrawEnabled?(a.questionCount||0):d.questions.length)+'</strong><span>'+(a.randomDrawEnabled?'Per Student':'Questions')+'</span></div><div><strong>'+esc(a.totalPoints||d.questions.reduce((n,q)=>n+Number(q.points||0),0))+'</strong><span>Points</span></div><div><strong>'+esc(a.randomDrawEnabled?d.questions.length:(a.durationMinutes||0))+'</strong><span>'+(a.randomDrawEnabled?'Pool Size':'Minutes')+'</span></div></div></div>'+
       '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Destination</h3><p>Select the class receiving its own copy of this assessment.</p></div></div>'+
         '<div class="section-choice-grid" id="assignSectionChoices">'+sections.map(sec=>'<label class="section-choice"><input type="radio" name="sectionId" value="'+sec.id+'" '+((preferredSectionId?sec.id===preferredSectionId:sec.id===sections[0].id)?'checked':'')+'><div><span>'+esc(sec.courseCode||a.courseCode)+'</span><strong>'+esc(sec.sectionName)+'</strong><small>'+esc(sec.term||"")+' • '+esc(sec.studentCount||"")+(sec.studentCount?" students":"")+'</small></div><div class="section-choice-check">✓</div></label>').join("")+'</div>'+
         '<div class="field" style="margin-top:14px"><label>Assigned Title</label><input class="title-input" name="title" value="'+esc(a.title)+'" required></div>'+
@@ -935,8 +935,11 @@ async function assignAssessmentModal(assessmentId,preferredSectionId=""){
       ...Object.fromEntries(Object.entries(a).filter(([k])=>!["id","createdAt","updatedAt"].includes(k))),
       ownerId:s.user.uid,sectionId:section.id,sectionName:section.sectionName,templateSourceId:a.id,
       title:String(fd.get("title")).trim(),status:initialStatus,durationMinutes:Number(fd.get("durationMinutes")||0),
-      opensAt,closesAt,questionIds:d.questions.map(q=>q.id),questionCount:d.questions.length,
-      totalPoints:d.questions.reduce((n,q)=>n+Number(q.points||0),0),createdAt:serverTimestamp(),updatedAt:serverTimestamp()
+      opensAt,closesAt,questionIds:d.questions.map(q=>q.id),
+      questionPool:(a.questionPool?.length?a.questionPool:d.questions.map(q=>({id:q.id,itemId:q.itemId||"",type:q.type,points:Number(q.points||0)}))),
+      poolQuestionCount:d.questions.length,
+      questionCount:Number(a.questionCount||d.questions.length),
+      totalPoints:Number(a.totalPoints||d.questions.reduce((n,q)=>n+Number(q.points||0),0)),createdAt:serverTimestamp(),updatedAt:serverTimestamp()
     };
     try{
       await setDoc(ref,clone);
@@ -1409,16 +1412,27 @@ async function createEvaluation(studentId){
   try{await setDoc(doc(db,"assessments",a.id,"submissions",studentId),{studentId,candidateNumber:newCandidateNumber(),status:"submitted",startedAt:serverTimestamp(),acknowledgedAt:serverTimestamp(),submittedAt:serverTimestamp(),updatedAt:serverTimestamp(),answers:{},marked:[],currentIndex:0,elapsedSeconds:0,questionOrder:a.questionIds||[],accommodationsApplied:{}},{merge:true});await openAssessment(a.id,"candidates");toast("Evaluation record created.");}catch(err){toast(err.message||"Unable to create evaluation.");}
 }
 
-function metrics(a,d,grading){
-  const total=Object.values(grading).reduce((n,x)=>n+Number(x.score||0),0),max=Number(a.totalPoints||d.questions.reduce((n,q)=>n+Number(q.points||0),0)),percent=max?Math.round(total/max*1000)/10:0;
-  const complete=d.questions.length>0&&d.questions.every(q=>grading[q.id]?.score!==undefined&&grading[q.id]?.score!==null);
+function questionsForSubmission(d,sub){
+  const ids=Array.isArray(sub?.questionOrder)&&sub.questionOrder.length?new Set(sub.questionOrder):null;
+  return ids?d.questions.filter(q=>ids.has(q.id)):d.questions;
+}
+
+function metrics(a,d,grading,sub){
+  const questions=questionsForSubmission(d,sub);
+  const total=questions.reduce((n,q)=>n+Number(grading[q.id]?.score||0),0);
+  const max=questions.reduce((n,q)=>n+Number(q.points||0),0);
+  const percent=max?Math.round(total/max*1000)/10:0;
+  const complete=questions.length>0&&questions.every(q=>grading[q.id]?.score!==undefined&&grading[q.id]?.score!==null);
   const partScores={};
-  (a.parts||[]).forEach(part=>{const qs=d.questions.filter(q=>q.partId===part.id),pm=qs.reduce((n,q)=>n+Number(q.points||0),0),ps=qs.reduce((n,q)=>n+Number(grading[q.id]?.score||0),0);partScores[part.id]={title:part.title,score:ps,max:pm,percent:pm?Math.round(ps/pm*1000)/10:0};});
+  (a.parts||[]).forEach(part=>{
+    const qs=questions.filter(q=>q.partId===part.id),pm=qs.reduce((n,q)=>n+Number(q.points||0),0),ps=qs.reduce((n,q)=>n+Number(grading[q.id]?.score||0),0);
+    partScores[part.id]={title:part.title,score:ps,max:pm,percent:pm?Math.round(ps/pm*1000)/10:0};
+  });
   return {total,max,percent,complete,partScores};
 }
 
 async function persistResult(sub,grading,existing,overallComment=existing?.overallComment||""){
-  const d=P3.detail,a=d.assessment,m=metrics(a,d,grading),released=existing?.released||false,batch=writeBatch(db);
+  const d=P3.detail,a=d.assessment,m=metrics(a,d,grading,sub),released=existing?.released||false,batch=writeBatch(db);
   batch.set(doc(db,"assessments",a.id,"results",sub.studentId),{studentId:sub.studentId,candidateNumber:sub.candidateNumber,totalScore:m.total,maxScore:m.max,percent:m.percent,grading,partScores:m.partScores,released,complete:m.complete,overallComment,gradedAt:serverTimestamp(),gradedBy:state().user.uid},{merge:true});
   if(m.complete){
     batch.update(doc(db,"assessments",a.id,"submissions",sub.studentId),{status:"graded",updatedAt:serverTimestamp()});
@@ -1430,36 +1444,39 @@ async function persistResult(sub,grading,existing,overallComment=existing?.overa
 function gradeCandidate(studentId){
   const d=P3.detail,a=d.assessment,sub=d.submissions.find(x=>x.studentId===studentId);if(!sub)return;
   const existing=d.results.find(x=>x.studentId===studentId),grading=existing?.grading||{},keyMap=new Map(d.keys.map(x=>[x.id,x]));
+  const candidateQuestions=questionsForSubmission(d,sub);
   const modal=core().openModal({
     eyebrow:"Candidate Evaluation",
     title:a.anonymousGrading!==false?sub.candidateNumber:(d.members.find(x=>x.id===studentId)?.displayName||"Candidate"),
     wide:true,
-    body:'<form id="candidateGradeForm"><div class="grading-stack">'+d.questions.map((q,i)=>{
+    body:'<form id="candidateGradeForm"><div class="grading-stack">'+candidateQuestions.map((q,i)=>{
       const key=keyMap.get(q.id),suggested=objective(q.type)?(answerMatches(sub.answers?.[q.id],key?.correctAnswer,q.type)?Number(q.points||0):0):(grading[q.id]?.score??"");
       return '<section class="grading-question"><div class="grading-question-head"><span>Question '+(i+1)+' • '+esc(q.type)+'</span><strong>'+esc(q.points)+' pts</strong></div><h4>'+esc(q.prompt)+'</h4>'+(q.stimulus?'<div class="grading-source">'+esc(q.stimulus).replace(/\n/g,"<br>")+'</div>':'')+'<div class="candidate-response"><span>Candidate response</span><p>'+esc(Array.isArray(sub.answers?.[q.id])?sub.answers[q.id].join(", "):(sub.answers?.[q.id]||"(No response recorded)"))+'</p></div>'+(objective(q.type)?'<div class="answer-key"><span>Answer key</span><strong>'+esc(Array.isArray(key?.correctAnswer)?key.correctAnswer.join(", "):(key?.correctAnswer||"—"))+'</strong></div>':'')+((key?.rubric||[]).length?'<div class="rubric-display">'+key.rubric.map(r=>'<div><span>'+esc(r.criterion)+'</span><strong>'+esc(r.points)+' pts</strong></div>').join("")+'</div>':'')+'<div class="form-grid"><div class="field"><label>Score</label><input name="score_'+q.id+'" type="number" min="0" max="'+esc(q.points)+'" step="0.5" value="'+esc(suggested)+'" required></div><div class="field"><label>Feedback</label><input name="comment_'+q.id+'" value="'+esc(grading[q.id]?.comment||"")+'"></div></div></section>';
     }).join("")+'</div><div class="field"><label>Overall Instructor Comment</label><textarea name="overallComment">'+esc(existing?.overallComment||"")+'</textarea></div><div class="modal-foot" style="margin:24px -24px -24px"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Evaluation</button></div></form>'
   });
   modal.querySelector("#candidateGradeForm").addEventListener("submit",async e=>{
     e.preventDefault();const fd=new FormData(e.currentTarget),next={};
-    d.questions.forEach(q=>next[q.id]={score:Number(fd.get("score_"+q.id)||0),comment:String(fd.get("comment_"+q.id)||"").trim()});
+    candidateQuestions.forEach(q=>next[q.id]={score:Number(fd.get("score_"+q.id)||0),comment:String(fd.get("comment_"+q.id)||"").trim()});
     try{await persistResult(sub,next,existing,String(fd.get("overallComment")||"").trim());core().closeModal();await openAssessment(a.id,"candidates");toast("Evaluation saved.");}catch(err){toast(err.message||"Unable to save evaluation.");}
   });
 }
 
 async function autoScore(){
-  const d=P3.detail,a=d.assessment,keys=new Map(d.keys.map(x=>[x.id,x])),results=new Map(d.results.map(x=>[x.studentId,x])),subs=d.submissions.filter(x=>x.status==="submitted"||x.status==="graded"),objectiveItems=d.questions.filter(q=>objective(q.type));
-  if(!objectiveItems.length)return toast("No objective items to auto-score.");
+  const d=P3.detail,a=d.assessment,keys=new Map(d.keys.map(x=>[x.id,x])),results=new Map(d.results.map(x=>[x.studentId,x])),subs=d.submissions.filter(x=>x.status==="submitted"||x.status==="graded");
   if(!subs.length)return toast("No submitted candidates.");
+  let scored=0;
   for(const sub of subs){
     const existing=results.get(sub.studentId),grading={...(existing?.grading||{})};
-    objectiveItems.forEach(q=>grading[q.id]={score:answerMatches(sub.answers?.[q.id],keys.get(q.id)?.correctAnswer,q.type)?Number(q.points||0):0,comment:grading[q.id]?.comment||""});
+    const objectiveItems=questionsForSubmission(d,sub).filter(q=>objective(q.type));
+    objectiveItems.forEach(q=>{grading[q.id]={score:answerMatches(sub.answers?.[q.id],keys.get(q.id)?.correctAnswer,q.type)?Number(q.points||0):0,comment:grading[q.id]?.comment||""};scored++;});
     await persistResult(sub,grading,existing);
   }
-  await openAssessment(a.id,"grading");toast("Objective items scored.");
+  if(!scored)return toast("No objective questions were assigned to submitted candidates.");
+  await openAssessment(a.id,"grading");toast("Objective questions scored.");
 }
 
 function horizontalGrade(questionId){
-  const d=P3.detail,a=d.assessment,q=d.questions.find(x=>x.id===questionId),key=d.keys.find(x=>x.id===questionId),subs=d.submissions.filter(x=>x.status==="submitted"||x.status==="graded"),results=new Map(d.results.map(x=>[x.studentId,x]));
+  const d=P3.detail,a=d.assessment,q=d.questions.find(x=>x.id===questionId),key=d.keys.find(x=>x.id===questionId),subs=d.submissions.filter(x=>(x.status==="submitted"||x.status==="graded")&&questionsForSubmission(d,x).some(item=>item.id===questionId)),results=new Map(d.results.map(x=>[x.studentId,x]));
   if(!q||!subs.length)return toast("No submitted candidates.");
   const modal=core().openModal({
     eyebrow:"Horizontal Grading",
