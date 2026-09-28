@@ -4,7 +4,7 @@
 
 Theoria is a sophisticated theological learning, assessment, mastery, and academic-record platform with a restrained university-style identity.
 
-## Generation roadmap
+## Build status
 
 1. ✅ Foundation & Design
 2. ✅ Courses & Sections
@@ -17,7 +17,7 @@ Theoria intentionally uses only:
 
 - **Firebase Authentication**
 - **Cloud Firestore**
-- Firebase Hosting for the static site, if desired
+- GitHub Pages for the current static-site deployment
 
 There is **no Firebase Storage dependency** and no Cloud Functions dependency.
 
@@ -28,7 +28,7 @@ Enable **Email/Password** in Firebase Authentication.
 Deploy with:
 
 ```bash
-firebase deploy --only firestore:rules,hosting
+firebase deploy --only firestore:rules
 ```
 
 ## Completed platform
@@ -38,14 +38,14 @@ firebase deploy --only firestore:rules,hosting
 - Units, topics, learning objectives, essential knowledge, and competencies
 - Teaching sections with join codes and QR enrollment
 - Student rosters and accommodations
-- Assignments, resources, readings, and coursework gradebook
+- Assignments, student submissions, resources, readings, and a unified coursework/assessment gradebook
 
 ### Assessments & Examinations
-- Reusable Item Bank
+- Reusable Question Bank
 - Multiple choice / multiple select
 - Short response and essay
 - Passage, primary-source, and argument analysis
-- Oral examinations and disputations
+- Instructor-administered oral examinations and student-completable disputations
 - Semester I Examination
 - Comprehensive Final Examination
 - Content and competency blueprints
@@ -186,4 +186,4 @@ joinCodes/{THR-XXXXX}
 
 ## Status
 
-The four planned generation phases are complete. Future work should be normal feature additions, bug fixes, design refinements, or course-specific improvements rather than additional foundational phases.
+The four foundational build phases are complete. Current work is normal product development: testing, feature refinement, bug fixes, and course-specific improvements.
