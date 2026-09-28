@@ -141,6 +141,7 @@ async function maybePromptSystemOwner(user){
   const sameAccount=!!owner&&owner.uid===user.uid;
   if(sameAccount&&owner.confirmed===true){
     state.isSystemOwner=true;
+    applyOwnerUI();
     return;
   }
   if(owner&&!sameAccount)return;
@@ -2985,12 +2986,22 @@ onAuthStateChanged(auth,async user=>{
   }
   renderUser(user,state.profile);
   authShell.classList.add("hidden");appShell.classList.remove("hidden");
+
+  // System-owner onboarding must not depend on the rest of the academic
+  // workspace loading successfully. Existing accounts can therefore be
+  // recognized by their authenticated email and offered the owner claim
+  // immediately on their next sign-in, even if another Firestore query fails.
+  setTimeout(()=>{
+    maybePromptSystemOwner(user).catch(error=>{
+      console.error("Unable to run system-owner onboarding:",error);
+    });
+  },180);
+
   try{
     await loadWorkspace();
     setPage("home");
     window.dispatchEvent(new CustomEvent("theoria:ready"));
     const joinParam=new URLSearchParams(location.search).get("join");
     if(joinParam && state.role==="student") setTimeout(()=>previewJoin(joinParam),200);
-    setTimeout(()=>maybePromptSystemOwner(user),180);
   }catch(error){console.error(error);showToast("Theoria loaded, but some academic data could not be retrieved.");}
 });
