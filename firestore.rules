@@ -33,7 +33,9 @@ service cloud.firestore {
     }
 
     function courseIsPublishedCatalog(courseId) {
-      return courseData(courseId).catalogCourse == true
+      return ('catalogCourse' in courseData(courseId))
+        && ('catalogPublished' in courseData(courseId))
+        && courseData(courseId).catalogCourse == true
         && courseData(courseId).catalogPublished == true;
     }
 
@@ -50,7 +52,10 @@ service cloud.firestore {
       return isSystemOwner()
         || (
           courseOwner(courseId)
-          && courseData(courseId).catalogCourse != true
+          && (
+            !('catalogCourse' in courseData(courseId))
+            || courseData(courseId).catalogCourse != true
+          )
         );
     }
 
@@ -170,25 +175,38 @@ service cloud.firestore {
       allow create: if isInstructor()
         && request.resource.data.ownerId == uid()
         && (
-          request.resource.data.catalogCourse != true
+          !('catalogCourse' in request.resource.data)
+          || request.resource.data.catalogCourse != true
           || isSystemOwner()
         );
       allow update: if isSystemOwner()
         || (
           courseOwner(courseId)
-          && resource.data.catalogCourse != true
-          && request.resource.data.catalogCourse != true
+          && (
+            !('catalogCourse' in resource.data)
+            || resource.data.catalogCourse != true
+          )
+          && (
+            !('catalogCourse' in request.resource.data)
+            || request.resource.data.catalogCourse != true
+          )
         )
         || (
           isInstructor()
           && !('ownerId' in resource.data)
           && request.resource.data.ownerId == uid()
-          && request.resource.data.catalogCourse != true
+          && (
+            !('catalogCourse' in request.resource.data)
+            || request.resource.data.catalogCourse != true
+          )
         );
       allow delete: if isSystemOwner()
         || (
           courseOwner(courseId)
-          && resource.data.catalogCourse != true
+          && (
+            !('catalogCourse' in resource.data)
+            || resource.data.catalogCourse != true
+          )
         );
 
       match /units/{unitId} {
