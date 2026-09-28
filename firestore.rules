@@ -32,6 +32,11 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/sections/$(sectionId)).data.ownerId == uid();
     }
 
+    function sectionOwnerAfter(sectionId) {
+      return signedIn()
+        && getAfter(/databases/$(database)/documents/sections/$(sectionId)).data.ownerId == uid();
+    }
+
     function sectionMember(sectionId) {
       return signedIn()
         && exists(/databases/$(database)/documents/sections/$(sectionId)/members/$(uid()));
@@ -109,7 +114,7 @@ service cloud.firestore {
     match /joinCodes/{code} {
       allow read: if signedIn();
       allow create: if isInstructor()
-        && sectionOwner(request.resource.data.sectionId);
+        && sectionOwnerAfter(request.resource.data.sectionId);
       allow update: if isInstructor()
         && sectionOwner(resource.data.sectionId)
         && request.resource.data.sectionId == resource.data.sectionId;
