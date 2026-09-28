@@ -469,6 +469,10 @@ function openCompetencyModal(existing,courseId=state.currentCourse?.id || state.
       updatedAt:serverTimestamp()
     };
     try{
+      if(state.role==="instructor" && !course?.ownerId){
+        await updateDoc(doc(db,"courses",courseId),{ownerId:state.user.uid,updatedAt:serverTimestamp()});
+        if(course) course.ownerId=state.user.uid;
+      }
       if(existing) await updateDoc(doc(db,"courses",courseId,"competencies",existing.id),data);
       else await addDoc(collection(db,"courses",courseId,"competencies"),{...data,createdAt:serverTimestamp()});
       closeModal();
