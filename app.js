@@ -1205,14 +1205,15 @@ function assignmentDueState(assignment){
 
 function renderAssignments(){
   const items=state.sectionData.assignments.filter(a=>state.role==="instructor" || a.status!=="Draft");
+  const framework=state.sectionData.framework||{units:[]};
   const submissionMap=new Map((state.sectionData.assignmentSubmissions||[]).map(x=>[x.assignmentId,x]));
   const gradeMap=new Map((state.sectionData.grades||[]).map(g=>[g.assignmentId,g]));
-  const list=items.length ? '<div class="assignment-list">'+items.map(a=>{
+
+  const card=a=>{
     const due=assignmentDueState(a),submission=submissionMap.get(a.id),grade=gradeMap.get(a.id);
     const studentStatus=grade?"Graded":submission?.status==="submitted"?"Submitted":submission?.status==="draft"?"Draft saved":due.late?"Late / Not submitted":"Not started";
     const statusClass=grade?"live":submission?.status==="submitted"?"live":submission?.status==="draft"?"gold":due.late?"danger":"";
     return '<div class="assignment-row coursework-card"><div><div class="card-kicker">'+esc(a.type||"Assignment")+
-      (a.unitTitle?' • Unit '+esc(a.unitNumber||"")+': '+esc(a.unitTitle):'')+
       (a.topicNumber?' • Topic '+esc(a.topicNumber):'')+
       '</div><h4>'+esc(a.title)+'</h4>'+(a.description?'<p>'+esc(a.description)+'</p>':'')+
       (a.instructionSteps?.length?'<div class="assignment-step-preview">'+a.instructionSteps.slice(0,3).map((step,i)=>'<div><span>'+String(i+1).padStart(2,"0")+'</span>'+esc(step)+'</div>').join("")+(a.instructionSteps.length>3?'<small>+'+(a.instructionSteps.length-3)+' more step'+(a.instructionSteps.length-3===1?"":"s")+'</small>':'')+'</div>':'')+
@@ -1222,8 +1223,83 @@ function renderAssignments(){
       (state.role==="instructor"?'<button class="secondary-btn small-btn" data-action="assignment-submissions" data-id="'+a.id+'">Submissions</button><button class="text-btn" data-action="edit-assignment" data-id="'+a.id+'">Edit</button><button class="danger-btn small-btn" data-action="delete-assignment" data-id="'+a.id+'">Delete</button>':
         (a.submissionMode==="No Online Submission"?'<span class="badge">Instructor-managed</span>':'<button class="primary-btn small-btn" data-action="open-student-assignment" data-id="'+a.id+'">'+(submission?.status==="submitted"?(a.allowResubmission?"View / Revise":"View Submission"):(submission?.status==="draft"?"Continue Assignment":"Open Assignment"))+'</button>'))+
       '</div></div>';
-  }).join("")+'</div>' : '<div class="empty-state"><div class="empty-symbol">A</div><h3>No assignments yet.</h3><p>'+(state.role==="instructor"?"Create coursework, readings, written responses, research milestones, or academic exercises.":"Nothing has been assigned in this section yet.")+'</p></div>';
-  return '<div class="page-head" style="margin-bottom:16px"><div><div class="panel-title">Coursework</div><p class="page-subtitle">'+(state.role==="instructor"?"Create, bulk-plan, collect, review, and grade student coursework.":"Open assignments here, save drafts, and submit your work directly in Theoria.")+'</p></div>'+(state.role==="instructor"?'<div class="inline-actions"><button class="secondary-btn small-btn" data-action="bulk-import-assignments">Bulk Import Unit</button><button class="primary-btn small-btn" data-action="create-assignment">Create Assignment</button></div>':'')+'</div>'+list;
+  };
+
+  const groups=unitFolderGroups(items,framework);
+  const list=groups.length
+    ? '<div class="unit-folder-stack">'+groups.map((group,index)=>
+        '<details class="unit-folder '+(group.id==="unsorted"?'unsorted-folder':'')+'" '+(index===0||group.id==="unsorted"?'open':'')+'>'+
+          '<summary><div class="unit-folder-icon">'+(group.id==="unsorted"?'?':esc(group.unit?.order||"U"))+'</div><div><strong>'+esc(group.label)+'</strong><span>'+group.items.length+' assignment'+(group.items.length===1?"":"s")+'</span></div><div class="unit-folder-chevron">⌄</div></summary>'+
+          '<div class="unit-folder-body assignment-list">'+group.items.map(card).join("")+'</div>'+
+        '</details>'
+      ).join("")+'</div>'
+    : '<div class="empty-state"><div class="empty-symbol">A</div><h3>No assignments yet.</h3><p>'+(state.role==="instructor"?"Create coursework, readings, written responses, research milestones, or academic exercises.":"Nothing has been assigned in this section yet.")+'</p></div>';
+
+  const unsortedCount=items.filter(item=>!resolveFrameworkPlacement(item,framework).unit).length;
+  return '<div class="page-head" style="margin-bottom:16px"><div><div class="panel-title">Coursework</div><p class="page-subtitle">'+(state.role==="instructor"?"Assignments are organized into course-unit folders.":"Your coursework is organized by course unit.")+'</p></div>'+
+    (state.role==="instructor"?'<div class="inline-actions">'+
+      (items.length?'<button class="secondary-btn small-btn" data-action="auto-sort-assignments">Auto-Sort'+(unsortedCount?' ('+unsortedCount+')':'')+'</button>':'')+
+      '<button class="secondary-btn small-btn" data-action="bulk-import-assignments">Bulk Import Unit</button><button class="primary-btn small-btn" data-action="create-assignment">Create Assignment</button></div>':'')+
+    '</div>'+list;
+}
+
+async function autoSortAssignmentsModal(){
+  if(state.role!=="instructor"||!state.currentSection||!state.sectionData)return;
+  const framework=state.sectionData.framework||{units:[]};
+  if(!framework.units.length)return showToast("Create course units and topics before using Auto-Sort.");
+
+  const candidates=state.sectionData.assignments.filter(item=>!resolveFrameworkPlacement(item,framework).unit);
+  if(!candidates.length)return showToast("Every assignment is already placed in a unit folder.");
+
+  const suggestions=candidates.map(item=>({item,suggestion:suggestFrameworkPlacement(item,framework)}));
+  const modal=openModal({
+    eyebrow:"Coursework Organization",
+    title:"Auto-Sort Assignments",
+    wide:true,
+    body:'<div class="auto-sort-intro"><div><strong>'+candidates.length+' unsorted assignment'+(candidates.length===1?"":"s")+'</strong><span>Theoria matched legacy work against topic numbers, titles, objectives, essential knowledge, tags, directions, and requirements. Review every suggestion before applying it.</span></div><div class="auto-sort-legend"><span class="confidence exact">Exact</span><span class="confidence high">High</span><span class="confidence medium">Medium</span><span class="confidence low">Low</span></div></div>'+
+      '<div class="auto-sort-list">'+suggestions.map(({item,suggestion})=>{
+        const confident=suggestion.confidence!=="Low"&&suggestion.unit;
+        const selected=confident?(suggestion.topic?"topic:"+suggestion.unit.id+":"+suggestion.topic.id:"unit:"+suggestion.unit.id):"";
+        const percent=Math.round(Number(suggestion.score||0)*100);
+        return '<div class="auto-sort-row"><div class="auto-sort-copy"><span>'+esc(item.type||"Assignment")+'</span><strong>'+esc(item.title||"Untitled Assignment")+'</strong><small>'+(item.description?esc(item.description.slice(0,120)):"No description")+'</small></div>'+
+          '<div class="auto-sort-confidence"><span class="confidence '+String(suggestion.confidence||"Low").toLowerCase()+'">'+esc(suggestion.confidence||"Low")+'</span><small>'+percent+'% match</small></div>'+
+          '<div class="field auto-sort-select"><label>Place in</label><select data-auto-sort-assignment="'+item.id+'">'+frameworkPlacementOptions(framework,selected)+'</select></div></div>';
+      }).join("")+'</div>',
+    footer:'<button class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" id="applyAssignmentAutoSort">Apply Selected Placements</button>'
+  });
+
+  modal.querySelector("#applyAssignmentAutoSort").onclick=async()=>{
+    const selections=[...modal.querySelectorAll("[data-auto-sort-assignment]")].map(select=>({
+      id:select.dataset.autoSortAssignment,
+      placement:placementDataFromValue(select.value,framework)
+    })).filter(x=>x.placement);
+    if(!selections.length)return showToast("Choose at least one Unit or Topic placement.");
+
+    const button=modal.querySelector("#applyAssignmentAutoSort");
+    button.disabled=true;button.textContent="Sorting…";
+    try{
+      for(let offset=0;offset<selections.length;offset+=400){
+        const batch=writeBatch(db);
+        selections.slice(offset,offset+400).forEach(row=>{
+          const topicOrder=framework.units.find(u=>u.id===row.placement.unitId)?.topics?.find(t=>t.id===row.placement.topicId)?.order||0;
+          batch.update(doc(db,"sections",state.currentSection.id,"assignments",row.id),{
+            ...row.placement,
+            unitSequence:Number(topicOrder||0),
+            autoSortedAt:serverTimestamp(),
+            updatedAt:serverTimestamp()
+          });
+        });
+        await batch.commit();
+      }
+      closeModal();
+      state.sectionData=await loadSectionData(state.currentSection);
+      renderSectionDetail("assignments");
+      showToast(selections.length+" assignment"+(selections.length===1?"":"s")+" sorted into unit folders.");
+    }catch(error){
+      button.disabled=false;button.textContent="Apply Selected Placements";
+      showToast(humanizeFirebaseError(error));
+    }
+  };
 }
 
 function renderResources(){
@@ -2514,6 +2590,7 @@ document.addEventListener("click",async event=>{
   if(action==="section-tab") return renderSectionDetail(btn.dataset.tab);
   if(action==="create-assignment") return openAssignmentModal();
   if(action==="bulk-import-assignments") return bulkImportAssignmentsModal();
+  if(action==="auto-sort-assignments") return autoSortAssignmentsModal();
   if(action==="edit-assignment") return openAssignmentModal(state.sectionData.assignments.find(x=>x.id===btn.dataset.id));
   if(action==="delete-assignment") return deleteAssignment(btn.dataset.id);
   if(action==="open-student-assignment") return openStudentAssignmentModal(btn.dataset.id);
