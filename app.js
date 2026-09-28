@@ -297,7 +297,7 @@ function renderCourses(){
 
   el.innerHTML=
     '<div class="academic-banner catalog-banner"><div class="kicker">Theoria Course Catalog</div><h3>Courses are built once, then taught in sections.</h3><p>Official courses include a system-managed Course Framework and master Question Bank. Instructors create teaching sections from the catalog instead of rebuilding curriculum.</p></div>'+
-    (official.length?'<section class="catalog-course-section"><div class="page-head compact-head"><div><div class="panel-title">Official Theoria Courses</div><p class="page-subtitle">'+official.length+' centrally managed course'+(official.length===1?"":"s")+'.</p></div>'+(state.isSystemOwner?'<button class="primary-btn small-btn" data-action="create-course">Create Catalog Course</button>':'')+'</div><div class="card-grid">'+official.map(courseCard).join("")+'</div></section>':'')+
+    (official.length?'<section class="catalog-course-section"><div class="page-head compact-head"><div><div class="panel-title">Official Theoria Courses</div><p class="page-subtitle">'+official.length+' centrally managed course'+(official.length===1?"":"s")+'.</p></div>'+(state.isSystemOwner?'<div class="inline-actions"><button class="secondary-btn small-btn" data-action="bulk-create-courses">Bulk Add with AI</button><button class="primary-btn small-btn" data-action="create-course">Create Catalog Course</button></div>':'')+'</div><div class="card-grid">'+official.map(courseCard).join("")+'</div></section>':'')+
     (custom.length?'<section class="catalog-course-section custom-course-section"><div class="page-head compact-head"><div><div class="panel-title">Custom / Legacy Courses</div><p class="page-subtitle">Instructor-owned courses outside the official catalog.</p></div></div><div class="card-grid">'+custom.map(courseCard).join("")+'</div></section>':'');
 }
 
@@ -320,6 +320,349 @@ async function generateJoinCode(){
     if(!existing.exists()) return code;
   }
   throw new Error("Unable to generate a unique join code.");
+}
+
+
+function bulkCourseCreatorPrompt(requestText=""){
+  const existingCodes=state.courses.map(c=>String(c.code||"").trim().toUpperCase()).filter(Boolean);
+  const request=String(requestText||"").trim();
+  return [
+    "Create a batch of official Theoria catalog courses.",
+    "",
+    request?"COURSE CREATION REQUEST: "+request:"COURSE CREATION REQUEST: Build a coherent set of academically rigorous courses suitable for the Theoria catalog.",
+    "",
+    "Return ONLY valid JSON. Do not use Markdown fences, commentary, headings, or explanatory prose.",
+    "Return one object with a single courses array.",
+    "",
+    "Use this structure:",
+    "{",
+    '  "courses": [',
+    "    {",
+    '      "code": "APOL 01",',
+    '      "title": "Advanced Christian Apologetics",',
+    '      "discipline": "Apologetics",',
+    '      "level": "Advanced",',
+    '      "status": "Draft",',
+    '      "description": "A concise catalog description.",',
+    '      "catalogPublished": false,',
+    '      "framework": {',
+    '        "competencies": [',
+    '          {"code":"ARG-1","name":"Argument Analysis","description":"Evaluate arguments with precision.","order":1}',
+    "        ],",
+    '        "units": [',
+    "          {",
+    '            "order": 1,',
+    '            "title": "Foundations",',
+    '            "description": "Unit scope and purpose.",',
+    '            "topics": [',
+    '              {"number":"1.1","title":"Core Questions","learningObjective":"Analyze the central questions of the field.","essentialKnowledge":"Key concepts, terms, sources, and debates.","competencyCodes":["ARG-1"],"order":1}',
+    "            ]",
+    "          }",
+    "        ]",
+    "      }",
+    "    }",
+    "  ]",
+    "}",
+    "",
+    "Rules:",
+    "- Every course must have a unique, concise course code and a clear academic title.",
+    '- level must be one of: "Introductory", "Intermediate", "Advanced", "Graduate-style".',
+    '- status must be one of: "Draft", "Active", "Archived". Use Draft unless I explicitly ask for another status.',
+    "- catalogPublished should normally be false so the System Owner can review the course before publishing it.",
+    "- Include a complete framework for each course unless my request explicitly asks for course shells only.",
+    "- Framework competencies must use unique stable codes within each course.",
+    "- Unit order values must be unique positive integers within each course.",
+    "- Topic numbers must be unique within each course and normally follow the unit pattern 1.1, 1.2, 2.1, and so on.",
+    "- learningObjective should describe what students should understand, analyze, evaluate, synthesize, or defend.",
+    "- essentialKnowledge should identify the concrete knowledge students are expected to retain.",
+    "- competencyCodes on topics may reference competencies created in that same course framework.",
+    "- Do not use any existing course code listed below.",
+    "",
+    "EXISTING THEORIA COURSE CODES:",
+    ...(existingCodes.length?existingCodes:["None yet."])
+  ].join("\n");
+}
+
+function normalizeBulkCourseImport(payload){
+  const rawCourses=Array.isArray(payload)?payload:(Array.isArray(payload?.courses)?payload.courses:[]);
+  const existingCodes=new Set(state.courses.map(c=>String(c.code||"").trim().toUpperCase()).filter(Boolean));
+  const seenCodes=new Set();
+  const allowedLevels=new Set(["Introductory","Intermediate","Advanced","Graduate-style"]);
+  const allowedStatuses=new Set(["Draft","Active","Archived"]);
+  const rows=[];
+
+  if(!rawCourses.length){
+    return {errors:["The JSON must contain at least one course."],rows:[],summary:{newCourses:0,skippedCourses:0,invalid:1,units:0,topics:0,competencies:0}};
+  }
+
+  rawCourses.forEach((raw,index)=>{
+    const errors=[],warnings=[];
+    if(!raw||typeof raw!=="object"||Array.isArray(raw)){
+      rows.push({index,status:"invalid",errors:["Course "+(index+1)+" is not an object."],warnings,data:null,framework:null});
+      return;
+    }
+
+    const code=String(raw.code||"").trim().toUpperCase();
+    const title=String(raw.title||"").trim();
+    if(!code)errors.push("Course code is required.");
+    if(!title)errors.push("Course title is required.");
+    if(code&&seenCodes.has(code))errors.push("Duplicate course code in this import: "+code);
+    if(code)seenCodes.add(code);
+
+    let level=String(raw.level||"Advanced").trim();
+    if(!allowedLevels.has(level)){
+      warnings.push('Unknown academic level "'+level+'"; defaulted to Advanced.');
+      level="Advanced";
+    }
+
+    let status=String(raw.status||"Draft").trim();
+    if(!allowedStatuses.has(status)){
+      warnings.push('Unknown status "'+status+'"; defaulted to Draft.');
+      status="Draft";
+    }
+
+    const existing=code&&existingCodes.has(code);
+    if(existing)warnings.push("Course "+code+" already exists and will be skipped.");
+
+    const frameworkPayload=(raw.framework&&typeof raw.framework==="object"&&!Array.isArray(raw.framework))
+      ? raw.framework
+      : {competencies:Array.isArray(raw.competencies)?raw.competencies:[],units:Array.isArray(raw.units)?raw.units:[]};
+    const hasFramework=(Array.isArray(frameworkPayload.competencies)&&frameworkPayload.competencies.length)
+      ||(Array.isArray(frameworkPayload.units)&&frameworkPayload.units.length);
+    const framework=hasFramework?normalizeFrameworkImport(frameworkPayload,{competencies:[],units:[]}):null;
+    if(framework?.summary?.invalid>0)errors.push("Course Framework contains "+framework.summary.invalid+" invalid record"+(framework.summary.invalid===1?"":"s")+".");
+    if(!hasFramework)warnings.push("No framework supplied; this will create a course shell only.");
+
+    const catalogPublished=raw.catalogPublished===true&&status!=="Draft";
+    if(raw.catalogPublished===true&&status==="Draft")warnings.push("Draft courses cannot be auto-published; catalogPublished was set to false.");
+
+    rows.push({
+      index,
+      status:errors.length?"invalid":existing?"skip":"new",
+      errors,warnings,existing,
+      data:errors.length?null:{
+        code,title,
+        discipline:String(raw.discipline||"Theology").trim()||"Theology",
+        level,status,
+        description:String(raw.description||"").trim(),
+        catalogPublished
+      },
+      framework
+    });
+  });
+
+  const errors=rows.flatMap(r=>r.errors);
+  return {
+    errors,
+    rows,
+    summary:{
+      newCourses:rows.filter(r=>r.status==="new").length,
+      skippedCourses:rows.filter(r=>r.status==="skip").length,
+      invalid:rows.filter(r=>r.status==="invalid").length,
+      competencies:rows.filter(r=>r.status==="new").reduce((n,r)=>n+(r.framework?.summary?.newCompetencies||0),0),
+      units:rows.filter(r=>r.status==="new").reduce((n,r)=>n+(r.framework?.summary?.newUnits||0),0),
+      topics:rows.filter(r=>r.status==="new").reduce((n,r)=>n+(r.framework?.summary?.newTopics||0),0)
+    }
+  };
+}
+
+async function writeNewCourseFramework(courseId,normalized){
+  if(!normalized)return {competencies:0,units:0,topics:0};
+  const newCompetencies=normalized.competencies.filter(r=>r.status==="new");
+  const newUnits=normalized.units.filter(r=>r.status==="new");
+  const newTopics=normalized.units.flatMap(unit=>(unit.topics||[]).filter(topic=>topic.status==="new").map(topic=>({unit,topic})));
+
+  const compRefByCode=new Map();
+  for(const row of newCompetencies){
+    compRefByCode.set(row.data.code,doc(collection(db,"courses",courseId,"competencies")));
+  }
+
+  const unitRefByOrder=new Map();
+  for(const row of newUnits){
+    unitRefByOrder.set(Number(row.data.order),doc(collection(db,"courses",courseId,"units")));
+  }
+
+  const operations=[];
+  for(const row of newCompetencies){
+    const ref=compRefByCode.get(row.data.code);
+    operations.push(batch=>batch.set(ref,{
+      code:row.data.code,name:row.data.name,description:row.data.description,order:row.data.order,
+      createdAt:serverTimestamp(),updatedAt:serverTimestamp()
+    }));
+  }
+
+  for(const row of newUnits){
+    const ref=unitRefByOrder.get(Number(row.data.order));
+    operations.push(batch=>batch.set(ref,{
+      order:row.data.order,title:row.data.title,description:row.data.description,
+      createdAt:serverTimestamp(),updatedAt:serverTimestamp()
+    }));
+  }
+
+  for(const pair of newTopics){
+    const unitRef=unitRefByOrder.get(Number(pair.unit.data?.order));
+    if(!unitRef)throw new Error("Unable to resolve Unit "+(pair.unit.data?.order||"?")+" for "+pair.topic.data.number+".");
+    const competencyIds=[],competencyCodes=[];
+    for(const code of pair.topic.data.competencyCodes||[]){
+      const ref=compRefByCode.get(code);
+      if(ref){competencyIds.push(ref.id);competencyCodes.push(code);}
+    }
+    const topicRef=doc(collection(db,"courses",courseId,"units",unitRef.id,"topics"));
+    operations.push(batch=>batch.set(topicRef,{
+      number:pair.topic.data.number,title:pair.topic.data.title,
+      learningObjective:pair.topic.data.learningObjective,
+      essentialKnowledge:pair.topic.data.essentialKnowledge,
+      competencyIds,competencyCodes,order:pair.topic.data.order,
+      createdAt:serverTimestamp(),updatedAt:serverTimestamp()
+    }));
+  }
+
+  for(let offset=0;offset<operations.length;offset+=400){
+    const batch=writeBatch(db);
+    operations.slice(offset,offset+400).forEach(apply=>apply(batch));
+    await batch.commit();
+  }
+
+  return {competencies:newCompetencies.length,units:newUnits.length,topics:newTopics.length};
+}
+
+function bulkCreateCoursesModal(){
+  if(!state.isSystemOwner)return showToast("Only the Theoria system owner can bulk-create catalog courses.");
+  let normalized=null;
+
+  const modal=openModal({
+    eyebrow:"Theoria Catalog Authoring",
+    title:"Bulk Add Courses with AI",
+    wide:true,
+    body:'<div class="academic-form">'+
+      '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Tell AI What to Build</h3><p>Describe the catalog courses you want. Theoria will generate a structured ChatGPT prompt that includes the required JSON schema and your existing course codes.</p></div></div>'+
+        '<div class="field"><label>Course Set Request</label><textarea id="bulkCourseRequest" class="editor-compact" rows="4" placeholder="Example: Create 8 upper-level theology courses covering biblical studies, church history, apologetics, philosophy of religion, and hermeneutics. Include complete frameworks."></textarea></div>'+
+        '<div class="bulk-import-prompt-row"><div><strong>Generate the courses in ChatGPT</strong><span>Copy this prompt, give it to ChatGPT, then paste the returned JSON below.</span></div><button type="button" class="secondary-btn" id="copyBulkCoursePrompt">Copy AI Course Creator Prompt</button></div>'+
+      '</section>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Add Course JSON</h3><p>Paste the AI response or upload a JSON file. Existing course codes are skipped instead of overwritten.</p></div></div>'+
+        '<div class="compact-field-grid"><div class="field"><label>JSON File</label><input id="bulkCourseFile" type="file" accept=".json,application/json"></div><div class="field"><label>Import Mode</label><div class="static-field">Safe create — existing course codes are never overwritten</div></div></div>'+
+        '<div class="field"><label>Paste Courses</label><textarea id="bulkCourseJson" class="bulk-json-editor" spellcheck="false" placeholder=\'{"courses":[{"code":"APOL 01","title":"Advanced Christian Apologetics",...}]}\'></textarea></div>'+
+        '<button type="button" class="primary-btn" id="previewBulkCourses">Validate & Preview</button>'+
+      '</section>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>03</span><h3>Import Preview</h3><p>Review every course and its framework totals before anything is written to Firestore.</p></div><div id="bulkCourseSummary"></div></div><div id="bulkCourseResults"><div class="empty-mini">Paste or upload course JSON, then validate it.</div></div></section>'+
+      '<div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button type="button" class="primary-btn" id="importBulkCourses" disabled>Create Courses</button></div>'+
+    '</div>'
+  });
+
+  const requestBox=modal.querySelector("#bulkCourseRequest");
+  const textarea=modal.querySelector("#bulkCourseJson");
+  const fileInput=modal.querySelector("#bulkCourseFile");
+  const summary=modal.querySelector("#bulkCourseSummary");
+  const results=modal.querySelector("#bulkCourseResults");
+  const importButton=modal.querySelector("#importBulkCourses");
+
+  const resetPreview=()=>{
+    normalized=null;summary.innerHTML="";
+    results.innerHTML='<div class="empty-mini">Validate the current course JSON before importing.</div>';
+    importButton.disabled=true;importButton.textContent="Create Courses";
+  };
+
+  modal.querySelector("#copyBulkCoursePrompt").addEventListener("click",async()=>{
+    const prompt=bulkCourseCreatorPrompt(requestBox.value);
+    try{
+      await navigator.clipboard.writeText(prompt);
+      showToast("AI Course Creator prompt copied.");
+    }catch(_){
+      showToast("Clipboard access was unavailable. Try again from a secure browser tab.");
+    }
+  });
+
+  fileInput.addEventListener("change",async()=>{
+    const file=fileInput.files?.[0];if(!file)return;
+    try{textarea.value=await file.text();resetPreview();}catch(_){showToast("The JSON file could not be read.");}
+  });
+  textarea.addEventListener("input",resetPreview);
+
+  modal.querySelector("#previewBulkCourses").addEventListener("click",()=>{
+    let payload;
+    try{
+      payload=JSON.parse(stripFrameworkJsonFence(textarea.value));
+    }catch(error){
+      normalized=null;
+      summary.innerHTML='<span class="badge danger">Invalid JSON</span>';
+      results.innerHTML='<div class="notice danger-notice">'+esc(error.message||"The course data is not valid JSON.")+'</div>';
+      importButton.disabled=true;
+      return;
+    }
+
+    normalized=normalizeBulkCourseImport(payload);
+    const s=normalized.summary;
+    summary.innerHTML='<div class="bulk-preview-counts">'+
+      '<span><strong>'+s.newCourses+'</strong> new courses</span>'+
+      '<span><strong>'+s.units+'</strong> units</span>'+
+      '<span><strong>'+s.topics+'</strong> topics</span>'+
+      '<span><strong>'+s.competencies+'</strong> competencies</span>'+
+      '<span><strong>'+s.skippedCourses+'</strong> skipped</span>'+
+      '<span><strong>'+s.invalid+'</strong> invalid</span>'+
+      '</div>';
+
+    results.innerHTML='<div class="bulk-preview-list">'+normalized.rows.map(row=>{
+      const d=row.data||{};
+      const fs=row.framework?.summary;
+      const statusText=row.status==="new"?"Create course":row.status==="skip"?"Already exists — skip":"Invalid";
+      return '<div class="bulk-preview-row '+(row.status==="invalid"?'invalid':row.status==="skip"?'warning':'valid')+'">'+
+        '<div class="bulk-preview-number">'+esc(String(row.index+1).padStart(2,"0"))+'</div><div>'+
+        '<strong>'+esc(d.code||"Invalid course")+(d.title?' — '+esc(d.title):'')+'</strong>'+
+        '<span>'+statusText+(d.level?' • '+esc(d.level):'')+(d.catalogPublished?' • Publish to catalog':' • Catalog draft')+'</span>'+
+        (fs?'<div class="bulk-course-framework-line">'+fs.newUnits+' units • '+fs.newTopics+' topics • '+fs.newCompetencies+' competencies</div>':'<div class="bulk-course-framework-line">Course shell only</div>')+
+        (row.errors.length?'<div class="bulk-messages errors">'+row.errors.map(x=>'<div>✕ '+esc(x)+'</div>').join("")+'</div>':'')+
+        (row.warnings.length?'<div class="bulk-messages warnings">'+row.warnings.map(x=>'<div>! '+esc(x)+'</div>').join("")+'</div>':'')+
+        '</div></div>';
+    }).join("")+'</div>';
+
+    importButton.disabled=!s.newCourses||s.invalid>0;
+    importButton.textContent=s.invalid>0?"Fix Invalid Courses":"Create "+s.newCourses+" Course"+(s.newCourses===1?"":"s");
+  });
+
+  importButton.addEventListener("click",async()=>{
+    if(!normalized)return;
+    const s=normalized.summary;
+    if(s.invalid>0)return showToast("Fix invalid courses before importing.");
+    const rows=normalized.rows.filter(r=>r.status==="new");
+    if(!rows.length)return showToast("There are no new courses to create.");
+
+    importButton.disabled=true;importButton.textContent="Creating Courses…";
+    let created=0,frameworks=0;
+    const failures=[];
+
+    for(const row of rows){
+      try{
+        const courseRef=doc(collection(db,"courses"));
+        await setDoc(courseRef,{
+          ...row.data,
+          catalogCourse:true,
+          catalogManaged:true,
+          ownerId:state.user.uid,
+          catalogUpdatedAt:serverTimestamp(),
+          createdAt:serverTimestamp(),
+          updatedAt:serverTimestamp()
+        });
+        created++;
+        if(row.framework){
+          await writeNewCourseFramework(courseRef.id,row.framework);
+          frameworks++;
+        }
+      }catch(error){
+        console.error("Bulk course creation failed for",row.data?.code,error);
+        failures.push((row.data?.code||"Course")+" — "+humanizeFirebaseError(error));
+      }
+    }
+
+    await loadWorkspace();
+    if(!failures.length){
+      closeModal();
+      showToast("Created "+created+" catalog course"+(created===1?"":"s")+(frameworks?" with "+frameworks+" framework"+(frameworks===1?"":"s"):"")+".");
+    }else{
+      importButton.disabled=false;importButton.textContent="Retry Remaining Courses";
+      results.insertAdjacentHTML("afterbegin",'<div class="notice danger-notice"><strong>Some courses could not be completed.</strong><div class="bulk-messages errors">'+failures.map(x=>'<div>✕ '+esc(x)+'</div>').join("")+'</div></div>');
+      showToast(created+" course"+(created===1?"":"s")+" created; "+failures.length+" failed.");
+    }
+  });
 }
 
 function openCourseModal(existing){
@@ -2791,6 +3134,7 @@ $("#mobileMenuBtn").addEventListener("click",()=>sidebar.classList.toggle("open"
 $$(".nav-item").forEach(btn=>btn.addEventListener("click",()=>setPage(btn.dataset.page)));
 $("#quickJoinBtn").addEventListener("click",()=>{setPage("sections");setTimeout(()=>$("#joinCodeInput")?.focus(),50);});
 $("#quickCreateBtn").addEventListener("click",()=>openSectionModal());
+$("#bulkCreateCoursesBtn")?.addEventListener("click",()=>bulkCreateCoursesModal());
 $("#createCourseBtn").addEventListener("click",()=>openCourseModal());
 $("#createSectionBtn").addEventListener("click",()=>openSectionModal());
 $("#homeCreateSection").addEventListener("click",()=>openSectionModal());
@@ -2832,6 +3176,7 @@ document.addEventListener("click",async event=>{
   const btn=event.target.closest("[data-action]");
   if(!btn)return;
   const action=btn.dataset.action;
+  if(action==="bulk-create-courses") return bulkCreateCoursesModal();
   if(action==="create-course") return openCourseModal();
   if(action==="create-section") return openSectionModal();
   if(action==="create-section-course") return openSectionModal(null,btn.dataset.id);
