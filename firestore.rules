@@ -125,7 +125,8 @@ service cloud.firestore {
       }
 
       match /assignments/{assignmentId} {
-        allow read: if sectionOwner(sectionId) || sectionMember(sectionId);
+        allow read: if sectionOwner(sectionId)
+          || (sectionMember(sectionId) && resource.data.status == 'Published');
         allow create, update, delete: if sectionOwner(sectionId);
       }
 
