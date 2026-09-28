@@ -1163,7 +1163,7 @@ function renderExam(){
   $("#examRoot").innerHTML='<div class="exam-shell"><header class="exam-header"><div><div class="exam-brand">Θ THEORIA</div><div class="exam-title">'+esc(a.title)+'</div></div><div class="exam-candidate">Candidate <strong>'+esc(ex.submission.candidateNumber)+'</strong></div><div id="examTimer" class="exam-timer">--:--</div></header>'+
     '<div class="exam-body"><aside class="exam-sidebar"><div class="exam-progress">Question '+(ex.index+1)+' of '+ex.questions.length+'</div><div class="exam-navigator">'+nav+'</div><div class="exam-legend"><span>● Answered</span><span>◆ Marked</span></div>'+(ex.submission.accommodationsApplied?.calculator?'<button class="secondary-btn small-btn full-btn" data-phase3-action="calculator">Calculator</button>':'')+'<button class="danger-btn full-btn" data-phase3-action="submit-exam">Submit Assessment</button></aside>'+
     '<main class="exam-question"><div class="exam-question-meta"><span>'+esc((a.parts||[]).find(p=>p.id===q.partId)?.title||"Assessment")+'</span><span>'+esc(q.points)+' points</span></div>'+(q.sourceTitle?'<div class="source-title">'+esc(q.sourceTitle)+'</div>':'')+(q.stimulus?'<div class="exam-stimulus">'+esc(q.stimulus).replace(/\n/g,"<br>")+'</div>':'')+'<h2>'+esc(q.prompt)+'</h2>'+response+
-    '<div class="exam-controls"><button class="secondary-btn" data-phase3-action="mark-question">'+(marked?"Unmark":"Mark for Review")+'</button><div><button class="secondary-btn" data-phase3-action="exam-prev" '+(ex.index===0?'disabled':'')+'>Previous</button><button class="primary-btn" data-phase3-action="exam-next">'+(ex.index===ex.questions.length-1?"Review":"Next")+'</button></div></div></main></div></div>';
+    '<div class="exam-controls"><button class="secondary-btn" data-phase3-action="mark-question">'+(marked?"Unmark":"Mark for Review")+'</button><div><button class="secondary-btn" data-phase3-action="exam-prev" '+(ex.index===0?'disabled':'')+'>Previous</button><button class="primary-btn" data-phase3-action="'+(ex.index===ex.questions.length-1?"review-exam":"exam-next")+'">'+(ex.index===ex.questions.length-1?"Review & Submit":"Next")+'</button></div></div></main></div></div>';
   bindExamInputs();
 }
 
@@ -1181,6 +1181,25 @@ async function saveExam(){
   if(!P3.exam)return;
   try{await updateDoc(doc(db,"assessments",P3.exam.assessment.id,"submissions",state().user.uid),{answers:P3.exam.answers,marked:P3.exam.marked,currentIndex:P3.exam.index,updatedAt:serverTimestamp()});}catch(_){}
 }
+function reviewExam(){
+  const ex=P3.exam;if(!ex)return;
+  const answered=ex.questions.filter(q=>{
+    const a=ex.answers[q.id];
+    return Array.isArray(a)?a.length>0:String(a??"").trim().length>0;
+  }).length;
+  const unanswered=ex.questions.length-answered;
+  const marked=ex.marked.length;
+  const modal=core().openModal({
+    eyebrow:"Assessment Review",
+    title:"Review Before Submission",
+    wide:true,
+    body:'<div class="review-summary-grid"><div><strong>'+answered+'</strong><span>Answered</span></div><div><strong>'+unanswered+'</strong><span>Unanswered</span></div><div><strong>'+marked+'</strong><span>Marked</span></div></div>'+
+      (unanswered?'<div class="notice danger-notice" style="margin-top:14px">You still have '+unanswered+' unanswered question'+(unanswered===1?"":"s")+'. You may return to them before submitting.</div>':'<div class="notice" style="margin-top:14px">All questions have a response recorded.</div>')+
+      '<div class="review-question-grid">'+ex.questions.map((q,i)=>{const a=ex.answers[q.id],done=Array.isArray(a)?a.length>0:String(a??"").trim().length>0;return '<button type="button" class="review-question-chip '+(done?'answered':'unanswered')+' '+(ex.marked.includes(q.id)?'marked':'')+'" data-phase3-action="review-jump" data-index="'+i+'"><span>Q'+(i+1)+'</span><strong>'+(done?"Answered":"Unanswered")+'</strong>'+(ex.marked.includes(q.id)?'<small>Marked</small>':'')+'</button>';}).join("")+'</div>',
+    footer:'<button class="secondary-btn" data-close-modal>Return to Assessment</button><button class="danger-btn" data-phase3-action="confirm-submit-exam">Submit Assessment</button>'
+  });
+}
+
 async function submitExam(auto=false){
   if(!P3.exam)return;
   if(!auto&&!confirm("Submit this assessment? You will not be able to change your responses afterward."))return;
@@ -1350,9 +1369,12 @@ document.addEventListener("click",async e=>{
   if(a==="horizontal-grade")return horizontalGrade(b.dataset.question);
   if(a==="exam-jump"){if(P3.exam&&(P3.exam.assessment.backtracking!==false||Number(b.dataset.index)>P3.exam.index)){P3.exam.index=Number(b.dataset.index);scheduleSave();renderExam();}return;}
   if(a==="exam-prev"){if(P3.exam&&P3.exam.index>0&&P3.exam.assessment.backtracking!==false){P3.exam.index--;scheduleSave();renderExam();}return;}
-  if(a==="exam-next"){if(!P3.exam)return;P3.exam.index=P3.exam.index<P3.exam.questions.length-1?P3.exam.index+1:0;scheduleSave();renderExam();return;}
+  if(a==="review-exam"){reviewExam();return;}
+  if(a==="review-jump"){if(P3.exam){P3.exam.index=Number(b.dataset.index);core().closeModal();scheduleSave();renderExam();}return;}
+  if(a==="confirm-submit-exam"){core().closeModal();submitExam(false);return;}
+  if(a==="exam-next"){if(!P3.exam)return;P3.exam.index=Math.min(P3.exam.index+1,P3.exam.questions.length-1);scheduleSave();renderExam();return;}
   if(a==="mark-question"){if(!P3.exam)return;const id=P3.exam.questions[P3.exam.index].id;P3.exam.marked=P3.exam.marked.includes(id)?P3.exam.marked.filter(x=>x!==id):[...P3.exam.marked,id];scheduleSave();renderExam();return;}
-  if(a==="submit-exam")return submitExam(false);
+  if(a==="submit-exam")return reviewExam();
   if(a==="calculator")return calculator();
 });
 
