@@ -378,7 +378,7 @@ async function renderAssessments(){
     try{const x=await getDoc(doc(db,"assessments",a.id,"results",s.user.uid));if(x.exists())result=x.data();}catch(_){}
     const status=availability(a);
     let action='<span class="badge">'+esc(status)+'</span>';
-    if(a.mode==="oral"||a.mode==="disputation")action='<span class="badge gold">Instructor administered</span>';
+    if(a.mode==="oral")action='<span class="badge gold">Instructor administered</span>';
     else if(sub?.status==="submitted"||sub?.status==="graded")action='<button class="secondary-btn small-btn" data-phase3-action="receipt" data-id="'+a.id+'">Submission Receipt</button>';
     else if(status==="Open")action='<button class="primary-btn small-btn" data-phase3-action="start-exam" data-id="'+a.id+'">'+(sub?"Resume":"Begin")+'</button>';
     cards.push('<article class="assessment-card"><div class="assessment-type">'+esc(a.type)+'</div><h3>'+esc(a.title)+'</h3><p>'+esc(a.courseCode||"")+' • '+esc(a.sectionName||"")+'</p><div class="assessment-card-stats"><span>'+esc(a.durationMinutes||0)+' min</span><span>'+esc(a.totalPoints||0)+' pts</span><span>'+esc(status)+'</span></div>'+(result?'<div class="released-result"><strong>'+esc(result.percent)+'%</strong><span>Released result</span></div>':'')+'<div class="card-actions">'+action+'</div></article>');
@@ -542,7 +542,7 @@ async function assessmentModal(existing){
     const data={
       ownerId:s.user.uid,courseId:course.id,courseCode:course.code,courseTitle:course.title,
       sectionId:existing?.sectionId||"",sectionName:existing?.sectionName||"",templateSourceId:existing?.templateSourceId||"",
-      title:String(fd.get("title")).trim(),type,mode:type==="Oral Examination"?"oral":type==="Disputation"?"disputation":"written",
+      title:String(fd.get("title")).trim(),type,mode:type==="Oral Examination"?"oral":"written",
       status:existing?.status||"Draft",durationMinutes:Number(fd.get("durationMinutes")||0),opensAt:timestampFrom(fd.get("opensAt")),closesAt:timestampFrom(fd.get("closesAt")),
       instructions:instructionSteps.join("\n"),instructionSteps,anonymousGrading:form.elements.anonymousGrading.checked,backtracking:form.elements.backtracking.checked,randomizeQuestions:form.elements.randomizeQuestions.checked,
       feedbackPolicy:String(fd.get("feedbackPolicy")),contentBlueprint,competencyBlueprint,parts:existing?.parts?.length?existing.parts:defaultParts(type),
@@ -644,7 +644,7 @@ function candidatesView(){
   return '<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Candidate</th><th>Status</th><th>Result</th><th>Release</th><th>Action</th></tr></thead><tbody>'+d.members.map(m=>{
     const sub=subMap.get(m.id),res=resMap.get(m.id),name=a.anonymousGrading!==false?(sub?.candidateNumber||"Not assigned"):m.displayName;
     let action="—";
-    if(!sub&&(a.mode==="oral"||a.mode==="disputation"))action='<button class="secondary-btn small-btn" data-phase3-action="create-evaluation" data-student="'+m.id+'">Begin Evaluation</button>';
+    if(!sub&&(a.mode==="oral"))action='<button class="secondary-btn small-btn" data-phase3-action="create-evaluation" data-student="'+m.id+'">Begin Evaluation</button>';
     else if(sub)action='<button class="secondary-btn small-btn" data-phase3-action="grade-candidate" data-student="'+m.id+'">Grade</button>';
     const release=res?(res.complete===false?'<span class="badge gold">Incomplete</span>':'<button class="text-btn" data-phase3-action="toggle-release" data-student="'+m.id+'">'+(res.released?"Unrelease":"Release")+'</button>'):"—";
     return '<tr><td><strong>'+esc(name)+'</strong></td><td><span class="badge">'+esc(sub?.status||"Not started")+'</span></td><td>'+(res?'<strong>'+esc(res.percent)+'%</strong>':'—')+'</td><td>'+release+'</td><td>'+action+'</td></tr>';
@@ -979,7 +979,7 @@ async function renderSectionAssessments(){
     }
     list.sort((a,b)=>(b.opensAt?.toMillis?.()||0)-(a.opensAt?.toMillis?.()||0));
     const header=s.role==="instructor"?'<div class="page-head" style="margin-bottom:16px"><div><div class="panel-title">Assigned Assessments</div><p class="page-subtitle">Assign reusable course assessments to this section, then publish when ready.</p></div><button class="primary-btn small-btn" data-phase3-action="assign-current-section" data-section="'+section.id+'">Assign Assessment</button></div>':'';
-    el.innerHTML=header+(list.length?'<div class="assessment-grid">'+list.map(a=>'<article class="assessment-card assigned-card"><div class="assessment-card-topline"><div class="assessment-type">'+esc(a.type)+'</div><span class="badge '+(a.status==="Published"?"live":a.status==="Draft"?"gold":"")+'">'+esc(a.status||"Draft")+'</span></div><h3>'+esc(a.title)+'</h3><p>'+esc(a.questionCount||0)+' questions • '+esc(a.totalPoints||0)+' points</p><div class="assigned-schedule"><div><span>Opens</span><strong>'+esc(dateText(a.opensAt))+'</strong></div><div><span>Closes</span><strong>'+esc(dateText(a.closesAt))+'</strong></div><div><span>Duration</span><strong>'+esc(a.durationMinutes||0)+' min</strong></div></div><div class="card-actions">'+(s.role==="instructor"?'<button class="secondary-btn small-btn" data-phase3-action="edit-assignment" data-id="'+a.id+'">Edit Assignment</button><button class="secondary-btn small-btn" data-phase3-action="open-assessment" data-id="'+a.id+'">Open</button><button class="danger-btn small-btn" data-phase3-action="delete-assigned" data-id="'+a.id+'">Delete</button>':(a.mode==="oral"||a.mode==="disputation")?'<span class="badge gold">Instructor administered</span>':'<button class="primary-btn small-btn" data-phase3-action="start-exam" data-id="'+a.id+'">'+(availability(a)==="Open"?"Open Assessment":"View Assessment")+'</button><span class="badge">'+esc(availability(a))+'</span>')+'</div></article>').join("")+'</div>':'<div class="empty-state"><div class="empty-symbol">A</div><h3>No assessments assigned yet.</h3><p>'+(s.role==="instructor"?"Choose a reusable assessment template for this course.":"Published assessments will appear here.")+'</p></div>');
+    el.innerHTML=header+(list.length?'<div class="assessment-grid">'+list.map(a=>'<article class="assessment-card assigned-card"><div class="assessment-card-topline"><div class="assessment-type">'+esc(a.type)+'</div><span class="badge '+(a.status==="Published"?"live":a.status==="Draft"?"gold":"")+'">'+esc(a.status||"Draft")+'</span></div><h3>'+esc(a.title)+'</h3><p>'+esc(a.questionCount||0)+' questions • '+esc(a.totalPoints||0)+' points</p><div class="assigned-schedule"><div><span>Opens</span><strong>'+esc(dateText(a.opensAt))+'</strong></div><div><span>Closes</span><strong>'+esc(dateText(a.closesAt))+'</strong></div><div><span>Duration</span><strong>'+esc(a.durationMinutes||0)+' min</strong></div></div><div class="card-actions">'+(s.role==="instructor"?'<button class="secondary-btn small-btn" data-phase3-action="edit-assignment" data-id="'+a.id+'">Edit Assignment</button><button class="secondary-btn small-btn" data-phase3-action="open-assessment" data-id="'+a.id+'">Open</button><button class="danger-btn small-btn" data-phase3-action="delete-assigned" data-id="'+a.id+'">Delete</button>':(a.mode==="oral")?'<span class="badge gold">Instructor administered</span>':'<button class="primary-btn small-btn" data-phase3-action="start-exam" data-id="'+a.id+'">'+(availability(a)==="Open"?"Open Assessment":"View Assessment")+'</button><span class="badge">'+esc(availability(a))+'</span>')+'</div></article>').join("")+'</div>':'<div class="empty-state"><div class="empty-symbol">A</div><h3>No assessments assigned yet.</h3><p>'+(s.role==="instructor"?"Choose a reusable assessment template for this course.":"Published assessments will appear here.")+'</p></div>');
   }catch(error){
     console.error("Unable to load section assessments:",error);
     el.innerHTML='<div class="empty-state"><div class="empty-symbol">!</div><h3>Assessments could not be loaded.</h3><p>Refresh after deploying the latest Firestore rules. If the problem continues, open the main Assessments workspace.</p></div>';
@@ -1057,7 +1057,7 @@ async function startExam(id,confirmed=false){
   try{
     const snap=await getDoc(doc(db,"assessments",id));if(!snap.exists())return toast("Assessment not found.");
     const a={id:snap.id,...snap.data()};
-    if(a.mode==="oral"||a.mode==="disputation")return toast("This evaluation is instructor administered.");
+    if(a.mode==="oral")return toast("This oral examination is instructor administered.");
     if(a.status!=="Published"&&a.status!=="Closed")return toast("This assessment has not been published to students.");
     if(a.status==="Closed")return toast("This assessment has been closed by the instructor.");
     const now=Date.now(),opens=a.opensAt?.toMillis?.()||0,closes=a.closesAt?.toMillis?.()||0;
