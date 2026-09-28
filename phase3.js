@@ -473,7 +473,7 @@ function renderCandidates(){
     let action="";
     if(!sub && (a.mode==="oral"||a.mode==="disputation")) action='<button class="secondary-btn small-btn" data-phase3-action="create-oral-submission" data-student="'+m.id+'">Begin Evaluation</button>';
     else if(sub) action='<button class="secondary-btn small-btn" data-phase3-action="grade-candidate" data-student="'+m.id+'">Grade</button>';
-    return '<tr><td><strong>'+esc(name)+'</strong>'+(a.anonymousGrading!==false&&sub?'<span class="grade-sub">Identity hidden in grading views</span>':'')+'</td><td><span class="badge '+(sub?.status==="submitted"||sub?.status==="graded"?'gold':'')+'">'+esc(sub?.status||"Not started")+'</span></td><td>'+(res?'<strong>'+esc(res.percent)+'%</strong>':'—')+'</td><td>'+(res?'<button class="text-btn" data-phase3-action="toggle-result-release" data-student="'+m.id+'">'+(res.released?"Unrelease":"Release")+'</button>':'—')+'</td><td>'+action+'</td></tr>';
+    return '<tr><td><strong>'+esc(name)+'</strong>'+(a.anonymousGrading!==false&&sub?'<span class="grade-sub">Identity hidden in grading views</span>':'')+'</td><td><span class="badge '+(sub?.status==="submitted"||sub?.status==="graded"?'gold':'')+'">'+esc(sub?.status||"Not started")+'</span></td><td>'+(res?'<strong>'+esc(res.percent)+'%</strong>':'—')+'</td><td>'+(res?(res.complete===false?'<span class="badge gold">Grading incomplete</span>':'<button class="text-btn" data-phase3-action="toggle-result-release" data-student="'+m.id+'">'+(res.released?"Unrelease":"Release")+'</button>'):'—')+'</td><td>'+action+'</td></tr>';
   }).join("")+'</tbody></table></div>';
 }
 
@@ -835,7 +835,7 @@ async function gradeCandidate(studentId){
     const partScores={};(a.parts||[]).forEach(part=>{const qs=d.questions.filter(q=>q.partId===part.id),pm=qs.reduce((n,q)=>n+Number(q.points||0),0);partScores[part.id]={title:part.title,score:partRaw[part.id]||0,max:pm,percent:pm?Math.round((partRaw[part.id]||0)/pm*1000)/10:0};});
     const released=existing?.released||false;
     const batch=writeBatch(db);
-    batch.set(doc(db,"assessments",a.id,"results",studentId),{studentId,candidateNumber:sub.candidateNumber,totalScore:total,maxScore:max,percent,grading:newGrading,partScores,overallComment:String(fd.get("overallComment")||"").trim(),released,gradedAt:serverTimestamp(),gradedBy:state().user.uid},{merge:true});
+    batch.set(doc(db,"assessments",a.id,"results",studentId),{studentId,candidateNumber:sub.candidateNumber,totalScore:total,maxScore:max,percent,grading:newGrading,partScores,overallComment:String(fd.get("overallComment")||"").trim(),released,complete:true,gradedAt:serverTimestamp(),gradedBy:state().user.uid},{merge:true});
     batch.update(doc(db,"assessments",a.id,"submissions",studentId),{status:"graded",updatedAt:serverTimestamp()});
     batch.set(doc(db,"sections",a.sectionId,"assessmentGrades",a.id+"_"+studentId),{assessmentId:a.id,assessmentTitle:a.title,assessmentType:a.type,studentId,score:total,maxScore:max,percent,released,updatedAt:serverTimestamp()},{merge:true});
     try{await batch.commit();core().closeModal();await openAssessment(a.id,"candidates");toast("Candidate evaluation saved.");}catch(error){toast(error.message||"Unable to save evaluation.");}
@@ -844,10 +844,45 @@ async function gradeCandidate(studentId){
 
 async function toggleResultRelease(studentId){
   const d=p3.assessmentData,a=d.assessment,r=d.results.find(x=>x.studentId===studentId);if(!r)return;
+  if(r.complete===false) return toast("Complete grading before releasing this result.");
   const released=!r.released,batch=writeBatch(db);
   batch.update(doc(db,"assessments",a.id,"results",studentId),{released,updatedAt:serverTimestamp()});
   batch.set(doc(db,"sections",a.sectionId,"assessmentGrades",a.id+"_"+studentId),{released,updatedAt:serverTimestamp()},{merge:true});
   try{await batch.commit();await openAssessment(a.id,"candidates");toast(released?"Result released to student.":"Result returned to private status.");}catch(error){toast(error.message||"Unable to update release.");}
+}
+
+function gradingMetrics(a,d,grading){
+  const total=Object.values(grading).reduce((n,x)=>n+Number(x.score||0),0);
+  const max=Number(a.totalPoints||d.questions.reduce((n,q)=>n+Number(q.points||0),0));
+  const percent=max?Math.round(total/max*1000)/10:0;
+  const complete=d.questions.length>0 && d.questions.every(q=>grading[q.id] && grading[q.id].score!==undefined && grading[q.id].score!==null);
+  const partScores={};
+  (a.parts||[]).forEach(part=>{
+    const qs=d.questions.filter(q=>q.partId===part.id);
+    const partMax=qs.reduce((n,q)=>n+Number(q.points||0),0);
+    const partScore=qs.reduce((n,q)=>n+Number(grading[q.id]?.score||0),0);
+    partScores[part.id]={title:part.title,score:partScore,max:partMax,percent:partMax?Math.round(partScore/partMax*1000)/10:0};
+  });
+  return {total,max,percent,complete,partScores};
+}
+
+async function persistComputedResult(sub,grading,existing){
+  const d=p3.assessmentData,a=d.assessment,m=gradingMetrics(a,d,grading),released=existing?.released||false;
+  const batch=writeBatch(db);
+  batch.set(doc(db,"assessments",a.id,"results",sub.studentId),{
+    studentId:sub.studentId,candidateNumber:sub.candidateNumber,totalScore:m.total,maxScore:m.max,
+    percent:m.percent,grading,partScores:m.partScores,released,complete:m.complete,
+    overallComment:existing?.overallComment||"",gradedAt:serverTimestamp(),gradedBy:state().user.uid
+  },{merge:true});
+  if(m.complete){
+    batch.update(doc(db,"assessments",a.id,"submissions",sub.studentId),{status:"graded",updatedAt:serverTimestamp()});
+    batch.set(doc(db,"sections",a.sectionId,"assessmentGrades",a.id+"_"+sub.studentId),{
+      assessmentId:a.id,assessmentTitle:a.title,assessmentType:a.type,studentId:sub.studentId,
+      score:m.total,maxScore:m.max,percent:m.percent,released,partScores:m.partScores,updatedAt:serverTimestamp()
+    },{merge:true});
+  }
+  await batch.commit();
+  return m;
 }
 
 async function autoScoreObjective(){
@@ -857,8 +892,7 @@ async function autoScoreObjective(){
   for(const sub of submissions){
     const existing=resultMap.get(sub.studentId),grading={...(existing?.grading||{})};
     objective.forEach(q=>grading[q.id]={score:objectiveScore(q,keyMap.get(q.id),sub.answers?.[q.id]),comment:grading[q.id]?.comment||""});
-    const total=Object.values(grading).reduce((n,x)=>n+Number(x.score||0),0),max=Number(a.totalPoints||0),complete=Object.keys(grading).length===d.questions.length;
-    await setDoc(doc(db,"assessments",a.id,"results",sub.studentId),{studentId:sub.studentId,candidateNumber:sub.candidateNumber,totalScore:total,maxScore:max,percent:max?Math.round(total/max*1000)/10:0,grading,released:existing?.released||false,complete,gradedAt:serverTimestamp(),gradedBy:state().user.uid},{merge:true});
+    await persistComputedResult(sub,grading,existing);
   }
   await openAssessment(a.id,"grading");toast("Objective items scored securely in the instructor session.");
 }
@@ -878,8 +912,7 @@ async function horizontalGrade(questionId){
     e.preventDefault();const fd=new FormData(e.currentTarget);
     for(const sub of submissions){
       const existing=resultMap.get(sub.studentId),grading={...(existing?.grading||{})};grading[q.id]={score:Number(fd.get("score_"+sub.studentId)||0),comment:grading[q.id]?.comment||""};
-      const total=Object.values(grading).reduce((n,x)=>n+Number(x.score||0),0),max=Number(a.totalPoints||0),complete=Object.keys(grading).length===d.questions.length;
-      await setDoc(doc(db,"assessments",a.id,"results",sub.studentId),{studentId:sub.studentId,candidateNumber:sub.candidateNumber,totalScore:total,maxScore:max,percent:max?Math.round(total/max*1000)/10:0,grading,released:existing?.released||false,complete,gradedAt:serverTimestamp(),gradedBy:state().user.uid},{merge:true});
+      await persistComputedResult(sub,grading,existing);
     }
     core().closeModal();await openAssessment(a.id,"grading");toast("Horizontal grading saved.");
   });
