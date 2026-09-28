@@ -481,7 +481,9 @@ async function loadSectionData(section){
   const courseSnap=await getDoc(doc(db,"courses",section.courseId));
   const course=courseSnap.exists()?{id:courseSnap.id,...courseSnap.data()}:null;
   const framework=course?await loadCourseFramework(course.id):{units:[],competencies:[]};
-  const assignmentSnap=await getDocs(collection(db,"sections",section.id,"assignments"));
+  const assignmentSnap=state.role==="instructor"
+    ? await getDocs(collection(db,"sections",section.id,"assignments"))
+    : await getDocs(query(collection(db,"sections",section.id,"assignments"),where("status","==","Published")));
   const resourceSnap=await getDocs(collection(db,"sections",section.id,"resources"));
   let members=[];
   let grades=[];
