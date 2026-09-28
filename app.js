@@ -135,6 +135,10 @@ function setPage(page,label){
   sidebar.classList.remove("open");
   window.scrollTo({top:0,behavior:"smooth"});
   window.dispatchEvent(new CustomEvent("theoria:page",{detail:{page,label:label||null}}));
+  if(page==="library") renderScholarLibrary().catch(error=>{
+    console.error("Unable to load Library:",error);
+    showToast("The Library could not be loaded.");
+  });
 }
 
 async function loadWorkspace(){
@@ -1016,6 +1020,60 @@ function openGradeModal(assignmentId,studentId){
   });
 }
 
+async function renderScholarLibrary(){
+  const el=$("#libraryContent");
+  if(!el||!state.user)return;
+  el.innerHTML='<div class="library-loading"><div class="empty-symbol">L</div><h3>Loading scholarly resources…</h3></div>';
+
+  const resources=[];
+  for(const section of state.sections){
+    try{
+      const snap=await getDocs(collection(db,"sections",section.id,"resources"));
+      snap.docs.forEach(d=>resources.push({
+        id:d.id,
+        sectionId:section.id,
+        sectionName:section.sectionName||section.courseTitle||"Section",
+        courseCode:section.courseCode||"",
+        courseTitle:section.courseTitle||"",
+        term:section.term||"",
+        ...d.data()
+      }));
+    }catch(error){
+      console.warn("Unable to load resources for section",section.id,error);
+    }
+  }
+
+  resources.sort((a,b)=>String(a.courseCode||"").localeCompare(String(b.courseCode||""))||String(a.title||"").localeCompare(String(b.title||"")));
+  const types=[...new Set(resources.map(r=>r.type).filter(Boolean))].sort();
+  const sections=[...new Map(resources.map(r=>[r.sectionId,{id:r.sectionId,label:(r.courseCode?r.courseCode+" • ":"")+r.sectionName}])).values()];
+
+  el.innerHTML=
+    '<div class="library-toolbar"><div class="field"><label>Search Library</label><input id="librarySearch" placeholder="Search title, citation, notes, course, or type"></div>'+
+      '<div class="field"><label>Resource Type</label><select id="libraryType"><option value="">All resource types</option>'+types.map(t=>'<option value="'+esc(t)+'">'+esc(t)+'</option>').join("")+'</select></div>'+
+      '<div class="field"><label>Section</label><select id="librarySection"><option value="">All sections</option>'+sections.map(s=>'<option value="'+s.id+'">'+esc(s.label)+'</option>').join("")+'</select></div></div>'+
+    '<div class="library-summary"><div><strong>'+resources.length+'</strong><span>Resources</span></div><div><strong>'+sections.length+'</strong><span>Sections</span></div><div><strong>'+types.length+'</strong><span>Resource Types</span></div></div>'+
+    '<div id="libraryResults"></div>';
+
+  const search=$("#librarySearch"),type=$("#libraryType"),section=$("#librarySection"),results=$("#libraryResults");
+  const render=()=>{
+    const q=search.value.trim().toLowerCase(),t=type.value,sid=section.value;
+    const list=resources.filter(r=>
+      (!t||r.type===t) &&
+      (!sid||r.sectionId===sid) &&
+      (!q||[r.title,r.type,r.citation,r.notes,r.courseCode,r.courseTitle,r.sectionName].join(" ").toLowerCase().includes(q))
+    );
+    results.innerHTML=list.length?'<div class="library-grid">'+list.map(r=>
+      '<article class="library-card"><div class="library-card-top"><div><span>'+esc(r.type||"Resource")+'</span><h3>'+esc(r.title||"Untitled Resource")+'</h3></div><span class="library-course">'+esc(r.courseCode||"Course")+'</span></div>'+
+      (r.citation?'<div class="library-citation">'+esc(r.citation)+'</div>':'')+
+      (r.notes?'<p>'+esc(r.notes)+'</p>':'')+
+      '<div class="library-card-foot"><div><strong>'+esc(r.sectionName)+'</strong><span>'+esc(r.term||"")+'</span></div>'+
+      (r.url?'<a class="secondary-btn small-btn" href="'+esc(r.url)+'" target="_blank" rel="noopener noreferrer">Open Resource ↗</a>':'<button class="secondary-btn small-btn" data-action="open-section-resource" data-section="'+r.sectionId+'">Open Section</button>')+
+      '</div></article>'
+    ).join("")+'</div>':'<div class="empty-state"><div class="empty-symbol">L</div><h3>No matching resources.</h3><p>'+(resources.length?"Adjust the Library filters or search terms.":"Resources assigned in your sections will appear here automatically.")+'</p></div>';
+  };
+  search.addEventListener("input",render);type.addEventListener("change",render);section.addEventListener("change",render);render();
+}
+
 async function previewJoin(code){
   code=String(code||"").trim().toUpperCase();
   if(!code) return showToast("Enter a join code.");
@@ -1208,6 +1266,7 @@ document.addEventListener("click",async event=>{
   if(action==="assignment-submissions") return openAssignmentSubmissionsModal(btn.dataset.id);
   if(action==="review-assignment-submission") return openAssignmentSubmissionReview(btn.dataset.assignment,btn.dataset.student);
   if(action==="create-resource") return openResourceModal();
+  if(action==="open-section-resource") return openSection(btn.dataset.section,"resources");
   if(action==="edit-resource") return openResourceModal(state.sectionData.resources.find(x=>x.id===btn.dataset.id));
   if(action==="set-grade") return openGradeModal(btn.dataset.assignment,btn.dataset.student);
   if(action==="open-gradebook-assessment"){
