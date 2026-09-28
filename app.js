@@ -14,7 +14,8 @@ const state = {
   currentCourse: null,
   courseFramework: null,
   currentSection: null,
-  sectionData: null
+  sectionData: null,
+  isSystemOwner: false
 };
 
 const $ = s => document.querySelector(s);
@@ -127,6 +128,20 @@ function renderUser(user,profile){
   applyRole(state.role);
 }
 
+function canManageCourse(course){
+  if(!course||state.role!=="instructor"||!state.user)return false;
+  if(state.isSystemOwner)return true;
+  return course.catalogCourse!==true && course.ownerId===state.user.uid;
+}
+
+function isOfficialCatalogCourse(course){
+  return !!course?.catalogCourse;
+}
+
+function applyOwnerUI(){
+  $(".owner-only").forEach(el=>el.classList.toggle("hidden",!state.isSystemOwner));
+}
+
 function setPage(page,label){
   $$(".page").forEach(el => el.classList.toggle("active", el.id === "page-" + page));
   $$(".nav-item").forEach(el => el.classList.toggle("active", el.dataset.page === page));
@@ -143,9 +158,45 @@ function setPage(page,label){
 
 async function loadWorkspace(){
   if(!state.user) return;
+
   if(state.role === "instructor"){
-    const courseSnap = await getDocs(query(collection(db,"courses"),where("ownerId","==",state.user.uid)));
-    state.courses = courseSnap.docs.map(d => ({id:d.id,...d.data()}));
+    let courses=[];
+    if(state.isSystemOwner){
+      const snap=await getDocs(collection(db,"courses"));
+      courses=snap.docs.map(d=>({id:d.id,...d.data()}));
+
+      // Migrate the owner's existing active course frameworks into the official catalog model.
+      for(const course of courses){
+        if(course.ownerId===state.user.uid && course.catalogCourse===undefined){
+          const catalogPublished=course.status!=="Draft"&&course.status!=="Archived";
+          try{
+            await updateDoc(doc(db,"courses",course.id),{
+              catalogCourse:true,
+              catalogPublished,
+              catalogManaged:true,
+              catalogUpdatedAt:serverTimestamp(),
+              updatedAt:serverTimestamp()
+            });
+            course.catalogCourse=true;
+            course.catalogPublished=catalogPublished;
+            course.catalogManaged=true;
+          }catch(error){
+            console.warn("Unable to migrate course into Theoria catalog:",course.id,error);
+          }
+        }
+      }
+    }else{
+      const [catalogSnap,ownedSnap]=await Promise.all([
+        getDocs(query(collection(db,"courses"),where("catalogPublished","==",true))),
+        getDocs(query(collection(db,"courses"),where("ownerId","==",state.user.uid)))
+      ]);
+      const byId=new Map();
+      catalogSnap.docs.forEach(d=>byId.set(d.id,{id:d.id,...d.data()}));
+      ownedSnap.docs.forEach(d=>byId.set(d.id,{id:d.id,...d.data()}));
+      courses=[...byId.values()];
+    }
+    state.courses=courses;
+
     const sectionSnap = await getDocs(query(collection(db,"sections"),where("ownerId","==",state.user.uid)));
     state.sections = sectionSnap.docs.map(d => ({id:d.id,...d.data()}));
   }else{
@@ -164,8 +215,10 @@ async function loadWorkspace(){
     }
     state.courses = courses;
   }
+
   state.courses.sort((a,b)=>String(a.code||"").localeCompare(String(b.code||"")));
   state.sections.sort((a,b)=>String(a.courseCode||"").localeCompare(String(b.courseCode||"")));
+  applyOwnerUI();
   renderHome();
   renderCourses();
   renderSections();
@@ -183,12 +236,16 @@ function sectionCard(section){
 }
 
 function courseCard(course){
-  return '<article class="academic-card">'+
+  const official=isOfficialCatalogCourse(course);
+  const manager=canManageCourse(course);
+  return '<article class="academic-card catalog-course-card">'+
     '<div class="card-kicker">'+esc(course.code || "THEO")+' • '+esc(course.level || "Advanced")+'</div>'+
-    '<h3>'+esc(course.title || "Untitled Course")+'</h3>'+
+    '<div class="catalog-course-title-row"><h3>'+esc(course.title || "Untitled Course")+'</h3>'+(official?'<span class="badge '+(course.catalogPublished?'live':'gold')+'">'+(course.catalogPublished?'Official Catalog':'Catalog Draft')+'</span>':'<span class="badge">Custom</span>')+'</div>'+
     '<p>'+esc(course.description || "No course description has been added yet.")+'</p>'+
-    '<div class="card-meta"><span>'+esc(course.discipline || "Theology")+'</span><span>'+esc(course.status || "Active")+'</span></div>'+
-    '<div class="card-actions"><button class="secondary-btn small-btn" data-action="open-course" data-id="'+course.id+'">Open Framework</button></div>'+
+    '<div class="card-meta"><span>'+esc(course.discipline || "Theology")+'</span><span>'+esc(course.status || "Active")+'</span>'+(official?'<span>Master framework + Question Bank</span>':'')+'</div>'+
+    '<div class="card-actions"><button class="secondary-btn small-btn" data-action="open-course" data-id="'+course.id+'">'+(manager?'Manage Course':'View Course')+'</button>'+
+      (state.role==="instructor"&&course.catalogPublished!==false?'<button class="primary-btn small-btn" data-action="create-section-course" data-id="'+course.id+'">Create Section</button>':'')+
+    '</div>'+
   '</article>';
 }
 
@@ -227,12 +284,19 @@ function renderHome(){
 }
 
 function renderCourses(){
-  const el = $("#coursesContent");
+  const el=$("#coursesContent");
   if(!state.courses.length){
-    el.innerHTML = '<div class="empty-state"><div class="empty-symbol">C</div><h3>No course frameworks yet.</h3><p>'+(state.role==="instructor"?"Create the reusable academic framework first. Sections will draw their units, topics, and competencies from it.":"Your enrolled course frameworks will appear here.")+'</p>'+(state.role==="instructor"?'<button class="primary-btn" data-action="create-course">Create Course</button>':'')+'</div>';
+    el.innerHTML='<div class="empty-state"><div class="empty-symbol">C</div><h3>No courses are available yet.</h3><p>'+(state.isSystemOwner?"Create the first official Theoria catalog course.":"The system owner has not published a Theoria course yet.")+'</p>'+(state.isSystemOwner?'<button class="primary-btn" data-action="create-course">Create Catalog Course</button>':'')+'</div>';
     return;
   }
-  el.innerHTML = '<div class="academic-banner"><div class="kicker">Course Architecture</div><h3>Framework before assignments.</h3><p>Courses define the intellectual structure; sections are the actual teaching instances.</p></div><div class="card-grid">'+state.courses.map(courseCard).join("")+'</div>';
+
+  const official=state.courses.filter(c=>c.catalogCourse&& (state.isSystemOwner||c.catalogPublished));
+  const custom=state.courses.filter(c=>!c.catalogCourse);
+
+  el.innerHTML=
+    '<div class="academic-banner catalog-banner"><div class="kicker">Theoria Course Catalog</div><h3>Courses are built once, then taught in sections.</h3><p>Official courses include a system-managed Course Framework and master Question Bank. Instructors create teaching sections from the catalog instead of rebuilding curriculum.</p></div>'+
+    (official.length?'<section class="catalog-course-section"><div class="page-head compact-head"><div><div class="panel-title">Official Theoria Courses</div><p class="page-subtitle">'+official.length+' centrally managed course'+(official.length===1?"":"s")+'.</p></div>'+(state.isSystemOwner?'<button class="primary-btn small-btn" data-action="create-course">Create Catalog Course</button>':'')+'</div><div class="card-grid">'+official.map(courseCard).join("")+'</div></section>':'')+
+    (custom.length?'<section class="catalog-course-section custom-course-section"><div class="page-head compact-head"><div><div class="panel-title">Custom / Legacy Courses</div><p class="page-subtitle">Instructor-owned courses outside the official catalog.</p></div></div><div class="card-grid">'+custom.map(courseCard).join("")+'</div></section>':'');
 }
 
 function renderSections(){
@@ -257,7 +321,9 @@ async function generateJoinCode(){
 }
 
 function openCourseModal(existing){
-  const editing = !!existing;
+  const editing=!!existing;
+  if(!editing&&!state.isSystemOwner)return showToast("Only the Theoria system owner can create official catalog courses.");
+  if(editing&&!canManageCourse(existing))return showToast("This official course is managed by the Theoria system owner.");
   const modal = openModal({
     eyebrow:"Course Framework",
     title:editing?"Edit Course":"Create Course",
@@ -267,6 +333,7 @@ function openCourseModal(existing){
       '<div class="field span-2"><label>Course Title</label><input name="title" placeholder="Advanced Christian Apologetics" value="'+esc(existing?.title||"")+'" required></div>'+
       '<div class="field"><label>Discipline</label><input name="discipline" placeholder="Apologetics" value="'+esc(existing?.discipline||"")+'"></div>'+
       '<div class="field"><label>Status</label><select name="status"><option>Active</option><option>Draft</option><option>Archived</option></select></div>'+
+      (state.isSystemOwner?'<div class="field"><label>Catalog Visibility</label><select name="catalogPublished"><option value="false">Catalog Draft — Owner Only</option><option value="true">Published to Instructors</option></select></div>':'')+
       '<div class="field span-2"><label>Description</label><textarea name="description" placeholder="Describe the scope and academic purpose of this course.">'+esc(existing?.description||"")+'</textarea></div>'+
     '</div><div class="modal-foot" style="margin:24px -24px -24px"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">'+(editing?"Save Changes":"Create Course")+'</button></div></form>'
   });
@@ -274,6 +341,9 @@ function openCourseModal(existing){
   if(existing){
     form.level.value=existing.level||"Advanced";
     form.status.value=existing.status||"Active";
+    if(form.elements.catalogPublished)form.elements.catalogPublished.value=String(existing.catalogPublished===true);
+  }else if(form.elements.catalogPublished){
+    form.elements.catalogPublished.value="false";
   }
   form.addEventListener("submit",async e=>{
     e.preventDefault();
@@ -285,6 +355,12 @@ function openCourseModal(existing){
       discipline:String(fd.get("discipline")).trim()||"Theology",
       status:String(fd.get("status")),
       description:String(fd.get("description")).trim(),
+      ...(state.isSystemOwner?{
+        catalogCourse:true,
+        catalogManaged:true,
+        catalogPublished:String(fd.get("catalogPublished"))==="true",
+        catalogUpdatedAt:serverTimestamp()
+      }:{}),
       updatedAt:serverTimestamp()
     };
     try{
@@ -292,12 +368,12 @@ function openCourseModal(existing){
       else await addDoc(collection(db,"courses"),{...data,ownerId:state.user.uid,createdAt:serverTimestamp()});
       closeModal();
       await loadWorkspace();
-      showToast(editing?"Course updated.":"Course framework created.");
+      showToast(editing?"Course updated.":"Catalog course created. Build its framework and Question Bank, then publish it when ready.");
     }catch(error){ showToast(humanizeFirebaseError(error)); }
   });
 }
 
-function openSectionModal(existing){
+function openSectionModal(existing,preferredCourseId=""){
   if(!state.courses.length){
     showToast("Create a course framework before creating a section.");
     setPage("courses");
@@ -324,6 +400,8 @@ function openSectionModal(existing){
     form.courseId.value=existing.courseId;
     form.format.value=existing.format||"In Person";
     form.joinOpen.value=String(existing.joinOpen!==false);
+  }else if(preferredCourseId&&state.courses.some(c=>c.id===preferredCourseId)){
+    form.courseId.value=preferredCourseId;
   }
   form.addEventListener("submit",async e=>{
     e.preventDefault();
@@ -396,7 +474,7 @@ async function openCourse(courseId){
     if(!snap.exists()) return showToast("Course not found.");
     course={id:snap.id,...snap.data()};
   }
-  if(state.role==="instructor" && !course.ownerId){
+  if(state.isSystemOwner && !course.ownerId){
     try{
       await updateDoc(doc(db,"courses",courseId),{ownerId:state.user.uid,updatedAt:serverTimestamp()});
       course={...course,ownerId:state.user.uid};
@@ -416,7 +494,7 @@ async function openCourse(courseId){
 function renderCourseDetail(){
   const c=state.currentCourse;
   const fw=state.courseFramework || {units:[],competencies:[]};
-  const instructor=state.role==="instructor" && c.ownerId===state.user.uid;
+  const instructor=canManageCourse(c);
   const units=fw.units.length ? fw.units.map((u,index)=>{
     const topics=(u.topics||[]).length ? sortByOrder(u.topics).map((t,ti)=>
       '<div class="topic-row"><div class="topic-index">'+esc(t.number || ((u.order||index+1)+"."+(ti+1)))+'</div><div><div class="topic-title">'+esc(t.title)+'</div>'+
@@ -434,7 +512,7 @@ function renderCourseDetail(){
 
   $("#courseDetail").innerHTML =
     '<button class="text-btn" data-action="back-courses">← Courses</button>'+
-    '<div class="detail-hero"><div class="detail-top"><div><div class="eyebrow">'+esc(c.code||"Course")+'</div><h1 class="detail-title">'+esc(c.title)+'</h1><div class="detail-meta"><span>'+esc(c.discipline||"Theology")+'</span><span>'+esc(c.level||"Advanced")+'</span><span>'+esc(c.status||"Active")+'</span></div></div>'+(instructor?'<div class="inline-actions"><button class="secondary-btn small-btn" data-action="edit-course">Edit Course</button><button class="secondary-btn small-btn" data-action="bulk-import-framework" data-course="'+c.id+'">Bulk Import Framework</button><button class="primary-btn small-btn" data-action="add-unit">Add Unit</button></div>':'')+'</div>'+(c.description?'<p class="page-subtitle" style="margin-top:16px">'+esc(c.description)+'</p>':'')+'</div>'+
+    '<div class="detail-hero"><div class="detail-top"><div><div class="eyebrow">'+esc(c.code||"Course")+(c.catalogCourse?' • THEORIA CATALOG':'')+'</div><h1 class="detail-title">'+esc(c.title)+'</h1><div class="detail-meta"><span>'+esc(c.discipline||"Theology")+'</span><span>'+esc(c.level||"Advanced")+'</span><span>'+esc(c.status||"Active")+'</span>'+(c.catalogCourse?'<span class="badge '+(c.catalogPublished?'live':'gold')+'">'+(c.catalogPublished?'Published Catalog':'Catalog Draft')+'</span>':'')+'</div></div>'+(instructor?'<div class="inline-actions"><button class="secondary-btn small-btn" data-action="edit-course">Edit Course</button><button class="secondary-btn small-btn" data-action="bulk-import-framework" data-course="'+c.id+'">Bulk Import Framework</button><button class="primary-btn small-btn" data-action="add-unit">Add Unit</button></div>':'')+'</div>'+(c.description?'<p class="page-subtitle" style="margin-top:16px">'+esc(c.description)+'</p>':'')+'</div>'+
     '<div class="framework-layout"><div><div class="panel-head" style="padding-left:0;border:0"><div class="panel-title">Course Framework</div></div><div class="unit-list">'+units+'</div></div>'+
     '<aside><div class="panel"><div class="panel-head"><div class="panel-title">Academic Competencies</div>'+(instructor?'<button class="panel-link" data-action="add-competency">+ Add</button>':'')+'</div><div class="panel-body"><div class="competency-list">'+competencies+'</div></div></div></aside></div>';
 }
@@ -1069,7 +1147,7 @@ function sectionTabs(active){
 
 function renderFrameworkReadOnly(){
   const fw=state.sectionData.framework;
-  const instructor=state.role==="instructor";
+  const instructor=canManageCourse(state.sectionData.course);
   const competencyPanel='<div class="panel" style="margin-bottom:18px"><div class="panel-head"><div><div class="panel-title">Academic Competencies</div><div class="panel-subtitle">Reusable skills for topic mapping, question-bank tagging, and mastery analytics.</div></div>'+(instructor?'<div class="inline-actions"><button class="panel-link" data-action="bulk-import-framework" data-course="'+state.currentSection.courseId+'">Bulk Import Framework</button><button class="panel-link" data-action="add-section-competency">+ Create Competency</button></div>':'')+'</div><div class="panel-body">'+(fw.competencies?.length?'<div class="competency-chip-grid">'+fw.competencies.map(c=>'<div class="competency-chip"><strong>'+esc(c.code)+'</strong><span>'+esc(c.name)+'</span>'+(instructor?'<button class="text-btn" data-action="edit-section-competency" data-id="'+c.id+'">Edit</button>':'')+'</div>').join("")+'</div>':'<div class="empty-mini">No competencies have been defined yet.'+(instructor?' Create the first one here.':'')+'</div>')+'</div></div>';
   if(!fw.units.length) return competencyPanel+'<div class="empty-state"><div class="empty-symbol">U</div><h3>The course guide is not yet built.</h3><p>'+(instructor?"Add units and topics from the main Courses workspace.":"Your instructor has not added units and topics to this course framework.")+'</p></div>';
   return competencyPanel+'<div class="unit-list">'+fw.units.map((u,i)=>'<article class="unit-card"><div class="unit-head"><div><div class="unit-number">Unit '+esc(u.order||i+1)+'</div><h3>'+esc(u.title)+'</h3>'+(u.description?'<div class="topic-detail">'+esc(u.description)+'</div>':'')+'</div></div><div class="topic-list">'+((u.topics||[]).length?sortByOrder(u.topics).map(t=>'<div class="topic-row"><div class="topic-index">'+esc(t.number||"")+'</div><div><div class="topic-title">'+esc(t.title)+'</div>'+(t.learningObjective?'<div class="topic-detail"><strong>Learning Objective:</strong> '+esc(t.learningObjective)+'</div>':'')+(t.essentialKnowledge?'<div class="topic-detail"><strong>Essential Knowledge:</strong> '+esc(t.essentialKnowledge)+'</div>':'')+(t.competencyCodes?.length?'<div class="topic-detail"><strong>Competencies:</strong> '+esc(t.competencyCodes.join(", "))+'</div>':'')+'</div></div>').join(""):'<div class="empty-mini">No topics yet.</div>')+'</div></article>').join("")+'</div>';
@@ -2762,6 +2840,7 @@ document.addEventListener("click",async event=>{
   const action=btn.dataset.action;
   if(action==="create-course") return openCourseModal();
   if(action==="create-section") return openSectionModal();
+  if(action==="create-section-course") return openSectionModal(null,btn.dataset.id);
   if(action==="open-course") return openCourse(btn.dataset.id);
   if(action==="open-section") return openSection(btn.dataset.id);
   if(action==="back-courses") return setPage("courses");
@@ -2830,17 +2909,21 @@ modalRoot.addEventListener("click",e=>{if(e.target.classList.contains("modal-bac
 onAuthStateChanged(auth,async user=>{
   state.user=user;
   if(!user){
-    state.profile=null;state.courses=[];state.sections=[];state.currentCourse=null;state.currentSection=null;
+    state.profile=null;state.courses=[];state.sections=[];state.currentCourse=null;state.currentSection=null;state.isSystemOwner=false;
     authShell.classList.remove("hidden");appShell.classList.add("hidden");closeModal();return;
   }
   try{
     state.profile=await loadProfile(user);
     if(state.profile.role==="instructor"){
       const ownerRef=doc(db,"system","owner");
-      const ownerSnap=await getDoc(ownerRef);
+      let ownerSnap=await getDoc(ownerRef);
       if(!ownerSnap.exists()){
         await setDoc(ownerRef,{uid:user.uid,displayName:state.profile.displayName||user.displayName||"Instructor",email:user.email,createdAt:serverTimestamp()});
+        ownerSnap=await getDoc(ownerRef);
       }
+      state.isSystemOwner=ownerSnap.exists()&&ownerSnap.data().uid===user.uid;
+    }else{
+      state.isSystemOwner=false;
     }
   }
   catch(error){console.error("Unable to load Theoria profile:",error);state.profile={displayName:user.displayName||"Theoria User",email:user.email,role:"student"};}
