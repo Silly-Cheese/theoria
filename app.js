@@ -130,89 +130,6 @@ function renderUser(user,profile){
   applyRole(state.role);
 }
 
-async function maybePromptSystemOwner(user){
-  if(!user)return;
-  const ownerRef=doc(db,"system","owner");
-  let ownerSnap;
-  try{ownerSnap=await getDoc(ownerRef);}
-  catch(error){console.warn("Unable to inspect system owner:",error);return;}
-
-  const owner=ownerSnap.exists()?ownerSnap.data():null;
-  const signedInEmail=String(user.email||state.profile?.email||"").trim();
-  const sameAccount=!!owner&&owner.uid===user.uid;
-  const sameEmail=!!owner&&signedInEmail&&String(owner.email||"").trim().toLowerCase()===signedInEmail.toLowerCase();
-
-  if(sameAccount&&owner.confirmed===true){
-    state.isSystemOwner=true;
-    applyOwnerUI();
-    return;
-  }
-
-  // If an owner record was created for this email under an older Firebase UID,
-  // let the authenticated account reconnect to it instead of silently refusing
-  // to show owner setup.
-  if(owner&&!sameAccount&&!sameEmail){
-    const modal=openModal({
-      eyebrow:"Theoria Administration",
-      title:"System owner already configured",
-      body:'<div class="system-owner-confirmation"><div class="owner-confirmation-mark">Θ</div><div><strong>This Theoria installation already has a System Owner account.</strong><p>You are signed in as <strong>'+esc(signedInEmail||"Unknown email")+'</strong>.</p><p>If this is supposed to be the owner account, the existing owner record is tied to a different email. Sign in with that account or update the owner record from Firebase.</p></div></div>',
-      footer:'<button class="primary-btn" data-close-modal>Close</button>'
-    });
-    return modal;
-  }
-
-  const reconnecting=!!owner&&!sameAccount&&sameEmail;
-  const modal=openModal({
-    eyebrow:"Theoria Administration",
-    title:reconnecting?"Reconnect System Owner":"Are you the system owner?",
-    body:'<div class="system-owner-confirmation"><div class="owner-confirmation-mark">Θ</div><div><strong>'+(reconnecting?'We found an existing System Owner record for this email.':'Confirm the account that owns the Theoria Course Catalog.')+'</strong><p>The signed-in email is <strong>'+esc(signedInEmail||"Unknown email")+'</strong>.</p><p>'+(reconnecting?'Reconnect this authenticated account to the existing owner record.':'The system owner can create and publish official courses, manage master Course Frameworks and Question Banks, and still teach sections as an instructor.')+'</p><div class="notice">This administrative claim is separate from being an instructor. Other instructors can teach official catalog courses without being able to edit the master catalog.</div></div></div>',
-    footer:'<button class="secondary-btn" id="declineSystemOwner">Not now</button><button class="primary-btn" id="confirmSystemOwner">'+(reconnecting?'Reconnect System Owner':'Yes — I am the System Owner')+'</button>'
-  });
-
-  modal.querySelector("#declineSystemOwner").onclick=()=>closeModal();
-  modal.querySelector("#confirmSystemOwner").onclick=async()=>{
-    const confirm=modal.querySelector("#confirmSystemOwner");
-    const decline=modal.querySelector("#declineSystemOwner");
-    confirm.disabled=true;decline.disabled=true;confirm.textContent="Confirming…";
-    try{
-      const batch=writeBatch(db);
-      batch.set(doc(db,"users",user.uid),{
-        role:"instructor",
-        systemOwner:true,
-        displayName:state.profile?.displayName||user.displayName||"Instructor",
-        email:user.email||state.profile?.email||"",
-        updatedAt:serverTimestamp()
-      },{merge:true});
-
-      const ownerData={
-        uid:user.uid,
-        displayName:state.profile?.displayName||user.displayName||"Instructor",
-        email:user.email||state.profile?.email||"",
-        confirmed:true,
-        confirmedAt:serverTimestamp(),
-        updatedAt:serverTimestamp()
-      };
-      if(ownerSnap.exists())batch.update(ownerRef,ownerData);
-      else batch.set(ownerRef,{...ownerData,createdAt:serverTimestamp()});
-
-      await batch.commit();
-      state.profile={...(state.profile||{}),role:"instructor",systemOwner:true,email:user.email||state.profile?.email||""};
-      state.role="instructor";
-      state.isSystemOwner=true;
-      closeModal();
-      renderUser(user,state.profile);
-      applyOwnerUI();
-      await loadWorkspace();
-      setPage("home");
-      showToast("System Owner confirmed. You can now author the official Theoria Course Catalog.");
-    }catch(error){
-      console.error("Unable to confirm system owner:",error);
-      confirm.disabled=false;decline.disabled=false;confirm.textContent="Yes — I am the System Owner";
-      showToast(humanizeFirebaseError(error));
-    }
-  };
-}
-
 function canManageCourse(course){
   if(!course||state.role!=="instructor"||!state.user)return false;
   if(state.isSystemOwner)return true;
@@ -225,7 +142,6 @@ function isOfficialCatalogCourse(course){
 
 function applyOwnerUI(){
   Array.from(document.querySelectorAll(".owner-only")).forEach(el=>el.classList.toggle("hidden",!state.isSystemOwner));
-  Array.from(document.querySelectorAll(".owner-setup-only")).forEach(el=>el.classList.toggle("hidden",state.role!=="instructor"||state.isSystemOwner));
 }
 
 function setPage(page,label){
@@ -2878,7 +2794,6 @@ $("#quickCreateBtn").addEventListener("click",()=>openSectionModal());
 $("#createCourseBtn").addEventListener("click",()=>openCourseModal());
 $("#createSectionBtn").addEventListener("click",()=>openSectionModal());
 $("#homeCreateSection").addEventListener("click",()=>openSectionModal());
-$("#systemOwnerSetupBtn")?.addEventListener("click",()=>maybePromptSystemOwner(state.user));
 $("#joinCodeBtn").addEventListener("click",()=>previewJoin($("#joinCodeInput").value));
 $("#joinCodeInput").addEventListener("input",e=>{e.target.value=e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g,"");});
 $("#joinCodeInput").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();previewJoin(e.target.value);}});
@@ -3006,15 +2921,6 @@ onAuthStateChanged(auth,async user=>{
   applyOwnerUI();
   authShell.classList.add("hidden");appShell.classList.remove("hidden");
 
-  // System-owner onboarding must not depend on the rest of the academic
-  // workspace loading successfully. Existing accounts can therefore be
-  // recognized by their authenticated email and offered the owner claim
-  // immediately on their next sign-in, even if another Firestore query fails.
-  setTimeout(()=>{
-    maybePromptSystemOwner(user).catch(error=>{
-      console.error("Unable to run system-owner onboarding:",error);
-    });
-  },180);
 
   try{
     await loadWorkspace();
