@@ -1004,7 +1004,7 @@ async function loadSectionData(section){
     for(const ref of assessmentRefs){
       try{
         const g=await getDoc(doc(db,"sections",section.id,"assessmentGrades",ref.id+"_"+state.user.uid));
-        if(g.exists() && g.data().released===true) assessmentGrades.push({id:g.id,...g.data()});
+        if(g.exists()) assessmentGrades.push({id:g.id,...g.data()});
       }catch(_){}
     }
   }
