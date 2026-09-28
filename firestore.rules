@@ -290,7 +290,15 @@ service cloud.firestore {
           request.resource.data.sectionId == ''
           || sectionOwner(request.resource.data.sectionId)
         );
-      allow update, delete: if assessmentOwner(assessmentId);
+      allow update: if assessmentOwner(assessmentId)
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.courseId == resource.data.courseId
+        && (
+          request.resource.data.sectionId == resource.data.sectionId
+          || request.resource.data.sectionId == ''
+          || sectionOwner(request.resource.data.sectionId)
+        );
+      allow delete: if assessmentOwner(assessmentId);
 
       match /questions/{questionId} {
         allow read: if assessmentOwner(assessmentId)
@@ -355,7 +363,8 @@ service cloud.firestore {
           allow create: if isSelf(studentId)
             && assessmentMember(assessmentId)
             && request.resource.data.studentId == uid();
-          allow update, delete: if false;
+          allow update: if false;
+          allow delete: if assessmentOwner(assessmentId);
         }
       }
 
