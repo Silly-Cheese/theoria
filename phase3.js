@@ -796,7 +796,7 @@ async function assignAssessmentModal(assessmentId,preferredSectionId=""){
       }
       if(initialStatus==="Published"){
         await setDoc(doc(db,"sections",section.id,"assessmentRefs",ref.id),{
-          assessmentId:ref.id,title:clone.title,type:clone.type,status:"Published",
+          assessmentId:ref.id,title:clone.title,type:clone.type,assessmentType:clone.type,totalPoints:Number(clone.totalPoints||0),status:"Published",
           opensAt:clone.opensAt||null,closesAt:clone.closesAt||null,durationMinutes:clone.durationMinutes||0,updatedAt:serverTimestamp()
         });
       }
@@ -845,7 +845,7 @@ async function editAssignedAssessmentModal(assessmentId){
       if(a.status==="Published"){
         if(moved)batch.delete(doc(db,"sections",a.sectionId,"assessmentRefs",a.id));
         batch.set(doc(db,"sections",newSectionId,"assessmentRefs",a.id),{
-          assessmentId:a.id,title,type:a.type,status:a.status,opensAt:opensAt||null,closesAt:closesAt||null,durationMinutes,updatedAt:serverTimestamp()
+          assessmentId:a.id,title,type:a.type,assessmentType:a.type,totalPoints:Number(a.totalPoints||0),status:a.status,opensAt:opensAt||null,closesAt:closesAt||null,durationMinutes,updatedAt:serverTimestamp()
         },{merge:true});
       }
       await batch.commit();
@@ -954,7 +954,7 @@ async function setStatus(status){
   const batch=writeBatch(db);
   batch.update(doc(db,"assessments",a.id),{status,questionIds:P3.detail.questions.map(q=>q.id),updatedAt:serverTimestamp()});
   if(status==="Draft")batch.delete(doc(db,"sections",a.sectionId,"assessmentRefs",a.id));
-  else batch.set(doc(db,"sections",a.sectionId,"assessmentRefs",a.id),{assessmentId:a.id,title:a.title,type:a.type,status,opensAt:a.opensAt||null,closesAt:a.closesAt||null,durationMinutes:a.durationMinutes||0,updatedAt:serverTimestamp()},{merge:true});
+  else batch.set(doc(db,"sections",a.sectionId,"assessmentRefs",a.id),{assessmentId:a.id,title:a.title,type:a.type,assessmentType:a.type,totalPoints:Number(a.totalPoints||0),status,opensAt:a.opensAt||null,closesAt:a.closesAt||null,durationMinutes:a.durationMinutes||0,updatedAt:serverTimestamp()},{merge:true});
   try{await batch.commit();await openAssessment(a.id);await renderAssessments();toast("Assessment "+status.toLowerCase()+".");}catch(err){toast(err.message||"Unable to update assessment.");}
 }
 
@@ -1390,6 +1390,6 @@ document.addEventListener("click",async e=>{
   if(a==="calculator")return calculator();
 });
 
-window.TheoriaPhase3={renderSectionTab,renderAssessments,renderItemBank};
+window.TheoriaPhase3={renderSectionTab,renderAssessments,renderItemBank,openAssessment};
 
 if(window.TheoriaCore)onReady();
