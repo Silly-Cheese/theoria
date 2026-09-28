@@ -2438,6 +2438,7 @@ function openResourceModal(existing){
       '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Resource Identity</h3><p>Add the source students should use and classify it clearly.</p></div></div>'+
         '<div class="field"><label>Resource Title</label><input class="title-input" name="title" value="'+esc(existing?.title||"")+'" placeholder="e.g. Augustine, Confessions Book VIII" required></div>'+
         '<div class="compact-field-grid"><div class="field"><label>Type</label><select name="type"><option>Primary Source</option><option>Scripture Reading</option><option>Article</option><option>Book / Chapter</option><option>PDF Link</option><option>Lecture Notes</option><option>Research Link</option><option>Supplemental Resource</option></select></div><div class="field"><label>URL</label><input type="url" name="url" value="'+esc(existing?.url||"")+'" placeholder="https://"></div><div class="field"><label>Citation / Reference</label><input name="citation" value="'+esc(existing?.citation||"")+'" placeholder="Author, title, chapter, pages"></div></div>'+
+        '<div class="compact-field-grid" style="margin-top:12px"><div class="field"><label>Unit Folder</label><select name="unitId" id="resourceUnit"></select></div><div class="field"><label>Topic</label><select name="topicId" id="resourceTopic"></select></div><div class="field"><label>Organization</label><div class="static-field">Controls section and student resource folders</div></div></div>'+
       '</section>'+
       '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Reading Note</h3><p>Give students a short reason for using this resource.</p></div></div>'+
         '<div class="field"><label>Student Note</label><textarea class="editor-compact" rows="2" name="notes" placeholder="What should students pay attention to while reading?">'+esc(existing?.notes||"")+'</textarea></div>'+
@@ -2446,18 +2447,33 @@ function openResourceModal(existing){
   });
   const form=modal.querySelector("#resourceForm");
   if(existing) form.type.value=existing.type||"Primary Source";
+
+  const resourceFramework=state.sectionData?.framework||{units:[]};
+  const resourceUnit=form.querySelector("#resourceUnit"),resourceTopic=form.querySelector("#resourceTopic");
+  resourceUnit.innerHTML='<option value="">Unsorted / no unit</option>'+resourceFramework.units.map(u=>'<option value="'+u.id+'">'+esc("Unit "+(u.order||"")+" — "+u.title)+'</option>').join("");
+  resourceUnit.value=existing?.unitId||"";
+  const fillResourceTopics=()=>{
+    const unit=resourceFramework.units.find(u=>u.id===resourceUnit.value);
+    resourceTopic.innerHTML='<option value="">No specific topic</option>'+((unit?.topics||[]).map(t=>'<option value="'+t.id+'">'+esc((t.number||"")+" — "+t.title)+'</option>').join(""));
+    resourceTopic.value=(existing?.topicId&&unit?.topics?.some(t=>t.id===existing.topicId))?existing.topicId:"";
+  };
+  resourceUnit.addEventListener("change",fillResourceTopics);
+  fillResourceTopics();
+
   const note=form.querySelector(".editor-compact");
   const grow=()=>{note.style.height="auto";note.style.height=Math.min(note.scrollHeight,180)+"px";};note.addEventListener("input",grow);grow();
   form.addEventListener("submit",async e=>{
     e.preventDefault();const fd=new FormData(form);
     const url=String(fd.get("url")).trim();
     if(url&&!validResourceUrl(url))return showToast("Enter a valid http:// or https:// resource URL.");
+    const selectedUnit=resourceFramework.units.find(u=>u.id===String(fd.get("unitId")||""));
+    const selectedTopic=(selectedUnit?.topics||[]).find(t=>t.id===String(fd.get("topicId")||""));
     const data={
       title:String(fd.get("title")).trim(),type:String(fd.get("type")),url,
       citation:String(fd.get("citation")||"").trim(),notes:String(fd.get("notes")).trim(),
-      unitId:existing?.unitId||"",unitTitle:existing?.unitTitle||"",unitNumber:existing?.unitNumber||"",
-      topicId:existing?.topicId||"",topicTitle:existing?.topicTitle||"",topicNumber:existing?.topicNumber||"",
-      tags:existing?.tags||[],unitSequence:existing?.unitSequence||0,
+      unitId:selectedUnit?.id||"",unitTitle:selectedUnit?.title||"",unitNumber:Number(selectedUnit?.order||0),
+      topicId:selectedTopic?.id||"",topicTitle:selectedTopic?.title||"",topicNumber:selectedTopic?.number||"",
+      tags:existing?.tags||[],unitSequence:Number(selectedTopic?.order||existing?.unitSequence||0),
       updatedAt:serverTimestamp()
     };
     try{
