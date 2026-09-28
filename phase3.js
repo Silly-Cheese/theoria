@@ -214,7 +214,7 @@ async function renderItemBank(){
   const renderCourseGroup=(course,list)=>{
     const fw=frameworks.get(course.id)||{units:[]};
     const groups=core().unitFolderGroups(list,fw);
-    const unsortedCount=list.filter(item=>!core().resolveFrameworkPlacement(item,fw).unit).length;
+    const unsortedCount=list.filter(item=>!item.unitId||!fw.units.some(u=>u.id===item.unitId)).length;
     return '<section class="question-course-group"><div class="page-head compact-head question-course-head"><div><div class="panel-title">'+esc(course.code+" — "+course.title)+'</div><p class="page-subtitle">'+list.length+' question'+(list.length===1?"":"s")+' organized by course unit.</p></div>'+
       (list.length?'<button class="secondary-btn small-btn" data-phase3-action="auto-sort-question-bank" data-course="'+course.id+'">Auto-Sort'+(unsortedCount?' ('+unsortedCount+')':'')+'</button>':'')+
       '</div>'+
@@ -254,7 +254,7 @@ async function autoSortQuestionBankModal(courseId){
   const fw=await framework(courseId);
   if(!fw.units.length)return toast("Create course units and topics before using Auto-Sort.");
 
-  const candidates=P3.items.filter(item=>item.courseId===courseId&&!core().resolveFrameworkPlacement(item,fw).unit);
+  const candidates=P3.items.filter(item=>item.courseId===courseId&&(!item.unitId||!fw.units.some(u=>u.id===item.unitId)));
   if(!candidates.length)return toast("Every question in this course is already placed in a unit folder.");
 
   const suggestions=candidates.map(item=>({item,suggestion:core().suggestFrameworkPlacement(item,fw)}));
