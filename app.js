@@ -524,8 +524,8 @@ async function openSection(sectionId,tab="overview"){
 function sectionTabs(active){
   const instructor=state.role==="instructor";
   const tabs=instructor
-    ? [["overview","Overview"],["framework","Course Guide"],["assignments","Assignments"],["resources","Resources"],["examinations","Assessments"],["students","Students"],["gradebook","Gradebook"],["grading","Grading Policy"]]
-    : [["overview","Overview"],["framework","Course Guide"],["assignments","Assignments"],["resources","Resources"],["examinations","Assessments"],["grades","Grades"],["pathway","Grading Pathway"]];
+    ? [["overview","Overview"],["framework","Course Guide"],["assignments","Assignments"],["resources","Resources"],["examinations","Assessments"],["students","Students"],["gradebook","Gradebook"],["grading","Grading Policy"],["analytics","Analytics"],["records","Records"]]
+    : [["overview","Overview"],["framework","Course Guide"],["assignments","Assignments"],["resources","Resources"],["examinations","Assessments"],["grades","Grades"],["pathway","Grading Pathway"],["progress","Progress"],["record","Academic Record"]];
   return '<div class="tabs">'+tabs.map(([id,label])=>'<button class="tab-btn '+(active===id?'active':'')+'" data-action="section-tab" data-tab="'+id+'">'+label+'</button>').join("")+'</div>';
 }
 
@@ -603,6 +603,7 @@ function renderSectionDetail(tab="overview"){
   else if(tab==="gradebook") body=renderGradebook();
   else if(tab==="grades") body=renderStudentGrades();
   else if(["examinations","grading","pathway"].includes(tab)) body='<div id="phase3SectionTab"><div class="empty-mini">Loading assessment workspace…</div></div>';
+  else if(["analytics","records","progress","record"].includes(tab)) body='<div id="phase4SectionTab"><div class="empty-mini">Loading academic analytics…</div></div>';
 
   $("#sectionDetail").innerHTML =
     '<button class="text-btn" data-action="back-sections">← Sections</button>'+
@@ -610,6 +611,9 @@ function renderSectionDetail(tab="overview"){
     sectionTabs(tab)+'<div id="sectionTabBody">'+body+'</div>';
   if(["examinations","grading","pathway"].includes(tab) && window.TheoriaPhase3?.renderSectionTab){
     window.TheoriaPhase3.renderSectionTab(tab);
+  }
+  if(["analytics","records","progress","record"].includes(tab) && window.TheoriaPhase4?.renderSectionTab){
+    window.TheoriaPhase4.renderSectionTab(tab);
   }
 }
 
