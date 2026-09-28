@@ -1694,6 +1694,32 @@ function openGradeModal(assignmentId,studentId){
   });
 }
 
+async function deleteLibraryResource(sectionId,resourceId){
+  try{
+    const snap=await getDoc(doc(db,"sections",sectionId,"resources",resourceId));
+    if(!snap.exists())return showToast("Resource not found.");
+    const resource={id:snap.id,...snap.data()};
+    const modal=openModal({
+      eyebrow:"Delete Resource",
+      title:resource.title||"Resource",
+      body:'<div class="delete-assessment-warning"><div class="delete-warning-icon">!</div><div><strong>This removes the resource from its section and the Scholar Library.</strong><p>No assignments, assessments, grades, or student submissions are deleted.</p></div></div>'+
+        '<div class="question-delete-preview"><span>'+esc(resource.type||"Resource")+'</span><strong>'+esc(resource.title||"Untitled Resource")+'</strong><small>'+esc(resource.citation||resource.url||"No citation or external link")+'</small></div>',
+      footer:'<button class="secondary-btn" data-close-modal>Cancel</button><button class="danger-btn" id="confirmDeleteLibraryResource">Delete Resource</button>'
+    });
+    modal.querySelector("#confirmDeleteLibraryResource").onclick=async()=>{
+      try{
+        await deleteDoc(doc(db,"sections",sectionId,"resources",resourceId));
+        closeModal();
+        if(state.currentSection?.id===sectionId){
+          state.sectionData=await loadSectionData(state.currentSection);
+        }
+        await renderScholarLibrary();
+        showToast("Resource deleted.");
+      }catch(error){showToast(humanizeFirebaseError(error));}
+    };
+  }catch(error){showToast(humanizeFirebaseError(error));}
+}
+
 async function renderScholarLibrary(){
   const el=$("#libraryContent");
   if(!el||!state.user)return;
@@ -1737,12 +1763,16 @@ async function renderScholarLibrary(){
       (!q||[r.title,r.type,r.citation,r.notes,r.courseCode,r.courseTitle,r.sectionName].join(" ").toLowerCase().includes(q))
     );
     results.innerHTML=list.length?'<div class="library-grid">'+list.map(r=>
-      '<article class="library-card"><div class="library-card-top"><div><span>'+esc(r.type||"Resource")+'</span><h3>'+esc(r.title||"Untitled Resource")+'</h3></div><span class="library-course">'+esc(r.courseCode||"Course")+'</span></div>'+
+      '<article class="library-card"><div class="library-card-top"><div><span>'+esc(r.type||"Resource")+
+      (r.unitTitle?' • Unit '+esc(r.unitNumber||"")+': '+esc(r.unitTitle):'')+
+      (r.topicNumber?' • Topic '+esc(r.topicNumber):'')+
+      '</span><h3>'+esc(r.title||"Untitled Resource")+'</h3></div><span class="library-course">'+esc(r.courseCode||"Course")+'</span></div>'+
       (r.citation?'<div class="library-citation">'+esc(r.citation)+'</div>':'')+
       (r.notes?'<p>'+esc(r.notes)+'</p>':'')+
-      '<div class="library-card-foot"><div><strong>'+esc(r.sectionName)+'</strong><span>'+esc(r.term||"")+'</span></div>'+
+      '<div class="library-card-foot"><div><strong>'+esc(r.sectionName)+'</strong><span>'+esc(r.term||"")+'</span></div><div class="inline-actions">'+
       (r.url?'<a class="secondary-btn small-btn" href="'+esc(r.url)+'" target="_blank" rel="noopener noreferrer">Open Resource ↗</a>':'<button class="secondary-btn small-btn" data-action="open-section-resource" data-section="'+r.sectionId+'">Open Section</button>')+
-      '</div></article>'
+      (state.role==="instructor"?'<button class="danger-btn small-btn" data-action="delete-library-resource" data-section="'+r.sectionId+'" data-id="'+r.id+'">Delete</button>':'')+
+      '</div></div></article>'
     ).join("")+'</div>':'<div class="empty-state"><div class="empty-symbol">L</div><h3>No matching resources.</h3><p>'+(resources.length?"Adjust the Library filters or search terms.":"Resources assigned in your sections will appear here automatically.")+'</p></div>';
   };
   search.addEventListener("input",render);type.addEventListener("change",render);section.addEventListener("change",render);render();
@@ -1945,6 +1975,7 @@ document.addEventListener("click",async event=>{
   if(action==="bulk-import-resources") return bulkImportResourcesModal();
   if(action==="delete-resource") return deleteResource(btn.dataset.id);
   if(action==="open-section-resource") return openSection(btn.dataset.section,"resources");
+  if(action==="delete-library-resource") return deleteLibraryResource(btn.dataset.section,btn.dataset.id);
   if(action==="edit-resource") return openResourceModal(state.sectionData.resources.find(x=>x.id===btn.dataset.id));
   if(action==="set-grade") return openGradeModal(btn.dataset.assignment,btn.dataset.student);
   if(action==="open-gradebook-assessment"){
