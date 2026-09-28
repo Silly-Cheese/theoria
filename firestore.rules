@@ -343,15 +343,6 @@ service cloud.firestore {
             signedIn()
             && assessmentData(assessmentId).sectionId != ''
             && sectionMember(assessmentData(assessmentId).sectionId)
-            && assessmentData(assessmentId).status == 'Published'
-            && (
-              assessmentData(assessmentId).opensAt == null
-              || request.time >= assessmentData(assessmentId).opensAt
-            )
-            && (
-              assessmentData(assessmentId).closesAt == null
-              || request.time <= assessmentData(assessmentId).closesAt
-            )
             && exists(/databases/$(database)/documents/assessments/$(assessmentId)/submissions/$(uid()))
             && get(/databases/$(database)/documents/assessments/$(assessmentId)/submissions/$(uid())).data.status == 'in_progress'
           );
@@ -390,7 +381,7 @@ service cloud.firestore {
         allow update: if assessmentOwner(assessmentId)
           || (
             isSelf(studentId)
-            && assessmentOpen(assessmentId)
+            && assessmentMember(assessmentId)
             && resource.data.status == 'in_progress'
             && request.resource.data.studentId == uid()
             && request.resource.data.candidateNumber == resource.data.candidateNumber
