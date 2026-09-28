@@ -22,6 +22,15 @@ service cloud.firestore {
       return signedIn() && userData().role == 'instructor';
     }
 
+    function isInstructorAfter() {
+      return signedIn()
+        && getAfter(/databases/$(database)/documents/users/$(uid())).data.role == 'instructor';
+    }
+
+    function ownerExists() {
+      return exists(/databases/$(database)/documents/system/owner);
+    }
+
     function courseOwner(courseId) {
       return signedIn()
         && get(/databases/$(database)/documents/courses/$(courseId)).data.ownerId == uid();
@@ -44,7 +53,14 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow create: if isSelf(userId)
-        && request.resource.data.role in ['student', 'instructor'];
+        && (
+          request.resource.data.role == 'student'
+          || (
+            request.resource.data.role == 'instructor'
+            && request.resource.data.bootstrapOwner == true
+            && !ownerExists()
+          )
+        );
       allow read: if isSelf(userId);
       allow update: if isSelf(userId)
         && request.resource.data.role == resource.data.role;
@@ -53,6 +69,15 @@ service cloud.firestore {
       match /enrollments/{sectionId} {
         allow read, create, update, delete: if isSelf(userId);
       }
+    }
+
+    match /system/{systemDoc} {
+      allow read: if signedIn();
+      allow create: if systemDoc == 'owner'
+        && !ownerExists()
+        && isInstructorAfter()
+        && request.resource.data.uid == uid();
+      allow update, delete: if false;
     }
 
     match /courses/{courseId} {
