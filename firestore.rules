@@ -69,7 +69,9 @@ service cloud.firestore {
     }
 
     function assessmentMember(assessmentId) {
-      return signedIn() && sectionMember(assessmentData(assessmentId).sectionId);
+      return signedIn()
+        && assessmentData(assessmentId).sectionId != ''
+        && sectionMember(assessmentData(assessmentId).sectionId);
     }
 
     function assessmentOpen(assessmentId) {
@@ -135,7 +137,13 @@ service cloud.firestore {
       allow read: if signedIn();
       allow create: if isInstructor()
         && request.resource.data.ownerId == uid();
-      allow update, delete: if courseOwner(courseId);
+      allow update: if courseOwner(courseId)
+        || (
+          isInstructor()
+          && !('ownerId' in resource.data)
+          && request.resource.data.ownerId == uid()
+        );
+      allow delete: if courseOwner(courseId);
 
       match /units/{unitId} {
         allow read: if signedIn();
@@ -267,14 +275,21 @@ service cloud.firestore {
     }
 
     match /assessments/{assessmentId} {
-      allow read: if assessmentOwner(assessmentId)
+      allow read: if (
+          signedIn()
+          && resource.data.ownerId == uid()
+        )
         || (
           assessmentMember(assessmentId)
           && resource.data.status in ['Published', 'Closed']
         );
       allow create: if isInstructor()
         && request.resource.data.ownerId == uid()
-        && sectionOwner(request.resource.data.sectionId);
+        && courseOwner(request.resource.data.courseId)
+        && (
+          request.resource.data.sectionId == ''
+          || sectionOwner(request.resource.data.sectionId)
+        );
       allow update, delete: if assessmentOwner(assessmentId);
 
       match /questions/{questionId} {
