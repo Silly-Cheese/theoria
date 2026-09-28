@@ -180,39 +180,95 @@ async function itemModal(existing){
   let courseId=existing?.courseId||s.courses[0].id;
   let fw=await framework(courseId);
   const types=["Multiple Choice","Multiple Select","Short Response","Essay","Passage Analysis","Primary Source Analysis","Argument Analysis","Oral Prompt","Disputation Prompt"];
+  const currentType=existing?.type||"Multiple Choice";
+  const typeTiles=types.map((type,i)=>'<label class="type-tile '+(currentType===type?'selected':'')+'"><input type="radio" name="type" value="'+esc(type)+'" '+(currentType===type?'checked':'')+'><span class="type-tile-mark">'+String(i+1).padStart(2,"0")+'</span><span>'+esc(type)+'</span></label>').join("");
+
   const modal=core().openModal({
     eyebrow:"Item Bank",
     title:existing?"Edit Assessment Item":"Create Assessment Item",
     wide:true,
-    body:'<form id="itemForm"><div class="form-grid">'+
-      '<div class="field"><label>Course</label><select name="courseId" id="itemCourse" '+(existing?'disabled':'')+'>'+s.courses.map(c=>'<option value="'+c.id+'">'+esc(c.code+" — "+c.title)+'</option>').join("")+'</select></div>'+
-      '<div class="field"><label>Item Type</label><select name="type">'+types.map(x=>'<option>'+x+'</option>').join("")+'</select></div>'+
-      '<div class="field"><label>Difficulty</label><select name="difficulty"><option>Foundational</option><option>Moderate</option><option>Advanced</option></select></div>'+
-      '<div class="field"><label>Cognitive Level</label><select name="cognitiveLevel"><option>Recall</option><option>Understanding</option><option>Application</option><option>Analysis</option><option>Evaluation</option><option>Synthesis</option></select></div>'+
-      '<div class="field"><label>Unit</label><select name="unitId" id="itemUnit"></select></div>'+
-      '<div class="field"><label>Topic</label><select name="topicId" id="itemTopic"></select></div>'+
-      '<div class="field"><label>Default Points</label><input name="pointsDefault" type="number" min="0" step="0.5" value="'+esc(existing?.pointsDefault??1)+'"></div>'+
-      '<div class="field"><label>Tags</label><input name="tags" value="'+esc((existing?.tags||[]).join(", "))+'" placeholder="christology, final, primary-source"></div>'+
-      '<div class="field span-2"><label>Source / Stimulus Title</label><input name="sourceTitle" value="'+esc(existing?.sourceTitle||"")+'" placeholder="Athanasius, On the Incarnation §8"></div>'+
-      '<div class="field span-2"><label>Source / Stimulus Text</label><textarea name="stimulus" placeholder="Paste text directly or cite/link it in a section resource. Theoria uses Firestore only; no file upload service is required.">'+esc(existing?.stimulus||"")+'</textarea></div>'+
-      '<div class="field span-2"><label>Prompt</label><textarea name="prompt" required>'+esc(existing?.prompt||"")+'</textarea></div>'+
-      '<div class="field span-2"><label>Answer Options</label><textarea name="options" placeholder="One option per line">'+esc((existing?.options||[]).map(x=>x.text||x).join("\n"))+'</textarea></div>'+
-      '<div class="field"><label>Correct Answer(s)</label><input name="correctAnswer" value="'+esc(Array.isArray(existing?.correctAnswer)?existing.correctAnswer.join(", "):(existing?.correctAnswer||""))+'" placeholder="B or A, C"></div>'+
-      '<div class="field"><label>Source Set / Group</label><input name="sourceSet" value="'+esc(existing?.sourceSet||"")+'"></div>'+
-      '<div class="field span-2"><label>Instructor Explanation / Key</label><textarea name="explanation">'+esc(existing?.explanation||"")+'</textarea></div>'+
-      '<div class="field span-2"><label>Rubric Criteria</label><textarea name="rubric" placeholder="Thesis clarity | 4\nBiblical support | 8">'+esc(rubricToText(existing?.rubric))+'</textarea></div>'+
-      '<div class="field span-2"><label>Academic Competencies</label><div id="itemCompetencies" class="competency-picker"></div></div>'+
-      '</div><div class="modal-foot" style="margin:24px -24px -24px"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Item</button></div></form>'
+    body:'<form id="itemForm" class="academic-form">'+
+      '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Item Identity</h3><p>Place the question inside the course framework.</p></div></div>'+
+        '<div class="compact-field-grid"><div class="field"><label>Course</label><select name="courseId" id="itemCourse" '+(existing?'disabled':'')+'>'+s.courses.map(c=>'<option value="'+c.id+'">'+esc(c.code+" — "+c.title)+'</option>').join("")+'</select></div>'+
+        '<div class="field"><label>Difficulty</label><select name="difficulty"><option>Foundational</option><option>Moderate</option><option>Advanced</option></select></div>'+
+        '<div class="field"><label>Cognitive Level</label><select name="cognitiveLevel"><option>Recall</option><option>Understanding</option><option>Application</option><option>Analysis</option><option>Evaluation</option><option>Synthesis</option></select></div></div>'+
+        '<div class="compact-field-grid"><div class="field"><label>Unit</label><select name="unitId" id="itemUnit"></select></div><div class="field"><label>Topic</label><select name="topicId" id="itemTopic"></select></div><div class="field"><label>Default Points</label><div class="input-with-suffix"><input name="pointsDefault" type="number" min="0" step="0.5" value="'+esc(existing?.pointsDefault??1)+'"><span>pts</span></div></div></div>'+
+        '<div class="field"><label>Item Type</label><div class="type-tile-grid compact">'+typeTiles+'</div></div>'+
+      '</section>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Question</h3><p>Write the prompt cleanly; add source material only when the item needs it.</p></div></div>'+
+        '<div class="field"><label>Prompt</label><textarea class="editor-compact" rows="3" name="prompt" placeholder="What should the student analyze, explain, defend, or identify?" required>'+esc(existing?.prompt||"")+'</textarea></div>'+
+        '<details class="form-disclosure" '+((existing?.stimulus||existing?.sourceTitle)?'open':'')+'><summary><span>Add source or stimulus</span><small>Optional passage, quotation, argument, or primary source</small></summary><div class="disclosure-body"><div class="field"><label>Source Title / Citation</label><input name="sourceTitle" value="'+esc(existing?.sourceTitle||"")+'" placeholder="Athanasius, On the Incarnation §8"></div><div class="field"><label>Source Text</label><textarea class="editor-compact source-editor" rows="4" name="stimulus" placeholder="Paste only the excerpt students need for this item.">'+esc(existing?.stimulus||"")+'</textarea></div><div class="field"><label>Source Set / Group</label><input name="sourceSet" value="'+esc(existing?.sourceSet||"")+'" placeholder="Nicene Controversy Set"></div></div></details>'+
+      '</section>'+
+      '<section class="form-section" id="objectiveAnswerSection"><div class="form-section-head"><div><span>03</span><h3>Answer Choices</h3><p>Add choices individually and mark the correct answer directly.</p></div><button type="button" class="secondary-btn small-btn" id="addAnswerOption">+ Add Choice</button></div><div id="answerOptionRows" class="structured-list answer-option-list"></div></section>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>04</span><h3>Scoring & Explanation</h3><p>Build a rubric with real rows instead of encoded text.</p></div></div>'+
+        '<div class="structured-builder"><div class="structured-builder-head"><div><strong>Rubric Criteria</strong><span>Most useful for written, oral, and analytical items.</span></div><button type="button" class="secondary-btn small-btn" id="addRubricCriterion">+ Add Criterion</button></div><div id="rubricRows" class="structured-list"></div></div>'+
+        '<div class="field"><label>Instructor Explanation / Key Notes</label><textarea class="editor-compact" rows="3" name="explanation" placeholder="Why is the answer correct, or what should a strong response demonstrate?">'+esc(existing?.explanation||"")+'</textarea></div>'+
+      '</section>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>05</span><h3>Academic Mapping</h3><p>Tag the item for analytics and mastery evidence.</p></div></div>'+
+        '<div class="field"><label>Academic Competencies</label><div id="itemCompetencies" class="competency-picker"></div></div>'+
+        '<div class="field"><label>Tags</label><input name="tags" value="'+esc((existing?.tags||[]).join(", "))+'" placeholder="christology, primary-source, final-review"></div>'+
+      '</section>'+
+      '<div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Item</button></div></form>'
   });
+
   const form=modal.querySelector("#itemForm");
   form.courseId.value=courseId;
-  form.type.value=existing?.type||"Multiple Choice";
   form.difficulty.value=existing?.difficulty||"Moderate";
   form.cognitiveLevel.value=existing?.cognitiveLevel||"Application";
 
+  let optionSeed=(existing?.options||[]).map(x=>x.text||x);
+  if(!optionSeed.length&&objective(currentType))optionSeed=["","","",""];
+  const existingCorrect=new Set(Array.isArray(existing?.correctAnswer)?existing.correctAnswer:[existing?.correctAnswer].filter(Boolean));
+  const optionBox=modal.querySelector("#answerOptionRows");
+  const rubricBox=modal.querySelector("#rubricRows");
+
+  const renumberOptions=()=>{
+    [...optionBox.querySelectorAll(".answer-option-row")].forEach((row,i)=>{
+      const id=String.fromCharCode(65+i);
+      row.dataset.optionId=id;
+      row.querySelector(".answer-letter").textContent=id;
+      row.querySelector(".option-correct").value=id;
+    });
+  };
+  const addOption=(value="",checked=false)=>{
+    const row=document.createElement("div");
+    row.className="answer-option-row";
+    row.innerHTML='<div class="answer-letter">A</div><input class="structured-input option-text" value="'+esc(value)+'" placeholder="Answer choice"><label class="correct-control"><input class="option-correct" type="checkbox" '+(checked?'checked':'')+'><span>Correct</span></label><button type="button" class="row-remove" aria-label="Remove">×</button>';
+    row.querySelector(".row-remove").addEventListener("click",()=>{row.remove();renumberOptions();});
+    row.querySelector(".option-correct").addEventListener("change",e=>{
+      const multi=form.querySelector('input[name="type"]:checked')?.value==="Multiple Select";
+      if(e.target.checked&&!multi)optionBox.querySelectorAll(".option-correct").forEach(x=>{if(x!==e.target)x.checked=false;});
+    });
+    optionBox.appendChild(row);renumberOptions();
+  };
+  optionSeed.forEach((text,i)=>addOption(text,existingCorrect.has(String.fromCharCode(65+i))));
+
+  const addRubric=(criterion="",points="")=>{
+    const row=document.createElement("div");
+    row.className="structured-row rubric-row";
+    row.innerHTML='<div class="structured-index">•</div><input class="structured-input rubric-criterion" value="'+esc(criterion)+'" placeholder="Criterion, e.g. Theological synthesis"><div class="input-with-suffix mini"><input class="rubric-points" type="number" min="0" step="0.5" value="'+esc(points)+'"><span>pts</span></div><button type="button" class="row-remove" aria-label="Remove">×</button>';
+    row.querySelector(".row-remove").addEventListener("click",()=>row.remove());
+    rubricBox.appendChild(row);
+  };
+  (existing?.rubric||[]).forEach(r=>addRubric(r.criterion,r.points));
+
+  const updateTypeUI=()=>{
+    const type=form.querySelector('input[name="type"]:checked')?.value||"Multiple Choice";
+    modal.querySelectorAll(".type-tile").forEach(tile=>tile.classList.toggle("selected",tile.querySelector("input").checked));
+    modal.querySelector("#objectiveAnswerSection").classList.toggle("hidden",!objective(type));
+    if(objective(type)&&!optionBox.children.length)["","","",""].forEach(()=>addOption());
+    if(type==="Multiple Choice"){
+      const checked=[...optionBox.querySelectorAll(".option-correct:checked")];
+      checked.slice(1).forEach(x=>x.checked=false);
+    }
+  };
+  modal.querySelectorAll('input[name="type"]').forEach(x=>x.addEventListener("change",updateTypeUI));
+  modal.querySelector("#addAnswerOption").addEventListener("click",()=>addOption());
+  modal.querySelector("#addRubricCriterion").addEventListener("click",()=>addRubric());
+  updateTypeUI();
+
   const populate=async(id)=>{
-    courseId=id;
-    fw=await framework(id);
+    courseId=id;fw=await framework(id);
     const unit=form.querySelector("#itemUnit"),topic=form.querySelector("#itemTopic");
     unit.innerHTML='<option value="">Unassigned</option>'+fw.units.map(u=>'<option value="'+u.id+'">'+esc("Unit "+(u.order||"")+" — "+u.title)+'</option>').join("");
     unit.value=existing?.unitId||"";
@@ -222,20 +278,29 @@ async function itemModal(existing){
       topic.value=existing?.topicId||"";
     };
     unit.onchange=fillTopics;fillTopics();
-    form.querySelector("#itemCompetencies").innerHTML=fw.competencies.length?fw.competencies.map(c=>'<label class="checkbox-line"><input type="checkbox" name="competency" value="'+c.id+'" data-code="'+esc(c.code)+'" '+((existing?.competencyIds||[]).includes(c.id)?'checked':'')+'> '+esc(c.code+" — "+c.name)+'</label>').join(""):'<div class="empty-mini">No competencies created for this course.</div>';
+    form.querySelector("#itemCompetencies").innerHTML=fw.competencies.length?fw.competencies.map(c=>'<label class="competency-choice"><input type="checkbox" name="competency" value="'+c.id+'" data-code="'+esc(c.code)+'" '+((existing?.competencyIds||[]).includes(c.id)?'checked':'')+'><span><strong>'+esc(c.code)+'</strong>'+esc(c.name)+'</span></label>').join(""):'<div class="empty-mini">No competencies created for this course.</div>';
   };
   if(!existing)form.querySelector("#itemCourse").addEventListener("change",e=>populate(e.target.value));
   await populate(courseId);
+
+  form.querySelectorAll(".editor-compact").forEach(area=>{
+    const grow=()=>{area.style.height="auto";area.style.height=Math.min(area.scrollHeight,240)+"px";};
+    area.addEventListener("input",grow);grow();
+  });
 
   form.addEventListener("submit",async e=>{
     e.preventDefault();
     const fd=new FormData(form),cid=existing?.courseId||String(fd.get("courseId"));
     const unit=fw.units.find(x=>x.id===String(fd.get("unitId"))),topic=unit?.topics?.find(x=>x.id===String(fd.get("topicId")));
-    const type=String(fd.get("type"));
-    const options=String(fd.get("options")||"").split("\n").map(x=>x.trim()).filter(Boolean).map((text,i)=>({id:String.fromCharCode(65+i),text}));
+    const type=form.querySelector('input[name="type"]:checked')?.value||"Multiple Choice";
+    const optionRows=[...optionBox.querySelectorAll(".answer-option-row")];
+    const options=objective(type)?optionRows.map((row,i)=>({id:String.fromCharCode(65+i),text:row.querySelector(".option-text").value.trim()})).filter(x=>x.text):[];
+    const checked=optionRows.filter(row=>row.querySelector(".option-correct").checked).map(row=>row.dataset.optionId);
+    if(type==="Multiple Choice"&&options.length<2)return toast("Add at least two answer choices.");
+    if(type==="Multiple Select"&&options.length<2)return toast("Add at least two answer choices.");
+    if(objective(type)&&!checked.length)return toast("Mark at least one correct answer.");
     const selected=[...form.querySelectorAll('input[name="competency"]:checked')];
-    let correct=String(fd.get("correctAnswer")||"").trim();
-    correct=type==="Multiple Select"?correct.split(",").map(x=>x.trim().toUpperCase()).filter(Boolean).sort():correct.toUpperCase();
+    const rubric=[...rubricBox.querySelectorAll(".rubric-row")].map(row=>({criterion:row.querySelector(".rubric-criterion").value.trim(),points:Number(row.querySelector(".rubric-points").value||0)})).filter(x=>x.criterion);
     const data={
       ownerId:s.user.uid,courseId:cid,type,
       difficulty:String(fd.get("difficulty")),cognitiveLevel:String(fd.get("cognitiveLevel")),
@@ -243,8 +308,9 @@ async function itemModal(existing){
       competencyIds:selected.map(x=>x.value),competencyCodes:selected.map(x=>x.dataset.code),
       pointsDefault:Number(fd.get("pointsDefault")||1),tags:String(fd.get("tags")||"").split(",").map(x=>x.trim()).filter(Boolean),
       sourceTitle:String(fd.get("sourceTitle")||"").trim(),sourceSet:String(fd.get("sourceSet")||"").trim(),stimulus:String(fd.get("stimulus")||"").trim(),
-      prompt:String(fd.get("prompt")||"").trim(),options,correctAnswer:correct,explanation:String(fd.get("explanation")||"").trim(),
-      rubric:linesToRubric(fd.get("rubric")),updatedAt:serverTimestamp()
+      prompt:String(fd.get("prompt")||"").trim(),options,
+      correctAnswer:type==="Multiple Select"?checked.sort():(checked[0]||""),
+      explanation:String(fd.get("explanation")||"").trim(),rubric,updatedAt:serverTimestamp()
     };
     try{
       if(existing)await updateDoc(doc(db,"courses",cid,"items",existing.id),data);
@@ -313,45 +379,126 @@ async function renderAssessments(){
 async function assessmentModal(existing){
   const s=state();if(!s?.sections?.length)return toast("Create a section before creating an assessment.");
   const types=["Academic Exercise","Unit Evaluation","Semester I Examination","Comprehensive Final Examination","Oral Examination","Disputation"];
+  let selectedSection=existing?(s.sections.find(x=>x.id===existing.sectionId)||s.currentSection):s.sections[0];
+  let fw=await framework(selectedSection.courseId);
+  const currentType=existing?.type||"Unit Evaluation";
+  const typeTiles=types.map((type,i)=>'<label class="type-tile '+(currentType===type?'selected':'')+'"><input type="radio" name="type" value="'+esc(type)+'" '+(currentType===type?'checked':'')+'><span class="type-tile-mark">'+String(i+1).padStart(2,"0")+'</span><span>'+esc(type)+'</span></label>').join("");
+  const initialInstructions=Array.isArray(existing?.instructionSteps)&&existing.instructionSteps.length?existing.instructionSteps:(existing?.instructions?[existing.instructions]:[""]);
+
   const modal=core().openModal({
     eyebrow:"Assessment Builder",
     title:existing?"Edit Assessment":"Create Assessment",
     wide:true,
-    body:'<form id="assessmentForm"><div class="form-grid">'+
-      '<div class="field span-2"><label>Section</label><select name="sectionId" '+(existing?'disabled':'')+'>'+s.sections.map(x=>'<option value="'+x.id+'">'+esc(x.courseCode+" — "+x.sectionName+" • "+x.term)+'</option>').join("")+'</select></div>'+
-      '<div class="field span-2"><label>Title</label><input name="title" value="'+esc(existing?.title||"")+'" required></div>'+
-      '<div class="field"><label>Type</label><select name="type">'+types.map(x=>'<option>'+x+'</option>').join("")+'</select></div>'+
-      '<div class="field"><label>Duration (minutes)</label><input name="durationMinutes" type="number" min="0" value="'+esc(existing?.durationMinutes??60)+'"></div>'+
-      '<div class="field"><label>Opens</label><input name="opensAt" type="datetime-local" value="'+esc(localDateTime(existing?.opensAt))+'"></div>'+
-      '<div class="field"><label>Closes</label><input name="closesAt" type="datetime-local" value="'+esc(localDateTime(existing?.closesAt))+'"></div>'+
-      '<div class="field span-2"><label>Instructions</label><textarea name="instructions">'+esc(existing?.instructions||"")+'</textarea></div>'+
-      '<div class="field span-2"><label>Content Blueprint</label><textarea name="contentBlueprint" placeholder="Unit I — Foundations | 20\nUnit II — Historical Development | 20">'+esc(weightsToText(existing?.contentBlueprint))+'</textarea></div>'+
-      '<div class="field span-2"><label>Competency Blueprint</label><textarea name="competencyBlueprint" placeholder="Biblical Exegesis | 25\nTheological Synthesis | 25">'+esc(weightsToText(existing?.competencyBlueprint))+'</textarea></div>'+
-      '<div class="field"><label class="checkbox-line"><input type="checkbox" name="anonymousGrading" '+(existing?.anonymousGrading!==false?'checked':'')+'> Anonymous candidate grading</label></div>'+
-      '<div class="field"><label class="checkbox-line"><input type="checkbox" name="backtracking" '+(existing?.backtracking!==false?'checked':'')+'> Allow backtracking</label></div>'+
-      '<div class="field"><label class="checkbox-line"><input type="checkbox" name="randomizeQuestions" '+(existing?.randomizeQuestions?'checked':'')+'> Randomize question order</label></div>'+
-      '<div class="field"><label>Result Release</label><select name="feedbackPolicy"><option value="manual">Instructor releases results manually</option><option value="score_only">Score only when released</option></select></div>'+
-      '</div><div class="modal-foot" style="margin:24px -24px -24px"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">'+(existing?"Save Assessment":"Create Draft")+'</button></div></form>'
+    body:'<form id="assessmentForm" class="academic-form">'+
+      '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Assessment Identity</h3><p>Choose the section, title, and kind of evaluation.</p></div></div>'+
+        '<div class="field"><label>Section</label><select name="sectionId" id="assessmentSection" '+(existing?'disabled':'')+'>'+s.sections.map(x=>'<option value="'+x.id+'">'+esc(x.courseCode+" — "+x.sectionName+" • "+x.term)+'</option>').join("")+'</select></div>'+
+        '<div class="field"><label>Assessment Title</label><input class="title-input" name="title" value="'+esc(existing?.title||"")+'" placeholder="e.g. Semester I Examination" required></div>'+
+        '<div class="field"><label>Assessment Type</label><div class="type-tile-grid compact">'+typeTiles+'</div></div>'+
+      '</section>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Administration</h3><p>Schedule the window and configure the testing experience.</p></div></div>'+
+        '<div class="compact-field-grid"><div class="field"><label>Duration</label><div class="input-with-suffix"><input name="durationMinutes" type="number" min="0" value="'+esc(existing?.durationMinutes??60)+'"><span>min</span></div></div><div class="field"><label>Opens</label><input name="opensAt" type="datetime-local" value="'+esc(localDateTime(existing?.opensAt))+'"></div><div class="field"><label>Closes</label><input name="closesAt" type="datetime-local" value="'+esc(localDateTime(existing?.closesAt))+'"></div></div>'+
+        '<div class="policy-card-grid"><label class="policy-card"><input type="checkbox" name="anonymousGrading" '+(existing?.anonymousGrading!==false?'checked':'')+'><div><strong>Anonymous Grading</strong><span>Use candidate numbers while evaluating.</span></div></label><label class="policy-card"><input type="checkbox" name="backtracking" '+(existing?.backtracking!==false?'checked':'')+'><div><strong>Allow Backtracking</strong><span>Students may revisit earlier items.</span></div></label><label class="policy-card"><input type="checkbox" name="randomizeQuestions" '+(existing?.randomizeQuestions?'checked':'')+'><div><strong>Randomize Questions</strong><span>Each attempt receives a randomized order.</span></div></label></div>'+
+        '<div class="field"><label>Result Release</label><select name="feedbackPolicy"><option value="manual">Instructor releases results manually</option><option value="score_only">Score only when released</option></select></div>'+
+      '</section>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>03</span><h3>Student Instructions</h3><p>Add concise instructions one line at a time.</p></div><button type="button" class="secondary-btn small-btn" id="addAssessmentInstruction">+ Add Instruction</button></div><div id="assessmentInstructions" class="structured-list"></div></section>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>04</span><h3>Content Blueprint</h3><p>Choose course units and assign their intended share of the assessment.</p></div><div class="inline-actions"><button type="button" class="secondary-btn small-btn" id="balanceContentBlueprint">Balance</button><button type="button" class="secondary-btn small-btn" id="addContentBlueprint">+ Add Target</button></div></div><div id="contentBlueprintRows" class="blueprint-builder"></div><div class="builder-total"><span>Total</span><strong id="contentBlueprintTotal">0%</strong></div></section>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>05</span><h3>Competency Blueprint</h3><p>Define the academic skills the assessment is intended to measure.</p></div><div class="inline-actions"><button type="button" class="secondary-btn small-btn" id="balanceCompetencyBlueprint">Balance</button><button type="button" class="secondary-btn small-btn" id="addCompetencyBlueprint">+ Add Target</button></div></div><div id="competencyBlueprintRows" class="blueprint-builder"></div><div class="builder-total"><span>Total</span><strong id="competencyBlueprintTotal">0%</strong></div></section>'+
+      '<div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">'+(existing?"Save Assessment":"Create Draft")+'</button></div></form>'
   });
+
   const form=modal.querySelector("#assessmentForm");
-  form.sectionId.value=existing?.sectionId||s.sections[0].id;
-  form.type.value=existing?.type||"Unit Evaluation";
+  form.sectionId.value=existing?.sectionId||selectedSection.id;
   form.feedbackPolicy.value=existing?.feedbackPolicy||"manual";
+
+  const instructionBox=modal.querySelector("#assessmentInstructions");
+  const addInstruction=(value="")=>{
+    const row=document.createElement("div");row.className="structured-row";
+    row.innerHTML='<div class="structured-index">'+String(instructionBox.children.length+1).padStart(2,"0")+'</div><input class="structured-input" value="'+esc(value)+'" placeholder="e.g. Support written responses with specific textual evidence."><button type="button" class="row-remove" aria-label="Remove">×</button>';
+    row.querySelector(".row-remove").onclick=()=>{row.remove();[...instructionBox.children].forEach((x,i)=>x.querySelector(".structured-index").textContent=String(i+1).padStart(2,"0"));};
+    instructionBox.appendChild(row);
+  };
+  initialInstructions.forEach(addInstruction);
+  modal.querySelector("#addAssessmentInstruction").onclick=()=>addInstruction();
+
+  const contentBox=modal.querySelector("#contentBlueprintRows"),competencyBox=modal.querySelector("#competencyBlueprintRows");
+  const targetOptions=(kind)=>{
+    if(kind==="content")return fw.units.map(u=>({id:u.id,label:"Unit "+(u.order||"")+" — "+u.title}));
+    return fw.competencies.map(c=>({id:c.id,label:c.code+" — "+c.name}));
+  };
+  const updateTotal=(kind)=>{
+    const box=kind==="content"?contentBox:competencyBox,totalEl=modal.querySelector(kind==="content"?"#contentBlueprintTotal":"#competencyBlueprintTotal");
+    const total=[...box.querySelectorAll(".blueprint-weight")].reduce((n,x)=>n+Number(x.value||0),0);
+    totalEl.textContent=roundBlueprint(total)+"%";
+    totalEl.className=total===100?"complete":"";
+  };
+  const roundBlueprint=n=>Math.round(n*10)/10;
+  const addBlueprintRow=(kind,rowData={})=>{
+    const box=kind==="content"?contentBox:competencyBox,opts=targetOptions(kind);
+    const row=document.createElement("div");row.className="blueprint-edit-row";row.dataset.kind=kind;
+    let selectOptions=opts.map(o=>'<option value="'+esc(o.id)+'" data-label="'+esc(o.label)+'">'+esc(o.label)+'</option>').join("");
+    const match=opts.find(o=>o.id===rowData.id||o.label===rowData.label);
+    if(rowData.label&&!match)selectOptions='<option value="'+esc(rowData.id||rowData.label)+'" data-label="'+esc(rowData.label)+'">'+esc(rowData.label)+'</option>'+selectOptions;
+    row.innerHTML='<select class="blueprint-target">'+selectOptions+'</select><div class="input-with-suffix mini"><input class="blueprint-weight" type="number" min="0" max="100" step="0.5" value="'+esc(rowData.weight??0)+'"><span>%</span></div><button type="button" class="row-remove" aria-label="Remove">×</button>';
+    if(rowData.id)row.querySelector(".blueprint-target").value=match?.id||rowData.id;
+    row.querySelector(".blueprint-weight").addEventListener("input",()=>updateTotal(kind));
+    row.querySelector(".row-remove").onclick=()=>{row.remove();updateTotal(kind);};
+    box.appendChild(row);updateTotal(kind);
+  };
+  const rebuildBlueprints=()=>{
+    contentBox.innerHTML="";competencyBox.innerHTML="";
+    const contentRows=existing?.contentBlueprint?.length?existing.contentBlueprint:targetOptions("content").slice(0,Math.min(4,targetOptions("content").length)).map(x=>({...x,weight:0}));
+    const competencyRows=existing?.competencyBlueprint?.length?existing.competencyBlueprint:targetOptions("competency").slice(0,Math.min(4,targetOptions("competency").length)).map(x=>({...x,weight:0}));
+    contentRows.forEach(x=>addBlueprintRow("content",x));competencyRows.forEach(x=>addBlueprintRow("competency",x));
+  };
+  rebuildBlueprints();
+
+  const balance=(kind)=>{
+    const box=kind==="content"?contentBox:competencyBox,rows=[...box.querySelectorAll(".blueprint-edit-row")];
+    if(!rows.length)return toast("Add at least one blueprint target.");
+    const base=Math.floor((100/rows.length)*10)/10;
+    let used=0;
+    rows.forEach((row,i)=>{const val=i===rows.length-1?roundBlueprint(100-used):base;row.querySelector(".blueprint-weight").value=val;used+=val;});
+    updateTotal(kind);
+  };
+  modal.querySelector("#addContentBlueprint").onclick=()=>addBlueprintRow("content");
+  modal.querySelector("#addCompetencyBlueprint").onclick=()=>addBlueprintRow("competency");
+  modal.querySelector("#balanceContentBlueprint").onclick=()=>balance("content");
+  modal.querySelector("#balanceCompetencyBlueprint").onclick=()=>balance("competency");
+
+  modal.querySelectorAll('input[name="type"]').forEach(input=>input.addEventListener("change",()=>modal.querySelectorAll(".type-tile").forEach(tile=>tile.classList.toggle("selected",tile.querySelector("input").checked))));
+
+  if(!existing)form.querySelector("#assessmentSection").addEventListener("change",async e=>{
+    selectedSection=s.sections.find(x=>x.id===e.target.value);
+    fw=await framework(selectedSection.courseId);
+    contentBox.innerHTML="";competencyBox.innerHTML="";
+    targetOptions("content").slice(0,Math.min(4,targetOptions("content").length)).forEach(x=>addBlueprintRow("content",{...x,weight:0}));
+    targetOptions("competency").slice(0,Math.min(4,targetOptions("competency").length)).forEach(x=>addBlueprintRow("competency",{...x,weight:0}));
+  });
+
+  const readBlueprint=kind=>{
+    const box=kind==="content"?contentBox:competencyBox;
+    return [...box.querySelectorAll(".blueprint-edit-row")].map(row=>{
+      const select=row.querySelector(".blueprint-target"),option=select.options[select.selectedIndex];
+      return {id:select.value,label:option?.dataset.label||option?.textContent||select.value,weight:Number(row.querySelector(".blueprint-weight").value||0)};
+    }).filter(x=>x.id);
+  };
 
   form.addEventListener("submit",async e=>{
     e.preventDefault();
     const fd=new FormData(form);
     const section=existing?(s.sections.find(x=>x.id===existing.sectionId)||s.currentSection):s.sections.find(x=>x.id===String(fd.get("sectionId")));
-    const type=String(fd.get("type")),contentBlueprint=linesToWeights(fd.get("contentBlueprint")),competencyBlueprint=linesToWeights(fd.get("competencyBlueprint"));
-    if(contentBlueprint.length&&totalWeight(contentBlueprint)!==100)return toast("Content blueprint must total 100%.");
-    if(competencyBlueprint.length&&totalWeight(competencyBlueprint)!==100)return toast("Competency blueprint must total 100%.");
+    const type=form.querySelector('input[name="type"]:checked')?.value||"Unit Evaluation";
+    const contentBlueprint=readBlueprint("content"),competencyBlueprint=readBlueprint("competency");
+    if(contentBlueprint.length&&roundBlueprint(totalWeight(contentBlueprint))!==100)return toast("Content blueprint must total 100%.");
+    if(competencyBlueprint.length&&roundBlueprint(totalWeight(competencyBlueprint))!==100)return toast("Competency blueprint must total 100%.");
+    const instructionSteps=[...instructionBox.querySelectorAll(".structured-input")].map(x=>x.value.trim()).filter(Boolean);
     const data={
       ownerId:s.user.uid,sectionId:section.id,sectionName:section.sectionName,courseId:section.courseId,courseCode:section.courseCode,courseTitle:section.courseTitle,
       title:String(fd.get("title")).trim(),type,mode:type==="Oral Examination"?"oral":type==="Disputation"?"disputation":"written",
       status:existing?.status||"Draft",durationMinutes:Number(fd.get("durationMinutes")||0),
       opensAt:timestampFrom(fd.get("opensAt")),closesAt:timestampFrom(fd.get("closesAt")),
-      instructions:String(fd.get("instructions")||"").trim(),anonymousGrading:form.elements.anonymousGrading.checked,
-      backtracking:form.elements.backtracking.checked,randomizeQuestions:form.elements.randomizeQuestions.checked,
+      instructions:instructionSteps.join("\n"),instructionSteps,
+      anonymousGrading:form.elements.anonymousGrading.checked,backtracking:form.elements.backtracking.checked,randomizeQuestions:form.elements.randomizeQuestions.checked,
       feedbackPolicy:String(fd.get("feedbackPolicy")),contentBlueprint,competencyBlueprint,
       parts:existing?.parts?.length?existing.parts:defaultParts(type),questionIds:existing?.questionIds||[],
       questionCount:Number(existing?.questionCount||0),totalPoints:Number(existing?.totalPoints||0),updatedAt:serverTimestamp()
