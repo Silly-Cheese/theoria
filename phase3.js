@@ -792,9 +792,70 @@ function overviewView(){
 
 function itemsView(){
   const a=P3.current,q=P3.detail.questions;
-  return '<div class="page-head" style="margin-bottom:16px"><div><div class="panel-title">Assessment Assembly</div><p class="page-subtitle">Students never receive answer-key documents.</p></div><button class="primary-btn small-btn" data-phase3-action="add-items">Add from Question Bank</button></div>'+
-    (q.length?'<div class="assessment-builder-list">'+q.map((x,i)=>'<div class="builder-item"><div class="builder-order">'+(i+1)+'</div><div class="builder-copy"><div class="card-kicker">'+esc((a.parts||[]).find(p=>p.id===x.partId)?.title||"Main")+' • '+esc(x.type)+'</div><h4>'+esc(x.prompt)+'</h4><div class="item-tags"><span>'+esc(x.points)+' pts</span><span>'+esc(x.topicNumber||"No topic")+'</span>'+(x.competencyCodes||[]).map(c=>'<span>'+esc(c)+'</span>').join("")+'</div></div><div class="inline-actions"><button class="text-btn" data-phase3-action="configure-item" data-id="'+x.id+'">Configure</button><button class="danger-btn" data-phase3-action="remove-item" data-id="'+x.id+'">Remove</button></div></div>').join("")+'</div>':
-    '<div class="empty-state"><div class="empty-symbol">I</div><h3>No assessment questions yet.</h3><p>Add reusable questions from the course Question Bank.</p><button class="primary-btn" data-phase3-action="add-items">Add Questions</button></div>');
+  const randomSummary=a.randomDrawEnabled
+    ? '<div class="random-pool-summary"><div><span>Question Pool</span><strong>'+q.length+'</strong></div><div><span>Per Student</span><strong>'+esc(a.questionCount||0)+'</strong></div><div><span>Exam Points</span><strong>'+esc(a.totalPoints||0)+'</strong></div></div>'
+    : '';
+  const canConfigure=!a.sectionId||!(P3.detail.submissions||[]).length;
+  return '<div class="page-head" style="margin-bottom:16px"><div><div class="panel-title">'+(a.randomDrawEnabled?'Randomized Assessment Pool':'Assessment Assembly')+'</div><p class="page-subtitle">'+(a.randomDrawEnabled?'Students receive a locked random subset from this pool according to the draw plan.':'Students never receive answer-key documents.')+'</p></div><div class="inline-actions">'+(canConfigure?'<button class="secondary-btn small-btn" data-phase3-action="configure-random-draw">'+(a.randomDrawEnabled?'Edit Random Draw':'Configure Random Draw')+'</button>':'')+'<button class="primary-btn small-btn" data-phase3-action="add-items">Add from Question Bank</button></div></div>'+
+    randomSummary+
+    (a.randomDrawEnabled?'<div class="random-plan-display">'+(a.randomDrawPlan||[]).map(row=>'<div><span>'+esc(row.type)+'</span><strong>'+esc(row.count)+' of '+esc(row.available||q.filter(x=>x.type===row.type).length)+'</strong></div>').join("")+'</div>':'')+
+    (q.length?'<div class="assessment-builder-list">'+q.map((x,i)=>'<div class="builder-item"><div class="builder-order">'+(i+1)+'</div><div class="builder-copy"><div class="card-kicker">'+esc((a.parts||[]).find(p=>p.id===x.partId)?.title||"Main")+' • '+esc(x.type)+'</div><h4>'+esc(x.prompt)+'</h4><div class="item-tags"><span>'+esc(x.points)+' pts</span><span>'+esc(x.topicNumber||"No topic")+'</span>'+(x.competencyCodes||[]).map(c=>'<span>'+esc(c)+'</span>').join("")+'</div></div><div class="inline-actions"><button class="text-btn" data-phase3-action="configure-item" data-id="'+x.id+'">Configure</button><button class="text-btn danger-text" data-phase3-action="remove-item" data-id="'+x.id+'">Remove</button></div></div>').join("")+'</div>':
+    '<div class="empty-state"><div class="empty-symbol">Q</div><h3>No assessment questions yet.</h3><p>Add reusable questions from the course Question Bank.</p><button class="primary-btn" data-phase3-action="add-items">Add Questions</button></div>');
+}
+
+function configureRandomDrawModal(){
+  const a=P3.current,d=P3.detail;if(!a||!d)return;
+  if(a.sectionId&&d.submissions.length)return toast("Random draw settings lock after the first student attempt is created.");
+
+  const groups=new Map();
+  d.questions.forEach(q=>{
+    if(!groups.has(q.type))groups.set(q.type,[]);
+    groups.get(q.type).push(q);
+  });
+  if(!groups.size)return toast("Add questions to the assessment before configuring a random draw.");
+
+  const existing=new Map((a.randomDrawPlan||[]).map(row=>[row.type,Number(row.count||0)]));
+  const modal=core().openModal({
+    eyebrow:"Random Assessment Versions",
+    title:"Configure Random Draw",
+    wide:true,
+    body:'<form id="randomDrawConfigForm" class="academic-form"><section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Randomization Mode</h3><p>Choose whether every student receives the entire pool or a random subset by question type.</p></div></div>'+
+      '<label class="policy-card random-draw-toggle"><input type="checkbox" name="enabled" '+(a.randomDrawEnabled?'checked':'')+'><div><strong>Use Random Draw</strong><span>Each student receives a separately randomized version that remains locked for their attempt.</span></div></label></section>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Questions Per Student</h3><p>Set how many questions to draw from each type in the pool.</p></div></div><div id="editRandomPlan" class="random-draw-plan">'+
+      [...groups.entries()].map(([type,questions])=>{
+        const points=[...new Set(questions.map(q=>Number(q.points||0)))],value=existing.has(type)?Math.min(existing.get(type),questions.length):questions.length;
+        return '<div class="random-draw-row"><div><strong>'+esc(type)+'</strong><span>'+questions.length+' available • '+(points.length===1?esc(points[0])+' pts each':'mixed point values')+'</span></div><div class="input-with-suffix mini"><input class="random-draw-count" data-type="'+esc(type)+'" type="number" min="0" max="'+questions.length+'" step="1" value="'+esc(value)+'"><span>draw</span></div></div>';
+      }).join("")+
+      '</div></section><div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Random Draw</button></div></form>'
+  });
+
+  const form=modal.querySelector("#randomDrawConfigForm");
+  form.onsubmit=async e=>{
+    e.preventDefault();
+    const enabled=form.elements.enabled.checked;
+    let plan=[],questionCount=d.questions.length,totalPoints=d.questions.reduce((n,q)=>n+Number(q.points||0),0);
+    if(enabled){
+      for(const [type,questions] of groups){
+        const input=form.querySelector('.random-draw-count[data-type="'+CSS.escape(type)+'"]');
+        const count=Math.max(0,Math.min(questions.length,Math.floor(Number(input?.value||0))));
+        if(!count)continue;
+        const points=[...new Set(questions.map(q=>Number(q.points||0)))];
+        if(points.length!==1)return toast("All "+type+" questions in a randomized pool must use the same point value.");
+        plan.push({type,count,available:questions.length,pointsPerQuestion:points[0]});
+      }
+      if(!plan.length)return toast("Set at least one question type above zero.");
+      questionCount=plan.reduce((n,row)=>n+row.count,0);
+      totalPoints=plan.reduce((n,row)=>n+(row.count*row.pointsPerQuestion),0);
+    }
+    const questionPool=d.questions.map(q=>({id:q.id,itemId:q.itemId||"",type:q.type,points:Number(q.points||0)}));
+    try{
+      await updateDoc(doc(db,"assessments",a.id),{
+        randomDrawEnabled:enabled,randomDrawPlan:plan,randomizeQuestions:enabled?true:!!a.randomizeQuestions,
+        questionPool,poolQuestionCount:d.questions.length,questionCount,totalPoints,updatedAt:serverTimestamp()
+      });
+      core().closeModal();await openAssessment(a.id,"items");toast(enabled?"Random draw updated.":"Random draw disabled; all assessment questions will be used.");
+    }catch(err){toast(err.message||"Unable to update the random draw.");}
+  };
 }
 
 function candidatesView(){
@@ -1543,6 +1604,7 @@ document.addEventListener("click",async e=>{
   if(a==="assessment-tab")return renderAssessment(b.dataset.tab);
   if(a==="edit-assessment")return assessmentModal(P3.current);
   if(a==="add-items")return addItemsModal();
+  if(a==="configure-random-draw")return configureRandomDrawModal();
   if(a==="configure-item")return configureItemModal(b.dataset.id);
   if(a==="remove-item")return removeItem(b.dataset.id);
   if(a==="publish")return setStatus("Published");
