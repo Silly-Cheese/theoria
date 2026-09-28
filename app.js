@@ -112,9 +112,11 @@ function applyRole(role){
   const instructor = role === "instructor";
   $$(".instructor-only").forEach(el => el.classList.toggle("hidden", !instructor));
   $$(".student-only").forEach(el => el.classList.toggle("hidden", instructor));
-  $("#profileRole").textContent = instructor ? "Instructor" : "Student";
+  $("#profileRole").textContent = instructor ? (state.isSystemOwner ? "System Owner · Instructor" : "Instructor") : "Student";
   $("#welcomeSubtitle").textContent = instructor
-    ? "Manage your theological courses, sections, academic frameworks, and student records."
+    ? (state.isSystemOwner
+        ? "Author the Theoria course catalog and teach from the same official frameworks and Question Banks."
+        : "Teach from official Theoria catalog courses, build assessments, and manage your sections.")
     : "Your theological studies, sections, academic work, and progress in one place.";
 }
 
@@ -244,7 +246,7 @@ function courseCard(course){
     '<p>'+esc(course.description || "No course description has been added yet.")+'</p>'+
     '<div class="card-meta"><span>'+esc(course.discipline || "Theology")+'</span><span>'+esc(course.status || "Active")+'</span>'+(official?'<span>Master framework + Question Bank</span>':'')+'</div>'+
     '<div class="card-actions"><button class="secondary-btn small-btn" data-action="open-course" data-id="'+course.id+'">'+(manager?'Manage Course':'View Course')+'</button>'+
-      (state.role==="instructor"&&course.catalogPublished!==false?'<button class="primary-btn small-btn" data-action="create-section-course" data-id="'+course.id+'">Create Section</button>':'')+
+      (state.role==="instructor"&&(course.catalogPublished!==false||manager)?'<button class="primary-btn small-btn" data-action="create-section-course" data-id="'+course.id+'">Create Section</button>':'')+
     '</div>'+
   '</article>';
 }
@@ -745,6 +747,7 @@ async function bulkImportFrameworkModal(courseId=state.currentCourse?.id||state.
   if(state.role!=="instructor"||!courseId)return;
   const course=state.courses.find(c=>c.id===courseId)||state.currentCourse||state.sectionData?.course;
   if(!course)return showToast("Course not found.");
+  if(!canManageCourse(course))return showToast("Official Theoria course frameworks are managed by the system owner.");
 
   let framework=await loadCourseFramework(courseId);
   let normalized=null;
