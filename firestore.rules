@@ -216,6 +216,43 @@ service cloud.firestore {
           );
         allow create, update, delete: if sectionOwner(sectionId);
       }
+
+      match /mastery/{userId} {
+        allow read: if sectionOwner(sectionId) || isSelf(userId);
+        allow create, update, delete: if sectionOwner(sectionId);
+      }
+
+      match /academicRecords/{userId} {
+        allow read: if sectionOwner(sectionId) || isSelf(userId);
+        allow create, update, delete: if sectionOwner(sectionId);
+      }
+
+      match /portfolios/{userId} {
+        allow read: if sectionOwner(sectionId) || isSelf(userId);
+        allow create, update, delete: if sectionOwner(sectionId);
+      }
+
+      match /appeals/{appealId} {
+        allow read: if sectionOwner(sectionId)
+          || (
+            sectionMember(sectionId)
+            && resource.data.studentId == uid()
+          );
+        allow create: if sectionMember(sectionId)
+          && request.resource.data.studentId == uid()
+          && request.resource.data.status == 'Pending';
+        allow update, delete: if sectionOwner(sectionId);
+      }
+
+      match /recordHistory/{historyId} {
+        allow read: if sectionOwner(sectionId)
+          || (
+            sectionMember(sectionId)
+            && resource.data.studentId == uid()
+          );
+        allow create: if sectionOwner(sectionId);
+        allow update, delete: if false;
+      }
     }
 
     match /joinCodes/{code} {
