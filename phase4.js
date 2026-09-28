@@ -633,6 +633,6 @@ document.addEventListener("click",async e=>{
   if(a==="print-record"){window.print();return;}
 });
 
-window.TheoriaPhase4={renderSectionTab,renderMasteryPage,renderReportsPage,recomputeMastery};
+window.TheoriaPhase4={renderSectionTab,renderMasteryPage,renderReportsPage,recomputeMastery,invalidate};
 
 if(window.TheoriaCore)onReady();
