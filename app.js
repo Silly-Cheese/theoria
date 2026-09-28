@@ -1122,7 +1122,7 @@ function suggestFrameworkPlacement(record,framework){
   if(exact.topic)return {...exact,score:1,confidence:"Exact"};
   const units=framework?.units||[];
   const recordText=[
-    record?.title,record?.prompt,record?.description,record?.stimulus,record?.sourceTitle,
+    record?.title,record?.prompt,record?.description,record?.stimulus,record?.sourceTitle,record?.citation,record?.notes,record?.url,
     ...(record?.instructionSteps||[]),...(record?.requirements||[]),...(record?.tags||[]),
     ...(record?.competencyCodes||[])
   ].filter(Boolean).join(" ");
@@ -1304,20 +1304,95 @@ async function autoSortAssignmentsModal(){
 
 function renderResources(){
   const items=state.sectionData.resources;
-  const list=items.length?'<div class="resource-list">'+items.map(r=>
+  const framework=state.sectionData.framework||{units:[]};
+
+  const card=r=>
     '<div class="resource-row"><div><div class="card-kicker">'+esc(r.type||"Reading")+
-      (r.unitTitle?' • Unit '+esc(r.unitNumber||"")+': '+esc(r.unitTitle):'')+
       (r.topicNumber?' • Topic '+esc(r.topicNumber):'')+
       '</div><h4>'+esc(r.title)+'</h4>'+
       (r.citation?'<div class="resource-citation">'+esc(r.citation)+'</div>':'')+
       (r.notes?'<p>'+esc(r.notes)+'</p>':'')+
       '<div class="resource-meta">'+(r.url?'<a class="link" target="_blank" rel="noopener" href="'+esc(r.url)+'">Open Resource ↗</a>':'<span>No external link</span>')+'</div></div>'+
       (state.role==="instructor"?'<div class="inline-actions"><button class="text-btn" data-action="edit-resource" data-id="'+r.id+'">Edit</button><button class="danger-btn small-btn" data-action="delete-resource" data-id="'+r.id+'">Delete</button></div>':'')+
-    '</div>'
-  ).join("")+'</div>':'<div class="empty-state"><div class="empty-symbol">R</div><h3>No resources yet.</h3><p>'+(state.role==="instructor"?"Add primary sources, Scripture readings, articles, books, or research links.":"Your instructor has not added resources yet.")+'</p></div>';
-  return '<div class="page-head" style="margin-bottom:16px"><div><div class="panel-title">Readings & Resources</div><p class="page-subtitle">'+(state.role==="instructor"?"Build unit reading sets, primary-source collections, and research materials.":"Readings, primary sources, and scholarly materials assigned to this section.")+'</p></div>'+
-    (state.role==="instructor"?'<div class="inline-actions"><button class="secondary-btn small-btn" data-action="bulk-import-resources">Bulk Import Unit Resources</button><button class="primary-btn small-btn" data-action="create-resource">Add Resource</button></div>':'')+
+    '</div>';
+
+  const groups=unitFolderGroups(items,framework);
+  const list=groups.length
+    ? '<div class="unit-folder-stack resource-folder-stack">'+groups.map((group,index)=>
+        '<details class="unit-folder resource-unit-folder '+(group.id==="unsorted"?'unsorted-folder':'')+'" '+(index===0||group.id==="unsorted"?'open':'')+'>'+
+          '<summary><div class="unit-folder-icon">'+(group.id==="unsorted"?'?':esc(group.unit?.order||"U"))+'</div><div><strong>'+esc(group.label)+'</strong><span>'+group.items.length+' resource'+(group.items.length===1?"":"s")+'</span></div><div class="unit-folder-chevron">⌄</div></summary>'+
+          '<div class="unit-folder-body resource-list">'+group.items.map(card).join("")+'</div>'+
+        '</details>'
+      ).join("")+'</div>'
+    : '<div class="empty-state"><div class="empty-symbol">R</div><h3>No resources yet.</h3><p>'+(state.role==="instructor"?"Add primary sources, Scripture readings, articles, books, or research links.":"Your instructor has not added resources yet.")+'</p></div>';
+
+  const unsortedCount=items.filter(item=>!item.unitId||!framework.units.some(u=>u.id===item.unitId)).length;
+  return '<div class="page-head" style="margin-bottom:16px"><div><div class="panel-title">Readings & Resources</div><p class="page-subtitle">'+
+    (state.role==="instructor"?"Resources are organized into course-unit folders.":"Your readings and scholarly resources are organized by course unit.")+
+    '</p></div>'+
+    (state.role==="instructor"?'<div class="inline-actions">'+
+      (items.length?'<button class="secondary-btn small-btn" data-action="auto-sort-resources">Auto-Sort'+(unsortedCount?' ('+unsortedCount+')':'')+'</button>':'')+
+      '<button class="secondary-btn small-btn" data-action="bulk-import-resources">Bulk Import Unit Resources</button><button class="primary-btn small-btn" data-action="create-resource">Add Resource</button></div>':'')+
     '</div>'+list;
+}
+
+async function autoSortResourcesModal(){
+  if(state.role!=="instructor"||!state.currentSection||!state.sectionData)return;
+  const framework=state.sectionData.framework||{units:[]};
+  if(!framework.units.length)return showToast("Create course units and topics before using Auto-Sort.");
+
+  const candidates=state.sectionData.resources.filter(item=>!item.unitId||!framework.units.some(u=>u.id===item.unitId));
+  if(!candidates.length)return showToast("Every resource is already placed in a unit folder.");
+
+  const suggestions=candidates.map(item=>({item,suggestion:suggestFrameworkPlacement(item,framework)}));
+  const modal=openModal({
+    eyebrow:"Resource Organization",
+    title:"Auto-Sort Resources",
+    wide:true,
+    body:'<div class="auto-sort-intro"><div><strong>'+candidates.length+' unsorted resource'+(candidates.length===1?"":"s")+'</strong><span>Theoria compares titles, citations, notes, URLs, tags, topic numbers, unit/topic titles, learning objectives, and essential knowledge. Review every suggestion before applying it.</span></div><div class="auto-sort-legend"><span class="confidence exact">Exact</span><span class="confidence high">High</span><span class="confidence medium">Medium</span><span class="confidence low">Low</span></div></div>'+
+      '<div class="auto-sort-list">'+suggestions.map(({item,suggestion})=>{
+        const confident=suggestion.confidence!=="Low"&&suggestion.unit;
+        const selected=confident?(suggestion.topic?"topic:"+suggestion.unit.id+":"+suggestion.topic.id:"unit:"+suggestion.unit.id):"";
+        const percent=Math.round(Number(suggestion.score||0)*100);
+        return '<div class="auto-sort-row"><div class="auto-sort-copy"><span>'+esc(item.type||"Resource")+'</span><strong>'+esc(item.title||"Untitled Resource")+'</strong><small>'+esc([item.citation,item.notes].filter(Boolean).join(" • ").slice(0,150)||"No citation or notes")+'</small></div>'+
+          '<div class="auto-sort-confidence"><span class="confidence '+String(suggestion.confidence||"Low").toLowerCase()+'">'+esc(suggestion.confidence||"Low")+'</span><small>'+percent+'% match</small></div>'+
+          '<div class="field auto-sort-select"><label>Place in</label><select data-auto-sort-resource="'+item.id+'">'+frameworkPlacementOptions(framework,selected)+'</select></div></div>';
+      }).join("")+'</div>',
+    footer:'<button class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" id="applyResourceAutoSort">Apply Selected Placements</button>'
+  });
+
+  modal.querySelector("#applyResourceAutoSort").onclick=async()=>{
+    const selections=[...modal.querySelectorAll("[data-auto-sort-resource]")].map(select=>({
+      id:select.dataset.autoSortResource,
+      placement:placementDataFromValue(select.value,framework)
+    })).filter(x=>x.placement);
+    if(!selections.length)return showToast("Choose at least one Unit or Topic placement.");
+
+    const button=modal.querySelector("#applyResourceAutoSort");
+    button.disabled=true;button.textContent="Sorting…";
+    try{
+      for(let offset=0;offset<selections.length;offset+=400){
+        const batch=writeBatch(db);
+        selections.slice(offset,offset+400).forEach(row=>{
+          const topicOrder=framework.units.find(u=>u.id===row.placement.unitId)?.topics?.find(t=>t.id===row.placement.topicId)?.order||0;
+          batch.update(doc(db,"sections",state.currentSection.id,"resources",row.id),{
+            ...row.placement,
+            unitSequence:Number(topicOrder||0),
+            autoSortedAt:serverTimestamp(),
+            updatedAt:serverTimestamp()
+          });
+        });
+        await batch.commit();
+      }
+      closeModal();
+      state.sectionData=await loadSectionData(state.currentSection);
+      renderSectionDetail("resources");
+      showToast(selections.length+" resource"+(selections.length===1?"":"s")+" sorted into unit folders.");
+    }catch(error){
+      button.disabled=false;button.textContent="Apply Selected Placements";
+      showToast(humanizeFirebaseError(error));
+    }
+  };
 }
 
 function renderStudents(){
@@ -2700,6 +2775,7 @@ document.addEventListener("click",async event=>{
   if(action==="review-assignment-submission") return openAssignmentSubmissionReview(btn.dataset.assignment,btn.dataset.student);
   if(action==="create-resource") return openResourceModal();
   if(action==="bulk-import-resources") return bulkImportResourcesModal();
+  if(action==="auto-sort-resources") return autoSortResourcesModal();
   if(action==="delete-resource") return deleteResource(btn.dataset.id);
   if(action==="open-section-resource") return openSection(btn.dataset.section,"resources");
   if(action==="delete-library-resource") return deleteLibraryResource(btn.dataset.section,btn.dataset.id);
