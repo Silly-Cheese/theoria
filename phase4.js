@@ -114,8 +114,8 @@ async function loadSectionBundle(sectionId,{deep=false}={}){
 
   let assessments=[];
   if(deep&&s.role==="instructor"){
-    const aSnap=await getDocs(query(collection(db,"assessments"),where("sectionId","==",sectionId)));
-    for(const aDoc of aSnap.docs){
+    const aSnap=await getDocs(query(collection(db,"assessments"),where("ownerId","==",s.user.uid)));
+    for(const aDoc of aSnap.docs.filter(d=>d.data().sectionId===sectionId)){
       const assessment={id:aDoc.id,...aDoc.data()};
       const [qSnap,kSnap,subSnap,resSnap]=await Promise.all([
         getDocs(collection(db,"assessments",assessment.id,"questions")),
