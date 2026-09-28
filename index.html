@@ -4,7 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#191817">
-  <meta name="description" content="Theoria — Advanced Theological Studies">\n  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2712%27 fill=%27%23191817%27/%3E%3Ccircle cx=%2732%27 cy=%2732%27 r=%2720%27 fill=%27none%27 stroke=%27%23a88948%27 stroke-width=%272%27/%3E%3Ctext x=%2732%27 y=%2743%27 text-anchor=%27middle%27 font-size=%2734%27 font-family=%27serif%27 fill=%27%23f6f2e8%27%3E%CE%98%3C/text%3E%3C/svg%3E">
+  <meta name="description" content="Theoria — Advanced Theological Studies">
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+  <link rel="shortcut icon" href="./favicon.svg">
   <title>Theoria — Advanced Theological Studies</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
@@ -81,7 +83,6 @@
           <div class="nav-group">
             <div class="nav-label">Scholar</div>
             <button class="nav-item" data-page="library"><span class="nav-icon">≡</span>Library</button>
-            <button class="nav-item" data-page="scripture"><span class="nav-icon">†</span>Scripture</button>
           </div>
         </nav>
       </div>
@@ -100,7 +101,6 @@
       <div class="top-actions">
         <button id="quickJoinBtn" class="secondary-btn student-only">Join a Section</button>
         <button id="quickCreateBtn" class="primary-btn instructor-only">Create Section</button>
-        <button class="icon-btn" title="Notifications">○</button>
       </div>
     </header>
 
@@ -201,13 +201,10 @@
       </section>
 
       <section id="page-library" class="page">
-        <div class="page-head"><div><div class="eyebrow">Scholar</div><h1 class="page-title">Library</h1><p class="page-subtitle">Course resources and readings can now be assigned inside sections.</p></div></div>
-        <div class="academic-banner"><div class="kicker">Phase 2</div><h3>Readings and resources are live.</h3><p>Open a section and use its Resources tab to assign primary sources, Scripture readings, articles, books, PDFs, and external research links.</p></div>
-      </section>
-
-      <section id="page-scripture" class="page">
-        <div class="page-head"><div><div class="eyebrow">Scholar</div><h1 class="page-title">Scripture</h1><p class="page-subtitle">A dedicated Scripture workspace designed to support theological study.</p></div></div>
-        <div class="empty-state"><div class="empty-symbol">†</div><h3>Scripture workspace reserved.</h3><p>Course resources can already reference Scripture. Integrated passage reading and original-language study remain on the later Scholar roadmap.</p></div>
+        <div class="page-head">
+          <div><div class="eyebrow">Scholar</div><h1 class="page-title">Library</h1><p class="page-subtitle">Readings, primary sources, Scripture references, and research materials from all of your sections.</p></div>
+        </div>
+        <div id="libraryContent"></div>
       </section>
     </main>
   </section>
