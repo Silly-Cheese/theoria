@@ -639,3 +639,71 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .bulk-import-prompt-row{align-items:flex-start;flex-direction:column}
   .bulk-import-prompt-row .secondary-btn{width:100%}
 }
+
+
+/* Bulk Course Framework import */
+.framework-import-summary{
+  display:grid;
+  grid-template-columns:minmax(220px,1.6fr) repeat(3,minmax(100px,.6fr));
+  border:1px solid var(--line);
+  border-radius:8px;
+  overflow:hidden;
+  background:#fff;
+  margin-bottom:13px
+}
+.framework-import-summary>div{
+  padding:12px 14px;
+  border-right:1px solid var(--line)
+}
+.framework-import-summary>div:last-child{border-right:0}
+.framework-import-summary span{
+  display:block;
+  font-size:7px;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  color:var(--muted);
+  margin-bottom:4px
+}
+.framework-import-summary strong{
+  display:block;
+  font-size:10px;
+  line-height:1.35;
+  color:var(--ink)
+}
+.framework-preview-group{display:grid;gap:7px;margin-bottom:17px}
+.framework-preview-group:last-child{margin-bottom:0}
+.framework-preview-group-title{
+  padding:0 2px 5px;
+  font-size:8px;
+  font-weight:800;
+  text-transform:uppercase;
+  letter-spacing:.1em;
+  color:var(--burgundy);
+  border-bottom:1px solid var(--line)
+}
+.framework-topic-row{margin-left:34px;position:relative}
+.framework-topic-row:before{
+  content:"";
+  position:absolute;
+  left:-19px;
+  top:-8px;
+  bottom:50%;
+  width:12px;
+  border-left:1px solid #d8d0c4;
+  border-bottom:1px solid #d8d0c4;
+  border-bottom-left-radius:6px
+}
+.framework-topic-row .bulk-preview-number{
+  background:#f7f3ec;
+  color:var(--slate);
+  font-size:7px
+}
+
+@media(max-width:760px){
+  .framework-import-summary{grid-template-columns:1fr 1fr}
+  .framework-import-summary>div{border-bottom:1px solid var(--line)}
+  .framework-import-summary>div:nth-child(2n){border-right:0}
+  .framework-import-summary>div:nth-last-child(-n+2){border-bottom:0}
+  .framework-topic-row{margin-left:18px}
+  .framework-topic-row:before{left:-11px;width:7px}
+}
