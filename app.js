@@ -1235,7 +1235,7 @@ function renderAssignments(){
       ).join("")+'</div>'
     : '<div class="empty-state"><div class="empty-symbol">A</div><h3>No assignments yet.</h3><p>'+(state.role==="instructor"?"Create coursework, readings, written responses, research milestones, or academic exercises.":"Nothing has been assigned in this section yet.")+'</p></div>';
 
-  const unsortedCount=items.filter(item=>!resolveFrameworkPlacement(item,framework).unit).length;
+  const unsortedCount=items.filter(item=>!item.unitId||!framework.units.some(u=>u.id===item.unitId)).length;
   return '<div class="page-head" style="margin-bottom:16px"><div><div class="panel-title">Coursework</div><p class="page-subtitle">'+(state.role==="instructor"?"Assignments are organized into course-unit folders.":"Your coursework is organized by course unit.")+'</p></div>'+
     (state.role==="instructor"?'<div class="inline-actions">'+
       (items.length?'<button class="secondary-btn small-btn" data-action="auto-sort-assignments">Auto-Sort'+(unsortedCount?' ('+unsortedCount+')':'')+'</button>':'')+
@@ -1248,7 +1248,7 @@ async function autoSortAssignmentsModal(){
   const framework=state.sectionData.framework||{units:[]};
   if(!framework.units.length)return showToast("Create course units and topics before using Auto-Sort.");
 
-  const candidates=state.sectionData.assignments.filter(item=>!resolveFrameworkPlacement(item,framework).unit);
+  const candidates=state.sectionData.assignments.filter(item=>!item.unitId||!framework.units.some(u=>u.id===item.unitId));
   if(!candidates.length)return showToast("Every assignment is already placed in a unit folder.");
 
   const suggestions=candidates.map(item=>({item,suggestion:suggestFrameworkPlacement(item,framework)}));
