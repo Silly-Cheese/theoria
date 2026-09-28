@@ -528,19 +528,58 @@ async function loadSectionData(section){
     ? await getDocs(collection(db,"sections",section.id,"assignments"))
     : await getDocs(query(collection(db,"sections",section.id,"assignments"),where("status","==","Published")));
   const resourceSnap=await getDocs(collection(db,"sections",section.id,"resources"));
+  const assessmentRefSnap=await getDocs(collection(db,"sections",section.id,"assessmentRefs"));
+  let assessmentRefs=assessmentRefSnap.docs.map(d=>({id:d.id,...d.data()}));
+
   let members=[];
   let grades=[];
+  let assessmentGrades=[];
   if(state.role==="instructor"){
-    const memberSnap=await getDocs(collection(db,"sections",section.id,"members"));
+    const [memberSnap,gradeSnap,assessmentGradeSnap]=await Promise.all([
+      getDocs(collection(db,"sections",section.id,"members")),
+      getDocs(collection(db,"sections",section.id,"grades")),
+      getDocs(collection(db,"sections",section.id,"assessmentGrades"))
+    ]);
     members=memberSnap.docs.map(d=>({id:d.id,...d.data()}));
-    const gradeSnap=await getDocs(collection(db,"sections",section.id,"grades"));
     grades=gradeSnap.docs.map(d=>({id:d.id,...d.data()}));
+    assessmentGrades=assessmentGradeSnap.docs.map(d=>({id:d.id,...d.data()}));
+
+    // Hydrate older assessmentRefs that predate points/type metadata.
+    for(const ref of assessmentRefs){
+      if(ref.totalPoints!==undefined && ref.totalPoints!==null && ref.assessmentType)continue;
+      try{
+        const a=await getDoc(doc(db,"assessments",ref.id));
+        if(a.exists()){
+          const data=a.data();
+          ref.totalPoints=Number(data.totalPoints||0);
+          ref.assessmentType=data.type||ref.type||"Assessment";
+          ref.title=data.title||ref.title||"Assessment";
+          ref.status=data.status||ref.status||"Published";
+        }
+      }catch(_){}
+    }
   }else{
     const memberSnap=await getDoc(doc(db,"sections",section.id,"members",state.user.uid));
     if(memberSnap.exists()) members=[{id:memberSnap.id,...memberSnap.data()}];
     const gradeSnap=await getDocs(query(collection(db,"sections",section.id,"grades"),where("studentId","==",state.user.uid)));
     grades=gradeSnap.docs.map(d=>({id:d.id,...d.data()}));
+
+    // Student assessment-grade rules require direct reads and released=true.
+    for(const ref of assessmentRefs){
+      try{
+        const g=await getDoc(doc(db,"sections",section.id,"assessmentGrades",ref.id+"_"+state.user.uid));
+        if(g.exists() && g.data().released===true) assessmentGrades.push({id:g.id,...g.data()});
+      }catch(_){}
+    }
   }
+
+  assessmentRefs=assessmentRefs
+    .filter(x=>x.status!=="Draft")
+    .sort((a,b)=>{
+      const at=a.opensAt?.toMillis?.()||0,bt=b.opensAt?.toMillis?.()||0;
+      return at-bt || String(a.title||"").localeCompare(String(b.title||""));
+    });
+
   const assignments=assignmentSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(a.dueDate||"").localeCompare(String(b.dueDate||"")));
   let assignmentSubmissions=[];
   if(state.role==="student"){
@@ -551,11 +590,12 @@ async function loadSectionData(section){
       }catch(_){}
     }
   }
+
   return {
     course, framework, assignments,
     resources:resourceSnap.docs.map(d=>({id:d.id,...d.data()})),
     members:members.sort((a,b)=>String(a.displayName||"").localeCompare(String(b.displayName||""))),
-    grades, assignmentSubmissions
+    grades, assignmentSubmissions, assessmentRefs, assessmentGrades
   };
 }
 
@@ -632,31 +672,80 @@ function renderStudents(){
 function renderGradebook(){
   const students=state.sectionData.members;
   const assignments=state.sectionData.assignments.filter(a=>a.status!=="Draft");
-  if(!students.length || !assignments.length) return '<div class="empty-state"><div class="empty-symbol">G</div><h3>Gradebook waiting for data.</h3><p>Add at least one published assignment and enroll at least one student.</p></div>';
+  const assessments=(state.sectionData.assessmentRefs||[]).filter(a=>a.status!=="Draft");
+  if(!students.length || (!assignments.length&&!assessments.length)) return '<div class="empty-state"><div class="empty-symbol">G</div><h3>Gradebook waiting for data.</h3><p>Enroll at least one student and publish an assignment or assessment.</p></div>';
+
   const gradeMap=new Map(state.sectionData.grades.map(g=>[g.assignmentId+"_"+g.studentId,g]));
-  return '<div class="notice">Click any score cell to enter or revise an ordinary coursework grade. Formal assessment rubrics and examination-domain grading are available in Assessments.</div><div class="data-table-wrap"><table class="data-table"><thead><tr><th>Student</th>'+assignments.map(a=>'<th>'+esc(a.title)+'<span class="grade-sub">'+esc(a.points)+' pts</span></th>').join("")+'<th>Average</th></tr></thead><tbody>'+students.map(s=>{
-    let earned=0,possible=0;
-    const cells=assignments.map(a=>{
-      const g=gradeMap.get(a.id+"_"+s.id);
-      if(g && g.score !== null && g.score !== undefined){earned+=Number(g.score);possible+=Number(a.points||0);}
-      return '<td class="score-cell" data-action="set-grade" data-assignment="'+a.id+'" data-student="'+s.id+'">'+(g?'<span class="grade-main">'+esc(g.score)+'</span><span class="grade-sub">/ '+esc(a.points)+'</span>':'—')+'</td>';
+  const assessmentGradeMap=new Map((state.sectionData.assessmentGrades||[]).map(g=>[g.assessmentId+"_"+g.studentId,g]));
+
+  const header='<thead>'+
+    '<tr class="gradebook-group-row"><th rowspan="2">Student</th>'+
+      (assignments.length?'<th colspan="'+assignments.length+'" class="gradebook-group coursework-group">Coursework</th>':'')+
+      (assessments.length?'<th colspan="'+assessments.length+'" class="gradebook-group assessment-group">Assessments</th>':'')+
+      '<th rowspan="2">Coursework Avg</th><th rowspan="2">Assessment Avg</th>'+
+    '</tr>'+
+    '<tr>'+
+      assignments.map(a=>'<th><span class="gradebook-kind">Assignment</span>'+esc(a.title)+'<span class="grade-sub">'+esc(a.points)+' pts</span></th>').join("")+
+      assessments.map(a=>'<th class="assessment-grade-head"><span class="gradebook-kind assessment-kind">'+esc(a.assessmentType||a.type||"Assessment")+'</span>'+esc(a.title||"Assessment")+'<span class="grade-sub">'+(Number(a.totalPoints||0)?esc(a.totalPoints)+" pts":"Formal assessment")+'</span></th>').join("")+
+    '</tr></thead>';
+
+  const body=students.map(student=>{
+    let courseworkEarned=0,courseworkPossible=0;
+    const assignmentCells=assignments.map(a=>{
+      const g=gradeMap.get(a.id+"_"+student.id);
+      if(g&&g.score!==null&&g.score!==undefined){courseworkEarned+=Number(g.score);courseworkPossible+=Number(a.points||0);}
+      return '<td class="score-cell" data-action="set-grade" data-assignment="'+a.id+'" data-student="'+student.id+'">'+(g?'<span class="grade-main">'+esc(g.score)+'</span><span class="grade-sub">/ '+esc(a.points)+'</span>':'—')+'</td>';
     }).join("");
-    const avg=possible?Math.round((earned/possible)*1000)/10:null;
-    return '<tr><td><strong>'+esc(s.displayName||"Student")+'</strong></td>'+cells+'<td><strong>'+(avg===null?"—":avg+"%")+'</strong></td></tr>';
-  }).join("")+'</tbody></table></div>';
+
+    const assessmentPercents=[];
+    const assessmentCells=assessments.map(a=>{
+      const g=assessmentGradeMap.get(a.id+"_"+student.id);
+      if(g&&g.percent!==null&&g.percent!==undefined)assessmentPercents.push(Number(g.percent));
+      const score=(g&&g.score!==undefined&&g.score!==null)?esc(g.score):"";
+      const max=(g&&g.maxScore!==undefined&&g.maxScore!==null)?esc(g.maxScore):esc(a.totalPoints||"");
+      return '<td class="score-cell assessment-score-cell" data-action="open-gradebook-assessment" data-assessment="'+a.id+'" data-student="'+student.id+'">'+
+        (g?'<span class="grade-main">'+(score&&max?score+" / "+max:esc(g.percent)+"%")+'</span><span class="grade-sub">'+esc(g.percent)+'%'+(g.released?' • released':' • private')+'</span>':'<span class="grade-pending">—<small>Not graded</small></span>')+
+      '</td>';
+    }).join("");
+
+    const courseworkAvg=courseworkPossible?Math.round((courseworkEarned/courseworkPossible)*1000)/10:null;
+    const assessmentAvg=assessmentPercents.length?Math.round((assessmentPercents.reduce((a,b)=>a+b,0)/assessmentPercents.length)*10)/10:null;
+    return '<tr><td><strong>'+esc(student.displayName||"Student")+'</strong></td>'+assignmentCells+assessmentCells+
+      '<td><strong>'+(courseworkAvg===null?"—":courseworkAvg+"%")+'</strong></td>'+
+      '<td><strong>'+(assessmentAvg===null?"—":assessmentAvg+"%")+'</strong></td></tr>';
+  }).join("");
+
+  return '<div class="notice">Assignments and formal assessments now share the section gradebook. Coursework and assessment averages remain separate because the student’s final certified grade follows the selected grading pathway.</div>'+
+    '<div class="gradebook-legend"><span><i class="legend-dot coursework-dot"></i> Coursework grades can be edited here</span><span><i class="legend-dot assessment-dot"></i> Assessment scores are graded in Assessments</span></div>'+
+    '<div class="data-table-wrap gradebook-wrap"><table class="data-table gradebook-table">'+header+'<tbody>'+body+'</tbody></table></div>';
 }
 
 function renderStudentGrades(){
   const assignments=state.sectionData.assignments.filter(a=>a.status!=="Draft");
+  const assessments=(state.sectionData.assessmentRefs||[]).filter(a=>a.status!=="Draft");
   const gradeMap=new Map(state.sectionData.grades.map(g=>[g.assignmentId,g]));
-  let earned=0,possible=0;
-  const rows=assignments.map(a=>{
+  const assessmentGradeMap=new Map((state.sectionData.assessmentGrades||[]).map(g=>[g.assessmentId,g]));
+
+  let courseworkEarned=0,courseworkPossible=0;
+  const assignmentRows=assignments.map(a=>{
     const g=gradeMap.get(a.id);
-    if(g){earned+=Number(g.score||0);possible+=Number(a.points||0);}
-    return '<tr><td><strong>'+esc(a.title)+'</strong><span class="grade-sub">'+esc(a.type||"Assignment")+'</span></td><td>'+esc(a.points||0)+'</td><td>'+(g?esc(g.score):"—")+'</td><td>'+(g&&a.points?Math.round((Number(g.score)/Number(a.points))*1000)/10+"%":"—")+'</td></tr>';
+    if(g){courseworkEarned+=Number(g.score||0);courseworkPossible+=Number(a.points||0);}
+    return '<tr><td><strong>'+esc(a.title)+'</strong><span class="grade-sub">'+esc(a.type||"Assignment")+'</span></td><td><span class="badge">Coursework</span></td><td>'+esc(a.points||0)+'</td><td>'+(g?esc(g.score):"—")+'</td><td>'+(g&&a.points?Math.round((Number(g.score)/Number(a.points))*1000)/10+"%":"—")+'</td></tr>';
   }).join("");
-  const avg=possible?Math.round((earned/possible)*1000)/10:null;
-  return '<div class="academic-banner"><div class="kicker">Progress Grade</div><h3>'+(avg===null?"No graded work yet":avg+"%")+'</h3><p>This is your live coursework record. Final grading pathways and certified final grades are separate systems.</p></div><div class="data-table-wrap"><table class="data-table"><thead><tr><th>Assignment</th><th>Possible</th><th>Score</th><th>Percent</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+
+  const assessmentPercents=[];
+  const assessmentRows=assessments.map(a=>{
+    const g=assessmentGradeMap.get(a.id);
+    if(g&&g.percent!==null&&g.percent!==undefined)assessmentPercents.push(Number(g.percent));
+    return '<tr class="assessment-grade-row"><td><strong>'+esc(a.title||"Assessment")+'</strong><span class="grade-sub">'+esc(a.assessmentType||a.type||"Formal Assessment")+'</span></td><td><span class="badge assessment-badge">Assessment</span></td><td>'+(g?esc(g.maxScore??a.totalPoints??"—"):esc(a.totalPoints||"—"))+'</td><td>'+(g?esc(g.score??"—"):"—")+'</td><td>'+(g?'<strong>'+esc(g.percent)+'%</strong>':'<span class="grade-pending">Awaiting grade</span>')+'</td></tr>';
+  }).join("");
+
+  const courseworkAvg=courseworkPossible?Math.round((courseworkEarned/courseworkPossible)*1000)/10:null;
+  const assessmentAvg=assessmentPercents.length?Math.round((assessmentPercents.reduce((a,b)=>a+b,0)/assessmentPercents.length)*10)/10:null;
+
+  return '<div class="student-grade-summary"><div><span>Coursework Average</span><strong>'+(courseworkAvg===null?"—":courseworkAvg+"%")+'</strong></div><div><span>Assessment Average</span><strong>'+(assessmentAvg===null?"—":assessmentAvg+"%")+'</strong></div></div>'+
+    '<div class="academic-banner"><div class="kicker">Academic Progress</div><h3>Coursework and formal assessments are recorded separately.</h3><p>Your final certified grade is calculated later using the grading pathway you selected, not by simply averaging these two numbers together.</p></div>'+
+    '<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Academic Work</th><th>Category</th><th>Possible</th><th>Score</th><th>Percent</th></tr></thead><tbody>'+assignmentRows+assessmentRows+'</tbody></table></div>';
 }
 
 function renderSectionDetail(tab="overview"){
@@ -1121,6 +1210,11 @@ document.addEventListener("click",async event=>{
   if(action==="create-resource") return openResourceModal();
   if(action==="edit-resource") return openResourceModal(state.sectionData.resources.find(x=>x.id===btn.dataset.id));
   if(action==="set-grade") return openGradeModal(btn.dataset.assignment,btn.dataset.student);
+  if(action==="open-gradebook-assessment"){
+    if(window.TheoriaPhase3?.openAssessment) return window.TheoriaPhase3.openAssessment(btn.dataset.assessment,"candidates");
+    showToast("Open this assessment from the Assessments tab to review formal grading.");
+    return;
+  }
   if(action==="copy-code"){
     if(!btn.dataset.code)return;
     try{await navigator.clipboard.writeText(btn.dataset.code);showToast("Join code copied.");}
