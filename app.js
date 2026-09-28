@@ -692,13 +692,24 @@ function openResourceModal(existing){
   const modal=openModal({
     eyebrow:"Scholar Resource",
     title:existing?"Edit Resource":"Add Resource",
-    body:'<form id="resourceForm"><div class="form-grid"><div class="field span-2"><label>Title</label><input name="title" value="'+esc(existing?.title||"")+'" required></div><div class="field"><label>Type</label><select name="type"><option>Primary Source</option><option>Scripture Reading</option><option>Article</option><option>Book / Chapter</option><option>PDF</option><option>Lecture Notes</option><option>Research Link</option><option>Supplemental Resource</option></select></div><div class="field"><label>URL</label><input type="url" name="url" value="'+esc(existing?.url||"")+'" placeholder="https://"></div><div class="field span-2"><label>Instructor Notes</label><textarea name="notes">'+esc(existing?.notes||"")+'</textarea></div></div><div class="modal-foot" style="margin:24px -24px -24px"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Resource</button></div></form>'
+    wide:true,
+    body:'<form id="resourceForm" class="academic-form">'+
+      '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Resource Identity</h3><p>Add the source students should use and classify it clearly.</p></div></div>'+
+        '<div class="field"><label>Resource Title</label><input class="title-input" name="title" value="'+esc(existing?.title||"")+'" placeholder="e.g. Augustine, Confessions Book VIII" required></div>'+
+        '<div class="compact-field-grid"><div class="field"><label>Type</label><select name="type"><option>Primary Source</option><option>Scripture Reading</option><option>Article</option><option>Book / Chapter</option><option>PDF Link</option><option>Lecture Notes</option><option>Research Link</option><option>Supplemental Resource</option></select></div><div class="field"><label>URL</label><input type="url" name="url" value="'+esc(existing?.url||"")+'" placeholder="https://"></div><div class="field"><label>Citation / Reference</label><input name="citation" value="'+esc(existing?.citation||"")+'" placeholder="Author, title, chapter, pages"></div></div>'+
+      '</section>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Reading Note</h3><p>Give students a short reason for using this resource.</p></div></div>'+
+        '<div class="field"><label>Student Note</label><textarea class="editor-compact" rows="2" name="notes" placeholder="What should students pay attention to while reading?">'+esc(existing?.notes||"")+'</textarea></div>'+
+      '</section>'+
+      '<div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Resource</button></div></form>'
   });
   const form=modal.querySelector("#resourceForm");
   if(existing) form.type.value=existing.type||"Primary Source";
+  const note=form.querySelector(".editor-compact");
+  const grow=()=>{note.style.height="auto";note.style.height=Math.min(note.scrollHeight,180)+"px";};note.addEventListener("input",grow);grow();
   form.addEventListener("submit",async e=>{
     e.preventDefault();const fd=new FormData(form);
-    const data={title:String(fd.get("title")).trim(),type:String(fd.get("type")),url:String(fd.get("url")).trim(),notes:String(fd.get("notes")).trim(),updatedAt:serverTimestamp()};
+    const data={title:String(fd.get("title")).trim(),type:String(fd.get("type")),url:String(fd.get("url")).trim(),citation:String(fd.get("citation")||"").trim(),notes:String(fd.get("notes")).trim(),updatedAt:serverTimestamp()};
     try{
       if(existing) await updateDoc(doc(db,"sections",state.currentSection.id,"resources",existing.id),data);
       else await addDoc(collection(db,"sections",state.currentSection.id,"resources"),{...data,createdAt:serverTimestamp()});
@@ -714,7 +725,7 @@ function openGradeModal(assignmentId,studentId){
   const modal=openModal({
     eyebrow:"Gradebook",
     title:(s?.displayName||"Student")+" — "+(a?.title||"Assignment"),
-    body:'<form id="gradeForm"><div class="notice">Possible points: <strong>'+esc(a?.points||0)+'</strong></div><div class="field"><label>Score</label><input type="number" min="0" step="0.1" name="score" value="'+esc(existing?.score??"")+'" required></div><div class="field"><label>Instructor Comment</label><textarea name="comment">'+esc(existing?.comment||"")+'</textarea></div><div class="modal-foot" style="margin:24px -24px -24px"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Grade</button></div></form>'
+    body:'<form id="gradeForm"><div class="notice">Possible points: <strong>'+esc(a?.points||0)+'</strong></div><div class="field"><label>Score</label><input type="number" min="0" step="0.1" name="score" value="'+esc(existing?.score??"")+'" required></div><div class="field"><label>Instructor Comment</label><textarea class="editor-compact" rows="2" name="comment" placeholder="Optional concise feedback">'+esc(existing?.comment||"")+'</textarea></div><div class="modal-foot" style="margin:24px -24px -24px"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Grade</button></div></form>'
   });
   modal.querySelector("#gradeForm").addEventListener("submit",async e=>{
     e.preventDefault();const fd=new FormData(e.currentTarget);const score=Number(fd.get("score"));
