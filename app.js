@@ -1328,53 +1328,140 @@ function renderStudents(){
 
 function renderGradebook(){
   const students=state.sectionData.members;
-  const assignments=state.sectionData.assignments.filter(a=>a.status!=="Draft");
+  const framework=state.sectionData.framework||{units:[]};
+  const rawAssignments=state.sectionData.assignments.filter(a=>a.status!=="Draft");
   const assessments=(state.sectionData.assessmentRefs||[]).filter(a=>a.status!=="Draft");
-  if(!students.length || (!assignments.length&&!assessments.length)) return '<div class="empty-state"><div class="empty-symbol">G</div><h3>Gradebook waiting for data.</h3><p>Enroll at least one student and publish an assignment or assessment.</p></div>';
+  if(!students.length || (!rawAssignments.length&&!assessments.length)) return '<div class="empty-state"><div class="empty-symbol">G</div><h3>Gradebook waiting for data.</h3><p>Enroll at least one student and publish an assignment or assessment.</p></div>';
 
   const gradeMap=new Map(state.sectionData.grades.map(g=>[g.assignmentId+"_"+g.studentId,g]));
   const assessmentGradeMap=new Map((state.sectionData.assessmentGrades||[]).map(g=>[g.assessmentId+"_"+g.studentId,g]));
 
+  const assignmentGroups=unitFolderGroups(rawAssignments,framework);
+  const assignments=assignmentGroups.flatMap(group=>group.items);
+  const assignmentGroupMap=new Map();
+  assignmentGroups.forEach(group=>group.items.forEach((item,index)=>assignmentGroupMap.set(item.id,{group,index})));
+
+  const studentCourseworkAverages=[];
+  const studentAssessmentAverages=[];
+  let completedGradeCells=0;
+  const totalGradeCells=students.length*(assignments.length+assessments.length);
+
+  const unitJumpButtons=assignmentGroups.map(group=>
+    '<button class="gradebook-jump" data-action="gradebook-jump" data-target="unit-'+esc(group.id)+'">'+
+      '<span>'+(group.id==="unsorted"?"?":"U"+esc(group.unit?.order||""))+'</span>'+esc(group.id==="unsorted"?"Unsorted":group.unit?.title||group.label)+
+      '<small>'+group.items.length+'</small></button>'
+  ).join("");
+
+  const assignmentGroupHeaders=assignmentGroups.map(group=>
+    '<th colspan="'+group.items.length+'" class="gradebook-unit-group '+(group.id==="unsorted"?'unsorted':'')+'" data-gradebook-group="'+esc(group.id)+'">'+
+      '<span>'+(group.id==="unsorted"?"Unsorted Coursework":"Unit "+esc(group.unit?.order||"")+' — '+esc(group.unit?.title||"Unit"))+'</span>'+
+      '<small>'+group.items.length+' item'+(group.items.length===1?"":"s")+'</small></th>'
+  ).join("");
+
+  const assignmentHeaders=assignments.map(a=>{
+    const meta=assignmentGroupMap.get(a.id);
+    const isStart=meta?.index===0;
+    return '<th class="gradebook-item-head '+(isStart?'unit-start':'')+'" '+(isStart?'data-gradebook-anchor="unit-'+esc(meta.group.id)+'"':'')+' title="'+esc(a.title||"Assignment")+'">'+
+      '<span class="gradebook-kind">'+esc(a.type||"Assignment")+'</span>'+
+      '<span class="gradebook-item-title">'+esc(a.title||"Assignment")+'</span>'+
+      '<span class="gradebook-item-meta">'+esc(a.points||0)+' pts'+(a.topicNumber?' • '+esc(a.topicNumber):'')+'</span></th>';
+  }).join("");
+
+  const assessmentHeaders=assessments.map((a,index)=>
+    '<th class="gradebook-item-head assessment-grade-head '+(index===0?'assessment-start':'')+'" '+(index===0?'data-gradebook-anchor="assessments"':'')+' title="'+esc(a.title||"Assessment")+'">'+
+      '<span class="gradebook-kind assessment-kind">'+esc(a.assessmentType||a.type||"Assessment")+'</span>'+
+      '<span class="gradebook-item-title">'+esc(a.title||"Assessment")+'</span>'+
+      '<span class="gradebook-item-meta">'+(Number(a.totalPoints||0)?esc(a.totalPoints)+" pts":"Formal assessment")+'</span></th>'
+  ).join("");
+
   const header='<thead>'+
-    '<tr class="gradebook-group-row"><th rowspan="2">Student</th>'+
-      (assignments.length?'<th colspan="'+assignments.length+'" class="gradebook-group coursework-group">Coursework</th>':'')+
-      (assessments.length?'<th colspan="'+assessments.length+'" class="gradebook-group assessment-group">Assessments</th>':'')+
-      '<th rowspan="2">Coursework Avg</th><th rowspan="2">Assessment Avg</th>'+
-    '</tr>'+
-    '<tr>'+
-      assignments.map(a=>'<th><span class="gradebook-kind">Assignment</span>'+esc(a.title)+'<span class="grade-sub">'+esc(a.points)+' pts</span></th>').join("")+
-      assessments.map(a=>'<th class="assessment-grade-head"><span class="gradebook-kind assessment-kind">'+esc(a.assessmentType||a.type||"Assessment")+'</span>'+esc(a.title||"Assessment")+'<span class="grade-sub">'+(Number(a.totalPoints||0)?esc(a.totalPoints)+" pts":"Formal assessment")+'</span></th>').join("")+
-    '</tr></thead>';
+    '<tr class="gradebook-category-row"><th class="student-sticky gradebook-student-head" rowspan="3">Student</th>'+
+      (assignments.length?'<th colspan="'+assignments.length+'" class="gradebook-category coursework-category">Coursework</th>':'')+
+      (assessments.length?'<th colspan="'+assessments.length+'" class="gradebook-category assessment-category">Formal Assessments</th>':'')+
+      '<th class="avg-sticky coursework-avg-col" rowspan="3">Coursework<br>Avg</th><th class="avg-sticky assessment-avg-col" rowspan="3">Assessment<br>Avg</th></tr>'+
+    '<tr class="gradebook-group-row">'+assignmentGroupHeaders+(assessments.length?'<th colspan="'+assessments.length+'" class="gradebook-unit-group assessment-group">Assessments</th>':'')+'</tr>'+
+    '<tr>'+assignmentHeaders+assessmentHeaders+'</tr>'+
+    '</thead>';
 
   const body=students.map(student=>{
-    let courseworkEarned=0,courseworkPossible=0;
+    let courseworkEarned=0,courseworkPossible=0,courseworkGraded=0;
     const assignmentCells=assignments.map(a=>{
       const g=gradeMap.get(a.id+"_"+student.id);
-      if(g&&g.score!==null&&g.score!==undefined){courseworkEarned+=Number(g.score);courseworkPossible+=Number(a.points||0);}
-      return '<td class="score-cell" data-action="set-grade" data-assignment="'+a.id+'" data-student="'+student.id+'">'+(g?'<span class="grade-main">'+esc(g.score)+'</span><span class="grade-sub">/ '+esc(a.points)+'</span>':'—')+'</td>';
+      const hasGrade=g&&g.score!==null&&g.score!==undefined;
+      if(hasGrade){
+        courseworkEarned+=Number(g.score);courseworkPossible+=Number(a.points||0);courseworkGraded++;completedGradeCells++;
+      }
+      const pct=hasGrade&&Number(a.points||0)>0?Math.round((Number(g.score)/Number(a.points))*1000)/10:null;
+      return '<td class="score-cell coursework-score-cell '+(hasGrade?'has-grade':'no-grade')+'" data-action="set-grade" data-assignment="'+a.id+'" data-student="'+student.id+'">'+
+        (hasGrade?'<span class="grade-main">'+esc(g.score)+'</span><span class="grade-sub">/ '+esc(a.points)+'</span><span class="grade-cell-percent">'+pct+'%</span>':'<span class="grade-empty">—<small>No grade</small></span>')+
+      '</td>';
     }).join("");
 
     const assessmentPercents=[];
+    let assessmentGraded=0;
     const assessmentCells=assessments.map(a=>{
       const g=assessmentGradeMap.get(a.id+"_"+student.id);
-      if(g&&g.percent!==null&&g.percent!==undefined)assessmentPercents.push(Number(g.percent));
+      const hasGrade=g&&g.percent!==null&&g.percent!==undefined;
+      if(hasGrade){assessmentPercents.push(Number(g.percent));assessmentGraded++;completedGradeCells++;}
       const score=(g&&g.score!==undefined&&g.score!==null)?esc(g.score):"";
       const max=(g&&g.maxScore!==undefined&&g.maxScore!==null)?esc(g.maxScore):esc(a.totalPoints||"");
-      return '<td class="score-cell assessment-score-cell" data-action="open-gradebook-assessment" data-assessment="'+a.id+'" data-student="'+student.id+'">'+
-        (g?'<span class="grade-main">'+(score&&max?score+" / "+max:esc(g.percent)+"%")+'</span><span class="grade-sub">'+esc(g.percent)+'%'+(g.released?' • released':' • private')+'</span>':'<span class="grade-pending">—<small>Not graded</small></span>')+
+      return '<td class="score-cell assessment-score-cell '+(hasGrade?'has-grade':'no-grade')+'" data-action="open-gradebook-assessment" data-assessment="'+a.id+'" data-student="'+student.id+'">'+
+        (hasGrade?'<span class="grade-main">'+(score&&max?score+" / "+max:esc(g.percent)+"%")+'</span><span class="grade-cell-percent">'+esc(g.percent)+'%</span><span class="grade-sub">'+(g.released?'Released':'Private')+'</span>':'<span class="grade-empty">—<small>Not graded</small></span>')+
       '</td>';
     }).join("");
 
     const courseworkAvg=courseworkPossible?Math.round((courseworkEarned/courseworkPossible)*1000)/10:null;
     const assessmentAvg=assessmentPercents.length?Math.round((assessmentPercents.reduce((a,b)=>a+b,0)/assessmentPercents.length)*10)/10:null;
-    return '<tr><td><strong>'+esc(student.displayName||"Student")+'</strong></td>'+assignmentCells+assessmentCells+
-      '<td><strong>'+(courseworkAvg===null?"—":courseworkAvg+"%")+'</strong></td>'+
-      '<td><strong>'+(assessmentAvg===null?"—":assessmentAvg+"%")+'</strong></td></tr>';
+    if(courseworkAvg!==null)studentCourseworkAverages.push(courseworkAvg);
+    if(assessmentAvg!==null)studentAssessmentAverages.push(assessmentAvg);
+
+    return '<tr><td class="student-sticky gradebook-student-cell"><strong>'+esc(student.displayName||"Student")+'</strong>'+
+      '<span>'+courseworkGraded+'/'+assignments.length+' coursework'+(assessments.length?' • '+assessmentGraded+'/'+assessments.length+' assessments':'')+'</span></td>'+
+      assignmentCells+assessmentCells+
+      '<td class="avg-sticky coursework-avg-col gradebook-average '+(courseworkAvg===null?'empty':'')+'"><strong>'+(courseworkAvg===null?"—":courseworkAvg+"%")+'</strong><span>'+courseworkGraded+' graded</span></td>'+
+      '<td class="avg-sticky assessment-avg-col gradebook-average '+(assessmentAvg===null?'empty':'')+'"><strong>'+(assessmentAvg===null?"—":assessmentAvg+"%")+'</strong><span>'+assessmentGraded+' graded</span></td></tr>';
   }).join("");
 
-  return '<div class="notice">Assignments and formal assessments now share the section gradebook. Coursework and assessment averages remain separate because the student’s final certified grade follows the selected grading pathway.</div>'+
-    '<div class="gradebook-legend"><span><i class="legend-dot coursework-dot"></i> Coursework grades can be edited here</span><span><i class="legend-dot assessment-dot"></i> Assessment scores are graded in Assessments</span></div>'+
-    '<div class="data-table-wrap gradebook-wrap"><table class="data-table gradebook-table">'+header+'<tbody>'+body+'</tbody></table></div>';
+  const assignmentClassCells=assignments.map(a=>{
+    const grades=students.map(student=>gradeMap.get(a.id+"_"+student.id)).filter(g=>g&&g.score!==null&&g.score!==undefined);
+    const avg=grades.length?grades.reduce((n,g)=>n+Number(g.score||0),0)/grades.length:null;
+    const pct=avg!==null&&Number(a.points||0)>0?Math.round((avg/Number(a.points))*1000)/10:null;
+    return '<td class="class-average-cell">'+(avg===null?'—':'<strong>'+Math.round(avg*10)/10+'</strong><span>/ '+esc(a.points)+'</span><small>'+pct+'%</small>')+'</td>';
+  }).join("");
+
+  const assessmentClassCells=assessments.map(a=>{
+    const grades=students.map(student=>assessmentGradeMap.get(a.id+"_"+student.id)).filter(g=>g&&g.percent!==null&&g.percent!==undefined);
+    const pct=grades.length?Math.round((grades.reduce((n,g)=>n+Number(g.percent||0),0)/grades.length)*10)/10:null;
+    return '<td class="class-average-cell assessment-class-average">'+(pct===null?'—':'<strong>'+pct+'%</strong><small>'+grades.length+' graded</small>')+'</td>';
+  }).join("");
+
+  const classCourseworkAvg=studentCourseworkAverages.length?Math.round((studentCourseworkAverages.reduce((a,b)=>a+b,0)/studentCourseworkAverages.length)*10)/10:null;
+  const classAssessmentAvg=studentAssessmentAverages.length?Math.round((studentAssessmentAverages.reduce((a,b)=>a+b,0)/studentAssessmentAverages.length)*10)/10:null;
+  const completion=totalGradeCells?Math.round((completedGradeCells/totalGradeCells)*100):0;
+
+  const footer='<tfoot><tr><td class="student-sticky gradebook-class-label"><strong>Class Average</strong><span>'+students.length+' student'+(students.length===1?"":"s")+'</span></td>'+
+    assignmentClassCells+assessmentClassCells+
+    '<td class="avg-sticky coursework-avg-col gradebook-average class-summary"><strong>'+(classCourseworkAvg===null?'—':classCourseworkAvg+'%')+'</strong><span>Class</span></td>'+
+    '<td class="avg-sticky assessment-avg-col gradebook-average class-summary"><strong>'+(classAssessmentAvg===null?'—':classAssessmentAvg+'%')+'</strong><span>Class</span></td></tr></tfoot>';
+
+  const summary='<div class="gradebook-summary-strip">'+
+    '<div><span>Students</span><strong>'+students.length+'</strong></div>'+
+    '<div><span>Coursework</span><strong>'+assignments.length+'</strong></div>'+
+    '<div><span>Assessments</span><strong>'+assessments.length+'</strong></div>'+
+    '<div><span>Grading Complete</span><strong>'+completion+'%</strong></div>'+
+    '<div><span>Class Coursework</span><strong>'+(classCourseworkAvg===null?'—':classCourseworkAvg+'%')+'</strong></div>'+
+    '<div><span>Class Assessment</span><strong>'+(classAssessmentAvg===null?'—':classAssessmentAvg+'%')+'</strong></div>'+
+  '</div>';
+
+  const nav='<div class="gradebook-toolbar"><div class="gradebook-jumps"><span>Jump to</span>'+unitJumpButtons+
+    (assessments.length?'<button class="gradebook-jump assessment-jump" data-action="gradebook-jump" data-target="assessments"><span>✓</span>Assessments<small>'+assessments.length+'</small></button>':'')+
+    '</div><div class="gradebook-help">Student names and averages stay pinned while you scroll.</div></div>';
+
+  return summary+
+    '<div class="notice gradebook-notice">Coursework and formal assessments share this gradebook, but their averages remain separate because the certified final grade follows each student’s grading pathway.</div>'+
+    nav+
+    '<div class="gradebook-legend"><span><i class="legend-dot coursework-dot"></i> Click coursework cells to grade</span><span><i class="legend-dot assessment-dot"></i> Assessment cells open formal grading</span><span><i class="legend-dot empty-dot"></i> No grade recorded</span></div>'+
+    '<div class="data-table-wrap gradebook-wrap"><table class="data-table gradebook-table">'+header+'<tbody>'+body+'</tbody>'+footer+'</table></div>';
 }
 
 function renderStudentGrades(){
@@ -2618,6 +2705,15 @@ document.addEventListener("click",async event=>{
   if(action==="delete-library-resource") return deleteLibraryResource(btn.dataset.section,btn.dataset.id);
   if(action==="edit-resource") return openResourceModal(state.sectionData.resources.find(x=>x.id===btn.dataset.id));
   if(action==="set-grade") return openGradeModal(btn.dataset.assignment,btn.dataset.student);
+  if(action==="gradebook-jump"){
+    const wrap=document.querySelector(".gradebook-wrap");
+    const target=document.querySelector('[data-gradebook-anchor="'+btn.dataset.target+'"]');
+    if(wrap&&target){
+      const left=Math.max(0,target.offsetLeft-190);
+      wrap.scrollTo({left,behavior:"smooth"});
+    }
+    return;
+  }
   if(action==="open-gradebook-assessment"){
     if(window.TheoriaPhase3?.openAssessment) return window.TheoriaPhase3.openAssessment(btn.dataset.assessment,"candidates");
     showToast("Open this assessment from the Assessments tab to review formal grading.");
