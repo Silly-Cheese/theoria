@@ -167,7 +167,7 @@ async function renderItemBank(){
   el.innerHTML='<div class="assessment-toolbar"><div class="filter-row">'+
     '<select id="itemCourseFilter"><option value="">All courses</option>'+state().courses.map(c=>'<option value="'+c.id+'">'+esc(c.code+" — "+c.title)+'</option>').join("")+'</select>'+
     '<select id="itemTypeFilter"><option value="">All types</option>'+["Multiple Choice","Multiple Select","Short Response","Essay","Passage Analysis","Primary Source Analysis","Argument Analysis","Oral Prompt","Disputation Prompt"].map(x=>'<option>'+x+'</option>').join("")+'</select>'+
-    '<input id="itemSearch" placeholder="Search prompt, topic, competency, or tag"></div><div class="toolbar-stat"><strong>'+P3.items.length+'</strong><span> reusable items</span></div></div>'+
+    '<input id="itemSearch" placeholder="Search prompt, topic, competency, or tag"></div><div class="toolbar-stat"><strong>'+P3.items.length+'</strong><span> reusable questions</span></div></div>'+
     '<div id="itemBankList" class="assessment-item-grid"></div>';
   const filter=()=>{
     const c=$("#itemCourseFilter").value,t=$("#itemTypeFilter").value,q=$("#itemSearch").value.trim().toLowerCase();
@@ -677,10 +677,10 @@ function renderAssessment(tab="overview"){
 async function addItemsModal(){
   await loadItems();
   const a=P3.current,available=P3.items.filter(x=>x.courseId===a.courseId&&!P3.detail.questions.some(q=>q.itemId===x.id));
-  if(!available.length)return toast("No unused Question Bank items are available for this course.");
+  if(!available.length)return toast("No unused Question Bank questions are available for this course.");
   const modal=core().openModal({
     eyebrow:"Assessment Assembly",
-    title:"Add Items from Question Bank",
+    title:"Add Questions from Question Bank",
     wide:true,
     body:'<form id="addItemsForm"><div class="field"><label>Examination Part</label><select name="partId">'+(a.parts||[]).map(p=>'<option value="'+p.id+'">'+esc(p.title)+'</option>').join("")+'</select></div>'+
       '<div class="item-select-list">'+available.map(x=>'<label class="item-select-row"><input type="checkbox" name="item" value="'+x.id+'"><div><strong>'+esc(x.type)+' • '+esc(x.topicNumber||"No topic")+'</strong><p>'+esc(x.prompt)+'</p><span>'+esc(x.pointsDefault||1)+' pts • '+esc(x.difficulty||"Moderate")+'</span></div></label>').join("")+'</div>'+
@@ -697,15 +697,15 @@ async function addItemsModal(){
       batch.set(doc(db,"assessments",a.id,"keys",ref.id),{itemId:item.id,correctAnswer:item.correctAnswer??"",explanation:item.explanation||"",rubric:item.rubric||[],createdAt:serverTimestamp()});
     }
     batch.update(doc(db,"assessments",a.id),{questionIds,questionCount:order,totalPoints:total,updatedAt:serverTimestamp()});
-    try{await batch.commit();core().closeModal();await openAssessment(a.id,"items");toast("questions added.");}catch(err){toast(err.message||"Unable to add items.");}
+    try{await batch.commit();core().closeModal();await openAssessment(a.id,"items");toast("questions added.");}catch(err){toast(err.message||"Unable to add questions.");}
   });
 }
 
 function configureItemModal(id){
   const q=P3.detail.questions.find(x=>x.id===id),a=P3.current;if(!q)return;
   const modal=core().openModal({
-    eyebrow:"Assessment Item",
-    title:"Configure Item",
+    eyebrow:"Assessment Question",
+    title:"Configure Question",
     body:'<form id="configureItemForm"><div class="field"><label>Examination Part</label><select name="partId">'+(a.parts||[]).map(p=>'<option value="'+p.id+'">'+esc(p.title)+'</option>').join("")+'</select></div><div class="field"><label>Points</label><input name="points" type="number" min="0" step="0.5" value="'+esc(q.points)+'"></div><div class="modal-foot" style="margin:24px -24px -24px"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save</button></div></form>'
   });
   const form=modal.querySelector("#configureItemForm");form.partId.value=q.partId||a.parts?.[0]?.id;
