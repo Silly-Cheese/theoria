@@ -193,25 +193,36 @@ function courseCard(course){
 }
 
 function renderHome(){
-  const count = state.sections.length;
+  const sectionCount=state.sections.length;
+  const courseCount=state.courses.length;
+  const openEnrollmentCount=state.sections.filter(s=>s.joinOpen!==false).length;
+  const academicTerms=[...new Set(state.sections.map(s=>String(s.term||"").trim()).filter(Boolean))];
+  const disciplines=[...new Set(state.courses.map(c=>String(c.discipline||"").trim()).filter(Boolean))];
+
   $("#homeStats").innerHTML = state.role === "instructor"
-    ? '<div class="stat"><div class="stat-label">Active Sections</div><div class="stat-value">'+count+'</div><div class="stat-note">Teaching spaces</div></div>'+
-      '<div class="stat"><div class="stat-label">Course Frameworks</div><div class="stat-value">'+state.courses.length+'</div><div class="stat-note">Reusable curricula</div></div>'+
-      '<div class="stat"><div class="stat-label">Assessment Engine</div><div class="stat-value">Live</div><div class="stat-note">Phase 3 active</div></div>'+
-      '<div class="stat"><div class="stat-label">Academic Records</div><div class="stat-value">Live</div><div class="stat-note">Certification & audit active</div></div>'
-    : '<div class="stat"><div class="stat-label">Enrolled Sections</div><div class="stat-value">'+count+'</div><div class="stat-note">Current courses</div></div>'+
-      '<div class="stat"><div class="stat-label">Course Frameworks</div><div class="stat-value">'+state.courses.length+'</div><div class="stat-note">Available through sections</div></div>'+
-      '<div class="stat"><div class="stat-label">Current Mastery</div><div class="stat-value">Live</div><div class="stat-note">Competency analytics active</div></div>'+
-      '<div class="stat"><div class="stat-label">Final Record</div><div class="stat-value">—</div><div class="stat-note">Not yet certified</div></div>';
+    ? '<div class="stat"><div class="stat-label">Teaching Sections</div><div class="stat-value">'+sectionCount+'</div><div class="stat-note">Owned sections</div></div>'+
+      '<div class="stat"><div class="stat-label">Course Frameworks</div><div class="stat-value">'+courseCount+'</div><div class="stat-note">Reusable curricula</div></div>'+
+      '<div class="stat"><div class="stat-label">Enrollment Open</div><div class="stat-value">'+openEnrollmentCount+'</div><div class="stat-note">Sections accepting join codes</div></div>'+
+      '<div class="stat"><div class="stat-label">Academic Terms</div><div class="stat-value">'+academicTerms.length+'</div><div class="stat-note">Represented in your sections</div></div>'
+    : '<div class="stat"><div class="stat-label">Enrolled Sections</div><div class="stat-value">'+sectionCount+'</div><div class="stat-note">Current teaching spaces</div></div>'+
+      '<div class="stat"><div class="stat-label">Course Frameworks</div><div class="stat-value">'+courseCount+'</div><div class="stat-note">Available through enrollment</div></div>'+
+      '<div class="stat"><div class="stat-label">Academic Terms</div><div class="stat-value">'+academicTerms.length+'</div><div class="stat-note">Represented in your sections</div></div>'+
+      '<div class="stat"><div class="stat-label">Disciplines</div><div class="stat-value">'+disciplines.length+'</div><div class="stat-note">Areas of theological study</div></div>';
 
   $("#homeSections").innerHTML = state.sections.length
     ? '<div class="card-grid">'+state.sections.slice(0,3).map(sectionCard).join("")+'</div>'
     : '<div class="empty-state"><div class="empty-symbol">Θ</div><h3>No active sections yet.</h3><p>'+(state.role==="instructor"?"Create a course framework, then create a teaching section from it.":"Join a section with the code provided by your instructor.")+'</p>'+(state.role==="student"?'<button class="primary-btn" data-go="sections">Join a Section</button>':'<button class="primary-btn" data-action="create-section">Create Section</button>')+'</div>';
 
+  const thirdNumber=state.role==="instructor"?openEnrollmentCount:academicTerms.length;
+  const thirdTitle=state.role==="instructor"?"Sections accepting enrollment":"Academic terms";
+  const thirdCopy=state.role==="instructor"
+    ? (openEnrollmentCount?"These sections currently accept student join codes.":"No sections currently accept new enrollment.")
+    : (academicTerms.length?"Your current sections span "+academicTerms.length+" academic term"+(academicTerms.length===1?"":"s")+".":"No academic term data is available yet.");
+
   $("#homeAttention").innerHTML = '<div class="attention-list">'+
-    '<div class="attention-item"><div class="attention-number">'+state.sections.length+'</div><div class="attention-copy"><strong>'+ (state.role==="instructor"?"Teaching sections":"Current sections") +'</strong><span>'+ (state.sections.length?"Open a section to review its framework, work, and records.":"No sections require attention yet.") +'</span></div></div>'+
-    '<div class="attention-item"><div class="attention-number">'+state.courses.length+'</div><div class="attention-copy"><strong>Course frameworks</strong><span>Units, topics, objectives, essential knowledge, and competencies are managed here.</span></div></div>'+
-    '<div class="attention-item"><div class="attention-number">✓</div><div class="attention-copy"><strong>Formal examinations</strong><span>Semester and comprehensive examination workflows are active.</span></div></div>'+
+    '<div class="attention-item"><div class="attention-number">'+sectionCount+'</div><div class="attention-copy"><strong>'+(state.role==="instructor"?"Teaching sections":"Current sections")+'</strong><span>'+(sectionCount?"Open a section to review its framework, work, assessments, and records.":"No sections are currently connected to this account.")+'</span></div></div>'+
+    '<div class="attention-item"><div class="attention-number">'+courseCount+'</div><div class="attention-copy"><strong>Course frameworks</strong><span>Units, topics, objectives, essential knowledge, and competencies currently available to this account.</span></div></div>'+
+    '<div class="attention-item"><div class="attention-number">'+thirdNumber+'</div><div class="attention-copy"><strong>'+thirdTitle+'</strong><span>'+thirdCopy+'</span></div></div>'+
   '</div>';
 }
 
