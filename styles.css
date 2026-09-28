@@ -319,3 +319,37 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   min-width:0;
   flex:1 1 auto;
 }
+
+
+/* Assessment templates, assignment workflow, and competency management */
+.panel-subtitle{font-size:8px;color:var(--muted);line-height:1.45;margin-top:3px}
+.competency-chip-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.competency-chip{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:9px;padding:10px 11px;border:1px solid var(--line);border-radius:7px;background:#fbfaf7}
+.competency-chip strong{display:grid;place-items:center;min-width:52px;padding:5px 7px;border-radius:999px;background:#f0ebe2;color:var(--burgundy);font-size:8px;letter-spacing:.08em}
+.competency-chip span{font-size:9px;line-height:1.35}
+.assignment-context{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:11px 13px;margin-bottom:13px;border:1px solid #ded6c9;border-radius:7px;background:#f8f5ee}
+.assignment-context span{font-size:8px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
+.assignment-context strong{font-size:10px;color:var(--burgundy)}
+.assessment-library-group{margin-bottom:30px}.assessment-library-group:last-child{margin-bottom:0}
+.compact-head{margin-bottom:13px!important}
+.workflow-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:0;margin:16px 0 20px;border:1px solid var(--line);background:#fff}
+.workflow-strip>div{position:relative;display:flex;align-items:center;gap:8px;padding:10px 12px;border-right:1px solid var(--line);color:var(--muted)}
+.workflow-strip>div:last-child{border-right:0}
+.workflow-strip span{display:grid;place-items:center;width:23px;height:23px;border-radius:50%;background:#f1ede5;font-family:"Libre Baskerville",serif;font-size:8px}
+.workflow-strip strong{font-size:8px;text-transform:uppercase;letter-spacing:.07em}
+.workflow-strip .done{color:#516950}.workflow-strip .done span{background:#e7efe4;color:#516950}
+.workflow-strip .current{color:var(--burgundy);background:#fff8f9}.workflow-strip .current span{background:var(--burgundy);color:#fff}
+.template-choice-list{display:grid;gap:9px}
+.template-choice{display:grid!important;grid-template-columns:auto 1fr!important;align-items:flex-start!important;gap:11px!important;margin:0!important;padding:13px!important;border:1px solid var(--line)!important;border-radius:8px;background:#fff;cursor:pointer}
+.template-choice:has(input:checked){border-color:var(--burgundy)!important;background:#fff8f9}
+.template-choice input{width:auto!important;margin:3px 0 0!important}
+.template-choice span{display:block;font-size:8px;text-transform:uppercase;letter-spacing:.08em;color:var(--burgundy);margin-bottom:3px}
+.template-choice strong{display:block;font-family:"Libre Baskerville",serif;font-size:13px;font-weight:400;line-height:1.35}
+.template-choice small{display:block;font-size:8px;color:var(--muted);margin-top:4px}
+
+@media(max-width:700px){
+  .competency-chip-grid{grid-template-columns:1fr}
+  .workflow-strip{grid-template-columns:1fr 1fr}
+  .workflow-strip>div:nth-child(2){border-right:0}
+  .workflow-strip>div:nth-child(-n+2){border-bottom:1px solid var(--line)}
+}
