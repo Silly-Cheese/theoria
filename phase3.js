@@ -172,7 +172,7 @@ async function renderItemBank(){
   const filter=()=>{
     const c=$("#itemCourseFilter").value,t=$("#itemTypeFilter").value,q=$("#itemSearch").value.trim().toLowerCase();
     const list=P3.items.filter(x=>(!c||x.courseId===c)&&(!t||x.type===t)&&(!q||[x.prompt,x.topicTitle,x.topicNumber,(x.competencyCodes||[]).join(" "),(x.tags||[]).join(" ")].join(" ").toLowerCase().includes(q)));
-    $("#itemBankList").innerHTML=list.length?list.map(itemCard).join(""):'<div class="empty-state"><div class="empty-symbol">I</div><h3>No matching items.</h3><p>Create a new item or adjust the filters.</p></div>';
+    $("#itemBankList").innerHTML=list.length?list.map(itemCard).join(""):'<div class="empty-state"><div class="empty-symbol">I</div><h3>No matching questions.</h3><p>Create a new question or adjust the filters.</p></div>';
   };
   $("#itemCourseFilter").addEventListener("change",filter);
   $("#itemTypeFilter").addEventListener("change",filter);
@@ -191,7 +191,7 @@ async function itemModal(existing){
 
   const modal=core().openModal({
     eyebrow:"Question Bank",
-    title:existing?"Edit Assessment Item":"Create Assessment Item",
+    title:existing?"Edit Question":"Create Question",
     wide:true,
     body:'<form id="itemForm" class="academic-form">'+
       '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Item Identity</h3><p>Place the question inside the course framework.</p></div></div>'+
@@ -199,7 +199,7 @@ async function itemModal(existing){
         '<div class="field"><label>Difficulty</label><select name="difficulty"><option>Foundational</option><option>Moderate</option><option>Advanced</option></select></div>'+
         '<div class="field"><label>Cognitive Level</label><select name="cognitiveLevel"><option>Recall</option><option>Understanding</option><option>Application</option><option>Analysis</option><option>Evaluation</option><option>Synthesis</option></select></div></div>'+
         '<div class="compact-field-grid"><div class="field"><label>Unit</label><select name="unitId" id="itemUnit"></select></div><div class="field"><label>Topic</label><select name="topicId" id="itemTopic"></select></div><div class="field"><label>Default Points</label><div class="input-with-suffix"><input name="pointsDefault" type="number" min="0" step="0.5" value="'+esc(existing?.pointsDefault??1)+'"><span>pts</span></div></div></div>'+
-        '<div class="field"><label>Item Type</label><div class="type-tile-grid compact">'+typeTiles+'</div></div>'+
+        '<div class="field"><label>Question Type</label><div class="type-tile-grid compact">'+typeTiles+'</div></div>'+
       '</section>'+
       '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Question</h3><p>Write the prompt cleanly; add source material only when the item needs it.</p></div></div>'+
         '<div class="field"><label>Prompt</label><textarea class="editor-compact" rows="3" name="prompt" placeholder="What should the student analyze, explain, defend, or identify?" required>'+esc(existing?.prompt||"")+'</textarea></div>'+
@@ -214,7 +214,7 @@ async function itemModal(existing){
         '<div class="field"><label>Academic Competencies</label><div id="itemCompetencies" class="competency-picker"></div></div>'+
         '<div class="field"><label>Tags</label><input name="tags" value="'+esc((existing?.tags||[]).join(", "))+'" placeholder="christology, primary-source, final-review"></div>'+
       '</section>'+
-      '<div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Item</button></div></form>'
+      '<div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Question</button></div></form>'
   });
 
   const form=modal.querySelector("#itemForm");
@@ -321,7 +321,7 @@ async function itemModal(existing){
     try{
       if(existing)await updateDoc(doc(db,"courses",cid,"items",existing.id),data);
       else await addDoc(collection(db,"courses",cid,"items"),{...data,createdAt:serverTimestamp()});
-      core().closeModal();await renderItemBank();toast(existing?"Item updated.":"Item created.");
+      core().closeModal();await renderItemBank();toast(existing?"Question updated.":"Question created.");
     }catch(err){toast(err.message||"Unable to save item.");}
   });
 }
@@ -635,7 +635,7 @@ function itemsView(){
   const a=P3.current,q=P3.detail.questions;
   return '<div class="page-head" style="margin-bottom:16px"><div><div class="panel-title">Assessment Assembly</div><p class="page-subtitle">Students never receive answer-key documents.</p></div><button class="primary-btn small-btn" data-phase3-action="add-items">Add from Question Bank</button></div>'+
     (q.length?'<div class="assessment-builder-list">'+q.map((x,i)=>'<div class="builder-item"><div class="builder-order">'+(i+1)+'</div><div class="builder-copy"><div class="card-kicker">'+esc((a.parts||[]).find(p=>p.id===x.partId)?.title||"Main")+' • '+esc(x.type)+'</div><h4>'+esc(x.prompt)+'</h4><div class="item-tags"><span>'+esc(x.points)+' pts</span><span>'+esc(x.topicNumber||"No topic")+'</span>'+(x.competencyCodes||[]).map(c=>'<span>'+esc(c)+'</span>').join("")+'</div></div><div class="inline-actions"><button class="text-btn" data-phase3-action="configure-item" data-id="'+x.id+'">Configure</button><button class="danger-btn" data-phase3-action="remove-item" data-id="'+x.id+'">Remove</button></div></div>').join("")+'</div>':
-    '<div class="empty-state"><div class="empty-symbol">I</div><h3>No assessment questions yet.</h3><p>Add reusable items from the course Question Bank.</p><button class="primary-btn" data-phase3-action="add-items">Add Items</button></div>');
+    '<div class="empty-state"><div class="empty-symbol">I</div><h3>No assessment questions yet.</h3><p>Add reusable questions from the course Question Bank.</p><button class="primary-btn" data-phase3-action="add-items">Add Questions</button></div>');
 }
 
 function candidatesView(){
