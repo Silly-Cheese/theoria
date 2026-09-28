@@ -663,7 +663,7 @@ function renderAssignments(){
       '<div class="assignment-meta"><span>'+esc(a.points||0)+' points</span><span class="'+(due.late&&!submission?"late-text":"")+'">'+esc(due.label)+'</span>'+(a.requirements?.length?'<span>'+a.requirements.length+' requirement'+(a.requirements.length===1?"":"s")+'</span>':'')+'<span>'+esc(a.submissionMode||"Text + Link")+'</span>'+(state.role==="instructor"?'<span class="badge '+(a.status==="Published"?'live':'gold')+'">'+esc(a.status||"Published")+'</span>':'<span class="badge '+statusClass+'">'+esc(studentStatus)+'</span>')+'</div>'+
       (grade&&state.role==="student"?'<div class="assignment-grade-preview"><strong>'+esc(grade.score)+' / '+esc(a.points||0)+'</strong>'+(grade.comment?'<span>'+esc(grade.comment)+'</span>':'')+'</div>':'')+
       '</div><div class="inline-actions">'+
-      (state.role==="instructor"?'<button class="secondary-btn small-btn" data-action="assignment-submissions" data-id="'+a.id+'">Submissions</button><button class="text-btn" data-action="edit-assignment" data-id="'+a.id+'">Edit</button>':
+      (state.role==="instructor"?'<button class="secondary-btn small-btn" data-action="assignment-submissions" data-id="'+a.id+'">Submissions</button><button class="text-btn" data-action="edit-assignment" data-id="'+a.id+'">Edit</button><button class="danger-btn small-btn" data-action="delete-assignment" data-id="'+a.id+'">Delete</button>':
         (a.submissionMode==="No Online Submission"?'<span class="badge">Instructor-managed</span>':'<button class="primary-btn small-btn" data-action="open-student-assignment" data-id="'+a.id+'">'+(submission?.status==="submitted"?(a.allowResubmission?"View / Revise":"View Submission"):(submission?.status==="draft"?"Continue Assignment":"Open Assignment"))+'</button>'))+
       '</div></div>';
   }).join("")+'</div>' : '<div class="empty-state"><div class="empty-symbol">A</div><h3>No assignments yet.</h3><p>'+(state.role==="instructor"?"Create coursework, readings, written responses, research milestones, or academic exercises.":"Nothing has been assigned in this section yet.")+'</p></div>';
@@ -866,6 +866,80 @@ function openAssignmentModal(existing){
       closeModal(); state.sectionData=await loadSectionData(state.currentSection);renderSectionDetail("assignments");showToast("Assignment saved.");
     }catch(error){showToast(humanizeFirebaseError(error));}
   });
+}
+
+async function deleteRefsInBatches(refs){
+  for(let i=0;i<refs.length;i+=400){
+    const batch=writeBatch(db);
+    refs.slice(i,i+400).forEach(ref=>batch.delete(ref));
+    await batch.commit();
+  }
+}
+
+async function deleteAssignment(assignmentId){
+  const section=state.currentSection;
+  const assignment=state.sectionData.assignments.find(x=>x.id===assignmentId);
+  if(!section||!assignment)return showToast("Assignment not found.");
+
+  try{
+    const [submissionSnap,gradeSnap,appealSnap,portfolioSnap]=await Promise.all([
+      getDocs(collection(db,"sections",section.id,"assignments",assignmentId,"submissions")),
+      getDocs(collection(db,"sections",section.id,"grades")),
+      getDocs(collection(db,"sections",section.id,"appeals")),
+      getDocs(collection(db,"sections",section.id,"portfolios"))
+    ]);
+
+    const gradeDocs=gradeSnap.docs.filter(d=>d.data().assignmentId===assignmentId);
+    const unresolvedAppeals=appealSnap.docs.filter(d=>{
+      const a=d.data();
+      return a.targetType==="Coursework"&&a.targetId===assignmentId&&![ "Resolved","Denied","Withdrawn" ].includes(a.status);
+    });
+
+    if(unresolvedAppeals.length){
+      return showToast("Resolve the open grade appeal"+(unresolvedAppeals.length===1?"":"s")+" for this assignment before deleting it.");
+    }
+
+    const submissions=submissionSnap.docs;
+    const hasAcademicData=submissions.length>0||gradeDocs.length>0;
+    const modal=openModal({
+      eyebrow:"Delete Assignment",
+      title:assignment.title,
+      body:'<div class="delete-assessment-warning"><div class="delete-warning-icon">!</div><div><strong>This permanently removes the assignment from this section.</strong><p>Student submission records and gradebook entries tied to this assignment will also be removed. Existing certified academic-record history is not rewritten.</p></div></div>'+
+        '<div class="detail-list" style="margin-top:16px"><div><span>Submissions / Drafts</span><strong>'+submissions.length+'</strong></div><div><span>Gradebook Entries</span><strong>'+gradeDocs.length+'</strong></div><div><span>Portfolio Records Checked</span><strong>'+portfolioSnap.docs.length+'</strong></div></div>'+
+        (hasAcademicData?'<div class="notice danger-notice" style="margin-top:16px">This assignment contains student academic data. Type <strong>DELETE</strong> to confirm permanent removal.</div><div class="field" style="margin-top:14px"><label>Confirmation</label><input id="deleteAssignmentConfirm" autocomplete="off" placeholder="Type DELETE"></div>':'<div class="notice" style="margin-top:16px">No student submission or grade data is attached to this assignment.</div>'),
+      footer:'<button class="secondary-btn" data-close-modal>Cancel</button><button class="danger-btn" id="confirmDeleteAssignment" '+(hasAcademicData?'disabled':'')+'>Delete Assignment</button>'
+    });
+
+    const button=modal.querySelector("#confirmDeleteAssignment"),input=modal.querySelector("#deleteAssignmentConfirm");
+    if(input)input.addEventListener("input",()=>button.disabled=input.value.trim()!=="DELETE");
+    button.onclick=async()=>{
+      button.disabled=true;button.textContent="Deleting…";
+      try{
+        await deleteRefsInBatches([...submissions.map(d=>d.ref),...gradeDocs.map(d=>d.ref)]);
+
+        // Remove stale featured-work references while preserving the rest of each portfolio.
+        for(const p of portfolioSnap.docs){
+          const data=p.data(),works=Array.isArray(data.featuredWorks)?data.featuredWorks:[];
+          if(works.some(w=>w.type==="Coursework"&&w.id===assignmentId)){
+            await updateDoc(p.ref,{
+              featuredWorks:works.filter(w=>!(w.type==="Coursework"&&w.id===assignmentId)),
+              updatedAt:serverTimestamp()
+            });
+          }
+        }
+
+        await deleteDoc(doc(db,"sections",section.id,"assignments",assignmentId));
+        closeModal();
+        window.TheoriaPhase4?.invalidate?.(section.id);
+        state.sectionData=await loadSectionData(section);
+        renderSectionDetail("assignments");
+        showToast("Assignment deleted.");
+      }catch(error){
+        button.disabled=false;button.textContent="Delete Assignment";
+        showToast(humanizeFirebaseError(error));
+      }
+    };
+  }catch(error){showToast(humanizeFirebaseError(error));}
 }
 
 async function openStudentAssignmentModal(assignmentId){
@@ -1273,6 +1347,7 @@ document.addEventListener("click",async event=>{
   if(action==="section-tab") return renderSectionDetail(btn.dataset.tab);
   if(action==="create-assignment") return openAssignmentModal();
   if(action==="edit-assignment") return openAssignmentModal(state.sectionData.assignments.find(x=>x.id===btn.dataset.id));
+  if(action==="delete-assignment") return deleteAssignment(btn.dataset.id);
   if(action==="open-student-assignment") return openStudentAssignmentModal(btn.dataset.id);
   if(action==="assignment-submissions") return openAssignmentSubmissionsModal(btn.dataset.id);
   if(action==="review-assignment-submission") return openAssignmentSubmissionReview(btn.dataset.assignment,btn.dataset.student);
