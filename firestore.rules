@@ -262,8 +262,12 @@ service cloud.firestore {
               'marked',
               'currentIndex',
               'elapsedSeconds',
+              'questionOrder',
+              'acknowledgedAt',
               'accommodationsApplied'
             ])
+            && request.resource.data.startedAt == request.time
+            && request.resource.data.acknowledgedAt == request.time
           );
 
         allow update: if assessmentOwner(assessmentId)
