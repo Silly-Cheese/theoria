@@ -55,6 +55,45 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/sections/$(sectionId)/members/$(uid()));
     }
 
+    function sectionMemberAfter(sectionId) {
+      return signedIn()
+        && existsAfter(/databases/$(database)/documents/sections/$(sectionId)/members/$(uid()));
+    }
+
+    function assessmentData(assessmentId) {
+      return get(/databases/$(database)/documents/assessments/$(assessmentId)).data;
+    }
+
+    function assessmentOwner(assessmentId) {
+      return signedIn() && assessmentData(assessmentId).ownerId == uid();
+    }
+
+    function assessmentMember(assessmentId) {
+      return signedIn() && sectionMember(assessmentData(assessmentId).sectionId);
+    }
+
+    function assessmentOpen(assessmentId) {
+      return assessmentMember(assessmentId)
+        && assessmentData(assessmentId).status == 'Published'
+        && (
+          assessmentData(assessmentId).opensAt == null
+          || request.time >= assessmentData(assessmentId).opensAt
+        )
+        && (
+          assessmentData(assessmentId).closesAt == null
+          || request.time <= assessmentData(assessmentId).closesAt
+        );
+    }
+
+    function gradingSelectionOpen(sectionId) {
+      return sectionMember(sectionId)
+        && get(/databases/$(database)/documents/sections/$(sectionId)).data.gradingPolicy.selectionOpen == true
+        && (
+          get(/databases/$(database)/documents/sections/$(sectionId)).data.gradingPolicy.selectionDeadline == null
+          || request.time <= get(/databases/$(database)/documents/sections/$(sectionId)).data.gradingPolicy.selectionDeadline
+        );
+    }
+
     match /users/{userId} {
       allow create: if isSelf(userId)
         && (
@@ -72,7 +111,8 @@ service cloud.firestore {
       allow delete: if false;
 
       match /enrollments/{sectionId} {
-        allow read, create, update, delete: if isSelf(userId);
+        allow read, delete: if isSelf(userId);
+        allow create, update: if isSelf(userId) && sectionMemberAfter(sectionId);
       }
     }
 
@@ -105,6 +145,10 @@ service cloud.firestore {
         allow read: if signedIn();
         allow create, update, delete: if courseOwner(courseId);
       }
+
+      match /items/{itemId} {
+        allow read, create, update, delete: if courseOwner(courseId);
+      }
     }
 
     match /sections/{sectionId} {
@@ -119,8 +163,7 @@ service cloud.firestore {
           && request.resource.data.userId == uid()
           && request.resource.data.role == 'student'
           && get(/databases/$(database)/documents/sections/$(sectionId)).data.joinOpen == true;
-        allow update: if sectionOwner(sectionId)
-          || (isSelf(userId) && request.resource.data.role == resource.data.role);
+        allow update: if sectionOwner(sectionId);
         allow delete: if sectionOwner(sectionId) || isSelf(userId);
       }
 
@@ -140,6 +183,33 @@ service cloud.firestore {
           || (sectionMember(sectionId) && resource.data.studentId == uid());
         allow create, update, delete: if sectionOwner(sectionId);
       }
+
+      match /assessmentRefs/{assessmentId} {
+        allow read: if sectionOwner(sectionId) || sectionMember(sectionId);
+        allow create, update, delete: if sectionOwner(sectionId);
+      }
+
+      match /gradingPathways/{userId} {
+        allow read: if sectionOwner(sectionId) || isSelf(userId);
+        allow create, update: if sectionOwner(sectionId)
+          || (
+            isSelf(userId)
+            && gradingSelectionOpen(sectionId)
+            && request.resource.data.studentId == uid()
+            && request.resource.data.pathway in ['examination', 'composite']
+          );
+        allow delete: if sectionOwner(sectionId);
+      }
+
+      match /assessmentGrades/{gradeId} {
+        allow read: if sectionOwner(sectionId)
+          || (
+            sectionMember(sectionId)
+            && resource.data.studentId == uid()
+            && resource.data.released == true
+          );
+        allow create, update, delete: if sectionOwner(sectionId);
+      }
     }
 
     match /joinCodes/{code} {
@@ -151,6 +221,89 @@ service cloud.firestore {
         && request.resource.data.sectionId == resource.data.sectionId;
       allow delete: if isInstructor()
         && sectionOwner(resource.data.sectionId);
+    }
+
+    match /assessments/{assessmentId} {
+      allow read: if assessmentOwner(assessmentId)
+        || (
+          assessmentMember(assessmentId)
+          && resource.data.status in ['Published', 'Closed']
+        );
+      allow create: if isInstructor()
+        && request.resource.data.ownerId == uid()
+        && sectionOwner(request.resource.data.sectionId);
+      allow update, delete: if assessmentOwner(assessmentId);
+
+      match /questions/{questionId} {
+        allow read: if assessmentOwner(assessmentId) || assessmentOpen(assessmentId);
+        allow create, update, delete: if assessmentOwner(assessmentId);
+      }
+
+      match /keys/{questionId} {
+        allow read, create, update, delete: if assessmentOwner(assessmentId);
+      }
+
+      match /submissions/{studentId} {
+        allow read: if assessmentOwner(assessmentId) || isSelf(studentId);
+
+        allow create: if assessmentOwner(assessmentId)
+          || (
+            isSelf(studentId)
+            && assessmentOpen(assessmentId)
+            && request.resource.data.studentId == uid()
+            && request.resource.data.status == 'in_progress'
+            && request.resource.data.keys().hasOnly([
+              'studentId',
+              'candidateNumber',
+              'status',
+              'startedAt',
+              'updatedAt',
+              'answers',
+              'marked',
+              'currentIndex',
+              'elapsedSeconds',
+              'accommodationsApplied'
+            ])
+          );
+
+        allow update: if assessmentOwner(assessmentId)
+          || (
+            isSelf(studentId)
+            && assessmentOpen(assessmentId)
+            && resource.data.status == 'in_progress'
+            && request.resource.data.studentId == uid()
+            && request.resource.data.candidateNumber == resource.data.candidateNumber
+            && request.resource.data.status in ['in_progress', 'submitted']
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'answers',
+              'marked',
+              'currentIndex',
+              'elapsedSeconds',
+              'status',
+              'submittedAt',
+              'updatedAt'
+            ])
+          );
+
+        allow delete: if assessmentOwner(assessmentId);
+
+        match /events/{eventId} {
+          allow read: if assessmentOwner(assessmentId) || isSelf(studentId);
+          allow create: if isSelf(studentId)
+            && assessmentMember(assessmentId)
+            && request.resource.data.studentId == uid();
+          allow update, delete: if false;
+        }
+      }
+
+      match /results/{studentId} {
+        allow read: if assessmentOwner(assessmentId)
+          || (
+            isSelf(studentId)
+            && resource.data.released == true
+          );
+        allow create, update, delete: if assessmentOwner(assessmentId);
+      }
     }
 
     match /{document=**} {
