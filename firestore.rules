@@ -85,6 +85,12 @@ service cloud.firestore {
         );
     }
 
+    function hasActiveSubmission(assessmentId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/assessments/$(assessmentId)/submissions/$(uid()))
+        && get(/databases/$(database)/documents/assessments/$(assessmentId)/submissions/$(uid())).data.status == 'in_progress';
+    }
+
     function gradingSelectionOpen(sectionId) {
       return sectionMember(sectionId)
         && get(/databases/$(database)/documents/sections/$(sectionId)).data.gradingPolicy.selectionOpen == true
@@ -235,7 +241,8 @@ service cloud.firestore {
       allow update, delete: if assessmentOwner(assessmentId);
 
       match /questions/{questionId} {
-        allow read: if assessmentOwner(assessmentId) || assessmentOpen(assessmentId);
+        allow read: if assessmentOwner(assessmentId)
+          || (assessmentOpen(assessmentId) && hasActiveSubmission(assessmentId));
         allow create, update, delete: if assessmentOwner(assessmentId);
       }
 
