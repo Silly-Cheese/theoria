@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="12" fill="#191817"/>
+  <circle cx="32" cy="32" r="22" fill="none" stroke="#A88948" stroke-width="2"/>
+  <circle cx="32" cy="32" r="17" fill="none" stroke="#3A352F" stroke-width="1"/>
+  <text x="32" y="43" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="34" fill="#F6F2E8">Θ</text>
+</svg>
