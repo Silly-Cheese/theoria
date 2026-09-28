@@ -185,6 +185,37 @@ service cloud.firestore {
         allow read: if sectionOwner(sectionId)
           || (sectionMember(sectionId) && resource.data.status == 'Published');
         allow create, update, delete: if sectionOwner(sectionId);
+
+        match /submissions/{studentId} {
+          allow read: if sectionOwner(sectionId) || isSelf(studentId);
+          allow create: if isSelf(studentId)
+            && sectionMember(sectionId)
+            && get(/databases/$(database)/documents/sections/$(sectionId)/assignments/$(assignmentId)).data.status == 'Published'
+            && request.resource.data.studentId == uid()
+            && request.resource.data.status in ['draft', 'submitted'];
+          allow update: if sectionOwner(sectionId)
+            || (
+              isSelf(studentId)
+              && sectionMember(sectionId)
+              && get(/databases/$(database)/documents/sections/$(sectionId)/assignments/$(assignmentId)).data.status == 'Published'
+              && request.resource.data.studentId == uid()
+              && request.resource.data.studentId == resource.data.studentId
+              && request.resource.data.status in ['draft', 'submitted']
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                'responseText',
+                'responseUrl',
+                'status',
+                'submittedAt',
+                'updatedAt',
+                'studentName'
+              ])
+            );
+          allow delete: if sectionOwner(sectionId)
+            || (
+              isSelf(studentId)
+              && resource.data.status == 'draft'
+            );
+        }
       }
 
       match /resources/{resourceId} {
@@ -333,8 +364,6 @@ service cloud.firestore {
               'acknowledgedAt',
               'accommodationsApplied'
             ])
-            && request.resource.data.startedAt == request.time
-            && request.resource.data.acknowledgedAt == request.time
           );
 
         allow update: if assessmentOwner(assessmentId)
