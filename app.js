@@ -2823,6 +2823,8 @@ window.TheoriaCore = {
   placementDataFromValue,
   resolveFrameworkPlacement,
   unitFolderGroups,
+  canManageCourse,
+  isOfficialCatalogCourse,
   reloadCurrentSection:async(tab="overview")=>{
     if(!state.currentSection) return;
     state.sectionData=await loadSectionData(state.currentSection);
