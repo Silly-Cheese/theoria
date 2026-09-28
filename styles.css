@@ -1140,3 +1140,246 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .avg-sticky{width:88px!important;min-width:88px!important;max-width:88px!important}
   .coursework-avg-col{right:88px!important}
 }
+
+
+/* Student assessment preview + results */
+.student-assessment-card .student-card-type-list{
+  display:flex;
+  flex-wrap:wrap;
+  gap:5px;
+  margin:10px 0 2px
+}
+.student-card-type-list span{
+  display:inline-flex;
+  align-items:center;
+  min-height:24px;
+  padding:4px 7px;
+  border:1px solid var(--line);
+  border-radius:999px;
+  background:#faf8f3;
+  font-size:7px;
+  font-weight:700;
+  color:var(--slate)
+}
+
+.student-assessment-preview{display:grid;gap:15px}
+.assessment-preview-guard{
+  display:grid;
+  grid-template-columns:40px 1fr;
+  gap:12px;
+  align-items:center;
+  padding:13px 14px;
+  border:1px solid #d8cfbf;
+  border-left:3px solid var(--gold);
+  border-radius:8px;
+  background:#fbf8f0
+}
+.preview-lock{
+  display:grid;
+  place-items:center;
+  width:36px;
+  height:36px;
+  border-radius:50%;
+  border:1px solid #bca36d;
+  color:var(--burgundy);
+  font-family:"Libre Baskerville",serif;
+  font-size:16px
+}
+.assessment-preview-guard strong{display:block;font-size:10px}
+.assessment-preview-guard span{display:block;margin-top:3px;font-size:8px;line-height:1.5;color:var(--muted)}
+.assessment-preview-summary{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  border:1px solid var(--line);
+  border-radius:8px;
+  overflow:hidden;
+  background:#fff
+}
+.assessment-preview-summary>div{padding:12px 13px;border-right:1px solid var(--line)}
+.assessment-preview-summary>div:last-child{border-right:0}
+.assessment-preview-summary span{
+  display:block;
+  font-size:7px;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  color:var(--muted)
+}
+.assessment-preview-summary strong{
+  display:block;
+  margin-top:4px;
+  font-family:"Libre Baskerville",serif;
+  font-size:14px;
+  font-weight:400
+}
+.student-preview-section{
+  padding:14px 15px;
+  border:1px solid var(--line);
+  border-radius:8px;
+  background:#fff
+}
+.student-preview-section .panel-title{margin-bottom:10px}
+.assessment-type-breakdown{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(145px,1fr));
+  gap:8px
+}
+.assessment-type-breakdown>div{
+  padding:10px 11px;
+  border:1px solid var(--line);
+  border-radius:7px;
+  background:#faf9f6
+}
+.assessment-type-breakdown span{display:block;font-size:8px;color:var(--slate)}
+.assessment-type-breakdown strong{
+  display:block;
+  margin-top:4px;
+  font-family:"Libre Baskerville",serif;
+  font-size:18px;
+  font-weight:400;
+  color:var(--burgundy)
+}
+.assessment-type-breakdown small{display:block;margin-top:2px;font-size:7px;color:var(--muted)}
+.preview-blueprint-list{display:grid;gap:6px}
+.preview-blueprint-list>div{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:8px 10px;
+  border-bottom:1px solid var(--line)
+}
+.preview-blueprint-list>div:last-child{border-bottom:0}
+.preview-blueprint-list span{font-size:9px;color:var(--slate)}
+.preview-blueprint-list strong{font-size:9px;color:var(--burgundy)}
+.preview-instructions{display:grid;gap:8px}
+.preview-instructions>div{
+  display:grid;
+  grid-template-columns:28px 1fr;
+  gap:9px;
+  align-items:start
+}
+.preview-instructions>div>span{
+  display:grid;
+  place-items:center;
+  width:26px;
+  height:26px;
+  border-radius:50%;
+  background:#f0ebe3;
+  color:var(--burgundy);
+  font-size:7px;
+  font-weight:800
+}
+.preview-instructions p{margin:3px 0 0;font-size:9px;line-height:1.55;color:var(--slate)}
+
+.student-results-shell{
+  max-width:1050px;
+  margin:0 auto;
+  padding:28px 24px 52px
+}
+.student-results-hero{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:24px;
+  margin-top:14px;
+  padding:20px 22px;
+  border:1px solid var(--line);
+  border-radius:10px;
+  background:#fff
+}
+.student-results-hero h1{
+  margin:5px 0 7px;
+  font-family:"Libre Baskerville",serif;
+  font-size:27px;
+  font-weight:400
+}
+.student-results-hero p{max-width:650px;margin:0;font-size:9px;line-height:1.55;color:var(--muted)}
+.result-score-mark{
+  flex:0 0 auto;
+  min-width:150px;
+  padding:16px 18px;
+  text-align:center;
+  border:1px solid #d9c7cb;
+  border-radius:9px;
+  background:#fbf2f4
+}
+.result-score-mark strong{
+  display:block;
+  font-family:"Libre Baskerville",serif;
+  font-size:30px;
+  font-weight:400;
+  color:var(--burgundy)
+}
+.result-score-mark span{display:block;margin-top:5px;font-size:8px;color:var(--muted)}
+.student-result-meta{margin:14px 0}
+.student-result-section{
+  margin-top:16px;
+  padding:16px 17px;
+  border:1px solid var(--line);
+  border-radius:9px;
+  background:#fff
+}
+.student-result-section .panel-title{margin-bottom:10px}
+.student-result-note{margin:-4px 0 12px;font-size:8px;line-height:1.45;color:var(--muted)}
+.result-domain-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+  gap:8px
+}
+.result-domain-grid>div{
+  padding:11px 12px;
+  border:1px solid var(--line);
+  border-radius:7px;
+  background:#faf8f4
+}
+.result-domain-grid span{display:block;font-size:8px;color:var(--slate)}
+.result-domain-grid strong{
+  display:block;
+  margin-top:4px;
+  font-family:"Libre Baskerville",serif;
+  font-size:17px;
+  font-weight:400;
+  color:var(--burgundy)
+}
+.result-domain-grid small{display:block;margin-top:2px;font-size:7px;color:var(--muted)}
+.student-result-question-list{display:grid;gap:7px}
+.student-result-question{
+  display:grid;
+  grid-template-columns:34px 1fr;
+  gap:10px;
+  padding:10px 11px;
+  border:1px solid var(--line);
+  border-radius:7px;
+  background:#fbfaf7
+}
+.result-question-number{
+  display:grid;
+  place-items:center;
+  width:30px;
+  height:30px;
+  border-radius:50%;
+  background:#eee8de;
+  color:var(--burgundy);
+  font-family:"Libre Baskerville",serif;
+  font-size:9px
+}
+.student-result-question span{display:block;font-size:7px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+.student-result-question strong{display:block;margin-top:3px;font-size:10px}
+.student-result-question p{margin:5px 0 0;font-size:8px;line-height:1.5;color:var(--slate)}
+.student-results-actions{
+  display:flex;
+  justify-content:flex-end;
+  gap:8px;
+  margin-top:18px
+}
+
+@media(max-width:700px){
+  .assessment-preview-summary{grid-template-columns:1fr 1fr}
+  .assessment-preview-summary>div:nth-child(2){border-right:0}
+  .assessment-preview-summary>div:nth-child(-n+2){border-bottom:1px solid var(--line)}
+  .student-results-shell{padding:18px 14px 36px}
+  .student-results-hero{flex-direction:column}
+  .result-score-mark{width:100%}
+  .student-results-actions{flex-direction:column}
+  .student-results-actions .primary-btn,.student-results-actions .secondary-btn{width:100%}
+}
