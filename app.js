@@ -193,11 +193,11 @@ function renderHome(){
   $("#homeStats").innerHTML = state.role === "instructor"
     ? '<div class="stat"><div class="stat-label">Active Sections</div><div class="stat-value">'+count+'</div><div class="stat-note">Teaching spaces</div></div>'+
       '<div class="stat"><div class="stat-label">Course Frameworks</div><div class="stat-value">'+state.courses.length+'</div><div class="stat-note">Reusable curricula</div></div>'+
-      '<div class="stat"><div class="stat-label">Assessment Engine</div><div class="stat-value">III</div><div class="stat-note">Next generation phase</div></div>'+
+      '<div class="stat"><div class="stat-label">Assessment Engine</div><div class="stat-value">Live</div><div class="stat-note">Phase 3 active</div></div>'+
       '<div class="stat"><div class="stat-label">Academic Records</div><div class="stat-value">IV</div><div class="stat-note">Certification phase</div></div>'
     : '<div class="stat"><div class="stat-label">Enrolled Sections</div><div class="stat-value">'+count+'</div><div class="stat-note">Current courses</div></div>'+
       '<div class="stat"><div class="stat-label">Course Frameworks</div><div class="stat-value">'+state.courses.length+'</div><div class="stat-note">Available through sections</div></div>'+
-      '<div class="stat"><div class="stat-label">Current Mastery</div><div class="stat-value">—</div><div class="stat-note">Evidence begins in Phase 3</div></div>'+
+      '<div class="stat"><div class="stat-label">Current Mastery</div><div class="stat-value">—</div><div class="stat-note">Analytics arrive in Phase 4</div></div>'+
       '<div class="stat"><div class="stat-label">Final Record</div><div class="stat-value">—</div><div class="stat-note">Not yet certified</div></div>';
 
   $("#homeSections").innerHTML = state.sections.length
@@ -207,7 +207,7 @@ function renderHome(){
   $("#homeAttention").innerHTML = '<div class="attention-list">'+
     '<div class="attention-item"><div class="attention-number">'+state.sections.length+'</div><div class="attention-copy"><strong>'+ (state.role==="instructor"?"Teaching sections":"Current sections") +'</strong><span>'+ (state.sections.length?"Open a section to review its framework, work, and records.":"No sections require attention yet.") +'</span></div></div>'+
     '<div class="attention-item"><div class="attention-number">'+state.courses.length+'</div><div class="attention-copy"><strong>Course frameworks</strong><span>Units, topics, objectives, essential knowledge, and competencies are managed here.</span></div></div>'+
-    '<div class="attention-item"><div class="attention-number">III</div><div class="attention-copy"><strong>Formal examinations</strong><span>Semester and comprehensive examination workflows arrive in Phase 3.</span></div></div>'+
+    '<div class="attention-item"><div class="attention-number">✓</div><div class="attention-copy"><strong>Formal examinations</strong><span>Semester and comprehensive examination workflows are active.</span></div></div>'+
   '</div>';
 }
 
@@ -562,7 +562,7 @@ function renderGradebook(){
   const assignments=state.sectionData.assignments.filter(a=>a.status!=="Draft");
   if(!students.length || !assignments.length) return '<div class="empty-state"><div class="empty-symbol">G</div><h3>Gradebook waiting for data.</h3><p>Add at least one published assignment and enroll at least one student.</p></div>';
   const gradeMap=new Map(state.sectionData.grades.map(g=>[g.assignmentId+"_"+g.studentId,g]));
-  return '<div class="notice">Click any score cell to enter or revise a grade. Phase 3 will add rubric scoring and assessment-domain results.</div><div class="data-table-wrap"><table class="data-table"><thead><tr><th>Student</th>'+assignments.map(a=>'<th>'+esc(a.title)+'<span class="grade-sub">'+esc(a.points)+' pts</span></th>').join("")+'<th>Average</th></tr></thead><tbody>'+students.map(s=>{
+  return '<div class="notice">Click any score cell to enter or revise an ordinary coursework grade. Formal assessment rubrics and examination-domain grading are available in Assessments.</div><div class="data-table-wrap"><table class="data-table"><thead><tr><th>Student</th>'+assignments.map(a=>'<th>'+esc(a.title)+'<span class="grade-sub">'+esc(a.points)+' pts</span></th>').join("")+'<th>Average</th></tr></thead><tbody>'+students.map(s=>{
     let earned=0,possible=0;
     const cells=assignments.map(a=>{
       const g=gradeMap.get(a.id+"_"+s.id);
