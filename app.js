@@ -298,7 +298,7 @@ function openSectionModal(existing){
       '<div class="field"><label>Academic Term</label><input name="term" placeholder="Fall 2026" value="'+esc(existing?.term||"")+'" required></div>'+
       '<div class="field span-2"><label>Section Name</label><input name="sectionName" placeholder="Advanced Christian Apologetics — Section 001" value="'+esc(existing?.sectionName||"")+'"></div>'+
       '<div class="field"><label>Format</label><select name="format"><option>In Person</option><option>Online</option><option>Hybrid</option><option>Self-Paced</option></select></div>'+
-      '<div class="field"><label>Enrollment</label><select name="joinOpen"><option value="true">Join Code — Open</option><option value="false">Instructor Enrollment Only</option></select></div>'+
+      '<div class="field"><label>Enrollment</label><select name="joinOpen"><option value="true">Join Code — Open</option><option value="false">Enrollment Closed</option></select></div>'+
       '<div class="field"><label>Start Date</label><input type="date" name="startDate" value="'+esc(existing?.startDate||"")+'"></div>'+
       '<div class="field"><label>End Date</label><input type="date" name="endDate" value="'+esc(existing?.endDate||"")+'"></div>'+
     '</div><div class="modal-foot" style="margin:24px -24px -24px"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">'+(editing?"Save Changes":"Create Section")+'</button></div></form>'
