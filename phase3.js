@@ -912,14 +912,37 @@ async function chooseAssessmentForSection(sectionId){
   const section=state().sections.find(x=>x.id===sectionId)||state().currentSection;
   const templates=P3.assessments.filter(a=>!a.sectionId&&a.courseId===section.courseId);
   if(!templates.length)return toast("No reusable assessment templates exist for this course yet. Create one in Assessments and add Question Bank questions first.");
+
+  const assignedForSection=P3.assessments.filter(a=>a.sectionId===section.id);
   const modal=core().openModal({
     eyebrow:"Assign Assessment",
-    title:"Choose a Reusable Assessment",
+    title:"Choose Assessment for "+section.sectionName,
     wide:true,
-    body:'<form id="chooseAssessmentForm"><div class="template-choice-list">'+templates.map((a,i)=>'<label class="template-choice"><input type="radio" name="assessmentId" value="'+a.id+'" '+(i===0?'checked':'')+'><div><span>'+esc(a.type)+'</span><strong>'+esc(a.title)+'</strong><small>'+esc(a.questionCount||0)+' questions • '+esc(a.totalPoints||0)+' points</small></div></label>').join("")+'</div><div class="modal-foot" style="margin:24px -24px -24px"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Continue</button></div></form>'
+    body:'<form id="chooseAssessmentForm" class="academic-form">'+
+      '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Reusable Assessments</h3><p>Select a course template to create an independent copy for this section.</p></div><div class="assignment-preview-stats compact"><div><strong>'+templates.length+'</strong><span>Templates</span></div><div><strong>'+assignedForSection.length+'</strong><span>Already Assigned</span></div></div></div>'+
+      '<div class="question-bank-toolbar"><div class="field"><label>Search Assessments</label><input id="templateSearch" placeholder="Search title or assessment type"></div><div class="field"><label>Type</label><select id="templateType"><option value="">All types</option>'+[...new Set(templates.map(x=>x.type).filter(Boolean))].sort().map(x=>'<option value="'+esc(x)+'">'+esc(x)+'</option>').join("")+'</select></div></div>'+
+      '<div id="templateChoiceList" class="template-choice-list"></div></section>'+
+      '<div class="assignment-copy-note"><strong>Nothing is published yet.</strong><span>After choosing a template, you will set the destination schedule and decide whether to save it as Draft or publish immediately.</span></div>'+
+      '<div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Continue to Assignment</button></div></form>'
   });
-  modal.querySelector("#chooseAssessmentForm").onsubmit=e=>{
-    e.preventDefault();const id=new FormData(e.currentTarget).get("assessmentId");core().closeModal();assignAssessmentModal(String(id),sectionId);
+  const form=modal.querySelector("#chooseAssessmentForm"),list=modal.querySelector("#templateChoiceList"),search=modal.querySelector("#templateSearch"),type=modal.querySelector("#templateType");
+  let selectedId=templates[0]?.id||"";
+  const render=()=>{
+    const q=search.value.trim().toLowerCase(),t=type.value;
+    const rows=templates.filter(a=>(!t||a.type===t)&&(!q||[a.title,a.type,a.courseCode].join(" ").toLowerCase().includes(q)));
+    if(rows.length&&!rows.some(x=>x.id===selectedId))selectedId=rows[0].id;
+    list.innerHTML=rows.length?rows.map(a=>{
+      const assignedCount=P3.assessments.filter(x=>x.templateSourceId===a.id).length;
+      return '<label class="template-choice rich '+(selectedId===a.id?'selected':'')+'"><input type="radio" name="assessmentId" value="'+a.id+'" '+(selectedId===a.id?'checked':'')+'><div><span>'+esc(a.type)+'</span><strong>'+esc(a.title)+'</strong><small>'+esc(a.questionCount||0)+' questions • '+esc(a.totalPoints||0)+' points • '+esc(a.durationMinutes||0)+' min'+(assignedCount?' • assigned '+assignedCount+' time'+(assignedCount===1?"":"s"):'')+'</small></div><div class="template-choice-arrow">→</div></label>';
+    }).join(""):'<div class="empty-state compact-empty"><div class="empty-symbol">A</div><h3>No matching assessment templates.</h3><p>Adjust the search or filter.</p></div>';
+    list.querySelectorAll('input[name="assessmentId"]').forEach(input=>input.onchange=()=>{selectedId=input.value;render();});
+  };
+  search.oninput=render;type.onchange=render;render();
+  form.onsubmit=e=>{
+    e.preventDefault();
+    const id=form.querySelector('input[name="assessmentId"]:checked')?.value;
+    if(!id)return toast("Choose an assessment template.");
+    core().closeModal();assignAssessmentModal(String(id),sectionId);
   };
 }
 
