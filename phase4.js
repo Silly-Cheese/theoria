@@ -87,7 +87,7 @@ async function loadSectionBundle(sectionId,{deep=false}={}){
     const gets=await Promise.all([
       getDoc(doc(db,"sections",sectionId,"members",uid)),
       getDocs(query(collection(db,"sections",sectionId,"grades"),where("studentId","==",uid))),
-      getDocs(query(collection(db,"sections",sectionId,"assessmentGrades"),where("studentId","==",uid))),
+      getDocs(query(collection(db,"sections",sectionId,"assessmentGrades"),where("studentId","==",uid),where("released","==",true))),
       getDoc(doc(db,"sections",sectionId,"gradingPathways",uid)),
       getDoc(doc(db,"sections",sectionId,"academicRecords",uid)),
       getDoc(doc(db,"sections",sectionId,"mastery",uid)),
