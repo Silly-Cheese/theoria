@@ -909,14 +909,24 @@ async function addItemsModal(){
   modal.querySelector("#addItemsForm").addEventListener("submit",async e=>{
     e.preventDefault();
     const fd=new FormData(e.currentTarget),ids=fd.getAll("item");if(!ids.length)return toast("Select at least one item.");
-    const batch=writeBatch(db),questionIds=P3.detail.questions.map(q=>q.id);let order=P3.detail.questions.length,total=Number(a.totalPoints||0);
+    const batch=writeBatch(db),questionIds=P3.detail.questions.map(q=>q.id);
+    const questionPool=(a.questionPool?.length?a.questionPool:P3.detail.questions.map(q=>({id:q.id,itemId:q.itemId||"",type:q.type,points:Number(q.points||0)}))).map(x=>({...x}));
+    let order=P3.detail.questions.length,total=Number(a.totalPoints||0);
     for(const id of ids){
       const item=available.find(x=>x.id===id);if(!item)continue;
-      const ref=doc(collection(db,"assessments",a.id,"questions"));order++;questionIds.push(ref.id);total+=Number(item.pointsDefault||1);
-      batch.set(ref,{itemId:item.id,order,partId:String(fd.get("partId")),type:item.type,prompt:item.prompt,stimulus:item.stimulus||"",sourceTitle:item.sourceTitle||"",options:item.options||[],points:Number(item.pointsDefault||1),topicId:item.topicId||"",topicTitle:item.topicTitle||"",topicNumber:item.topicNumber||"",competencyIds:item.competencyIds||[],competencyCodes:item.competencyCodes||[],createdAt:serverTimestamp()});
+      const ref=doc(collection(db,"assessments",a.id,"questions"));order++;questionIds.push(ref.id);
+      const points=Number(item.pointsDefault||1);
+      if(!a.randomDrawEnabled)total+=points;
+      questionPool.push({id:ref.id,itemId:item.id,type:item.type,points});
+      batch.set(ref,{itemId:item.id,order,partId:String(fd.get("partId")),type:item.type,prompt:item.prompt,stimulus:item.stimulus||"",sourceTitle:item.sourceTitle||"",options:item.options||[],points,topicId:item.topicId||"",topicTitle:item.topicTitle||"",topicNumber:item.topicNumber||"",competencyIds:item.competencyIds||[],competencyCodes:item.competencyCodes||[],createdAt:serverTimestamp()});
       batch.set(doc(db,"assessments",a.id,"keys",ref.id),{itemId:item.id,correctAnswer:item.correctAnswer??"",explanation:item.explanation||"",rubric:item.rubric||[],createdAt:serverTimestamp()});
     }
-    batch.update(doc(db,"assessments",a.id),{questionIds,questionCount:order,totalPoints:total,updatedAt:serverTimestamp()});
+    batch.update(doc(db,"assessments",a.id),{
+      questionIds,questionPool,poolQuestionCount:questionPool.length,
+      questionCount:a.randomDrawEnabled?Number(a.questionCount||0):order,
+      totalPoints:a.randomDrawEnabled?Number(a.totalPoints||0):total,
+      updatedAt:serverTimestamp()
+    });
     try{await batch.commit();core().closeModal();await openAssessment(a.id,"items");toast("questions added.");}catch(err){toast(err.message||"Unable to add questions.");}
   });
 }
@@ -930,21 +940,52 @@ function configureItemModal(id){
   });
   const form=modal.querySelector("#configureItemForm");form.partId.value=q.partId||a.parts?.[0]?.id;
   form.addEventListener("submit",async e=>{
-    e.preventDefault();const fd=new FormData(form),points=Number(fd.get("points")||0),delta=points-Number(q.points||0),batch=writeBatch(db);
+    e.preventDefault();
+    const fd=new FormData(form),points=Number(fd.get("points")||0),delta=points-Number(q.points||0),batch=writeBatch(db);
+    let questionPool=(a.questionPool?.length?a.questionPool:P3.detail.questions.map(x=>({id:x.id,itemId:x.itemId||"",type:x.type,points:Number(x.points||0)}))).map(x=>({...x}));
+    let randomDrawPlan=(a.randomDrawPlan||[]).map(x=>({...x}));
+    let totalPoints=Number(a.totalPoints||0);
+
+    if(a.randomDrawEnabled){
+      const sameType=P3.detail.questions.filter(x=>x.id!==q.id&&x.type===q.type);
+      const otherPointValues=[...new Set(sameType.map(x=>Number(x.points||0)))];
+      if(otherPointValues.length&&otherPointValues.some(v=>v!==points))return toast("Randomized "+q.type+" questions must all use the same point value.");
+      const planRow=randomDrawPlan.find(row=>row.type===q.type);
+      if(planRow)planRow.pointsPerQuestion=points;
+      questionPool=questionPool.map(x=>x.id===q.id?{...x,points}:x);
+      totalPoints=randomDrawPlan.reduce((n,row)=>n+(Number(row.count||0)*Number(row.pointsPerQuestion||0)),0);
+    }else totalPoints+=delta;
+
     batch.update(doc(db,"assessments",a.id,"questions",id),{partId:String(fd.get("partId")),points,updatedAt:serverTimestamp()});
-    batch.update(doc(db,"assessments",a.id),{totalPoints:Number(a.totalPoints||0)+delta,updatedAt:serverTimestamp()});
-    try{await batch.commit();core().closeModal();await openAssessment(a.id,"items");}catch(err){toast(err.message||"Unable to configure item.");}
+    batch.update(doc(db,"assessments",a.id),{questionPool,randomDrawPlan,totalPoints,updatedAt:serverTimestamp()});
+    try{await batch.commit();core().closeModal();await openAssessment(a.id,"items");}catch(err){toast(err.message||"Unable to configure question.");}
   });
 }
 
 async function removeItem(id){
   const q=P3.detail.questions.find(x=>x.id===id),a=P3.current;if(!q)return;
-  if(!confirm("Remove this item from the assessment? The Question Bank copy remains."))return;
+  if(a.sectionId&&P3.detail.submissions.length)return toast("Questions cannot be removed after a student attempt has been created.");
+  const remaining=P3.detail.questions.filter(x=>x.id!==id);
+  const remainingOfType=remaining.filter(x=>x.type===q.type).length;
+  const planRow=(a.randomDrawPlan||[]).find(row=>row.type===q.type);
+  if(a.randomDrawEnabled&&planRow&&Number(planRow.count||0)>remainingOfType){
+    return toast("Reduce the "+q.type+" random draw count before removing this question.");
+  }
+  if(!confirm("Remove this question from the assessment? The Question Bank copy remains."))return;
+
+  const questionIds=remaining.map(x=>x.id);
+  const questionPool=(a.questionPool?.length?a.questionPool:P3.detail.questions.map(x=>({id:x.id,itemId:x.itemId||"",type:x.type,points:Number(x.points||0)}))).filter(x=>x.id!==id);
+  const randomDrawPlan=(a.randomDrawPlan||[]).map(row=>row.type===q.type?{...row,available:remainingOfType}:row).filter(row=>Number(row.available??1)>0||Number(row.count||0)>0);
+  const questionCount=a.randomDrawEnabled?Number(a.questionCount||0):remaining.length;
+  const totalPoints=a.randomDrawEnabled
+    ? randomDrawPlan.reduce((n,row)=>n+(Number(row.count||0)*Number(row.pointsPerQuestion||0)),0)
+    : remaining.reduce((n,x)=>n+Number(x.points||0),0);
+
   const batch=writeBatch(db);
   batch.delete(doc(db,"assessments",a.id,"questions",id));
   batch.delete(doc(db,"assessments",a.id,"keys",id));
-  batch.update(doc(db,"assessments",a.id),{questionIds:P3.detail.questions.filter(x=>x.id!==id).map(x=>x.id),questionCount:Math.max(0,Number(a.questionCount||1)-1),totalPoints:Math.max(0,Number(a.totalPoints||0)-Number(q.points||0)),updatedAt:serverTimestamp()});
-  try{await batch.commit();await openAssessment(a.id,"items");}catch(err){toast(err.message||"Unable to remove item.");}
+  batch.update(doc(db,"assessments",a.id),{questionIds,questionPool,poolQuestionCount:questionPool.length,randomDrawPlan,questionCount,totalPoints,updatedAt:serverTimestamp()});
+  try{await batch.commit();await openAssessment(a.id,"items");}catch(err){toast(err.message||"Unable to remove question.");}
 }
 
 async function assignAssessmentModal(assessmentId,preferredSectionId=""){
