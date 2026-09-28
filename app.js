@@ -134,6 +134,7 @@ function setPage(page,label){
   $("#breadcrumbCurrent").textContent = label || (active ? active.textContent.trim() : page.charAt(0).toUpperCase()+page.slice(1));
   sidebar.classList.remove("open");
   window.scrollTo({top:0,behavior:"smooth"});
+  window.dispatchEvent(new CustomEvent("theoria:page",{detail:{page,label:label||null}}));
 }
 
 async function loadWorkspace(){
@@ -523,8 +524,8 @@ async function openSection(sectionId,tab="overview"){
 function sectionTabs(active){
   const instructor=state.role==="instructor";
   const tabs=instructor
-    ? [["overview","Overview"],["framework","Course Guide"],["assignments","Assignments"],["resources","Resources"],["students","Students"],["gradebook","Gradebook"]]
-    : [["overview","Overview"],["framework","Course Guide"],["assignments","Assignments"],["resources","Resources"],["grades","Grades"]];
+    ? [["overview","Overview"],["framework","Course Guide"],["assignments","Assignments"],["resources","Resources"],["examinations","Assessments"],["students","Students"],["gradebook","Gradebook"],["grading","Grading Policy"]]
+    : [["overview","Overview"],["framework","Course Guide"],["assignments","Assignments"],["resources","Resources"],["examinations","Assessments"],["grades","Grades"],["pathway","Grading Pathway"]];
   return '<div class="tabs">'+tabs.map(([id,label])=>'<button class="tab-btn '+(active===id?'active':'')+'" data-action="section-tab" data-tab="'+id+'">'+label+'</button>').join("")+'</div>';
 }
 
@@ -553,7 +554,7 @@ function renderResources(){
 function renderStudents(){
   const members=state.sectionData.members;
   if(!members.length) return '<div class="empty-state"><div class="empty-symbol">S</div><h3>No students enrolled.</h3><p>Display the section join code and have students enroll.</p></div>';
-  return '<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Student</th><th>Email</th><th>Joined</th><th>Status</th></tr></thead><tbody>'+members.map(m=>'<tr><td><strong>'+esc(m.displayName||"Student")+'</strong></td><td>'+esc(m.email||"—")+'</td><td>'+esc(formatDate(m.joinedAt))+'</td><td><span class="badge live">Enrolled</span></td></tr>').join("")+'</tbody></table></div>';
+  return '<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Student</th><th>Email</th><th>Joined</th><th>Status</th><th>Assessment Access</th></tr></thead><tbody>'+members.map(m=>'<tr><td><strong>'+esc(m.displayName||"Student")+'</strong></td><td>'+esc(m.email||"—")+'</td><td>'+esc(formatDate(m.joinedAt))+'</td><td><span class="badge live">Enrolled</span></td><td><button class="text-btn" data-phase3-action="accommodations" data-student="'+m.id+'">Accommodations</button></td></tr>').join("")+'</tbody></table></div>';
 }
 
 function renderGradebook(){
@@ -601,11 +602,15 @@ function renderSectionDetail(tab="overview"){
   else if(tab==="students") body=renderStudents();
   else if(tab==="gradebook") body=renderGradebook();
   else if(tab==="grades") body=renderStudentGrades();
+  else if(["examinations","grading","pathway"].includes(tab)) body='<div id="phase3SectionTab"><div class="empty-mini">Loading assessment workspace…</div></div>';
 
   $("#sectionDetail").innerHTML =
     '<button class="text-btn" data-action="back-sections">← Sections</button>'+
     '<div class="detail-hero"><div class="detail-top"><div><div class="eyebrow">'+esc(s.courseCode||"Section")+' • '+esc(s.term||"")+'</div><h1 class="detail-title">'+esc(s.courseTitle||s.sectionName||"Section")+'</h1><div class="detail-meta"><span>'+esc(s.sectionName||("Section "+(s.sectionNumber||"")))+'</span><span>'+esc(s.instructorName||"")+'</span><span>'+esc(s.startDate?formatDate(s.startDate)+" – "+formatDate(s.endDate):s.format||"")+'</span></div></div>'+(instructor?'<button class="secondary-btn small-btn" data-action="edit-section">Edit Section</button>':'')+'</div></div>'+
     sectionTabs(tab)+'<div id="sectionTabBody">'+body+'</div>';
+  if(["examinations","grading","pathway"].includes(tab) && window.TheoriaPhase3?.renderSectionTab){
+    window.TheoriaPhase3.renderSectionTab(tab);
+  }
 }
 
 function openAssignmentModal(existing){
@@ -799,6 +804,25 @@ $("#joinCodeBtn").addEventListener("click",()=>previewJoin($("#joinCodeInput").v
 $("#joinCodeInput").addEventListener("input",e=>{e.target.value=e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g,"");});
 $("#joinCodeInput").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();previewJoin(e.target.value);}});
 
+window.TheoriaCore = {
+  getState:()=>state,
+  setPage,
+  showToast,
+  openModal,
+  closeModal,
+  esc,
+  formatDate,
+  loadWorkspace,
+  openSection,
+  loadSectionData,
+  renderSectionDetail,
+  reloadCurrentSection:async(tab="overview")=>{
+    if(!state.currentSection) return;
+    state.sectionData=await loadSectionData(state.currentSection);
+    renderSectionDetail(tab);
+  }
+};
+
 document.addEventListener("click",async event=>{
   const close=event.target.closest("[data-close-modal]");
   if(close){closeModal();return;}
@@ -868,6 +892,7 @@ onAuthStateChanged(auth,async user=>{
   try{
     await loadWorkspace();
     setPage("home");
+    window.dispatchEvent(new CustomEvent("theoria:ready"));
     const joinParam=new URLSearchParams(location.search).get("join");
     if(joinParam && state.role==="student") setTimeout(()=>previewJoin(joinParam),200);
   }catch(error){console.error(error);showToast("Theoria loaded, but some academic data could not be retrieved.");}
