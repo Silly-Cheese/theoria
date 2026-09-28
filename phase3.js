@@ -205,8 +205,8 @@ async function renderItemBank(){
     catch(_){frameworks.set(course.id,{units:[],competencies:[]});}
   }
 
-  el.innerHTML='<div class="assessment-toolbar"><div class="filter-row">'+
-    '<select id="itemCourseFilter"><option value="">All courses</option>'+manageable.map(c=>'<option value="'+c.id+'">'+esc(c.code+" — "+c.title)+'</option>').join("")+'</select>'+
+  el.innerHTML='<div class="academic-banner question-bank-catalog-banner"><div class="kicker">Theoria Master Question Bank</div><h3>Official course questions, ready for assessment design.</h3><p>'+(s.isSystemOwner?'You are viewing the system-authoring bank. Create, import, organize, edit, and maintain official questions here.':'Questions are provided by the Theoria course catalog. You can use them in your own assessment templates without changing the master bank.')+'</p></div><div class="assessment-toolbar"><div class="filter-row">'+
+    '<select id="itemCourseFilter"><option value="">All courses</option>'+s.courses.map(c=>'<option value="'+c.id+'">'+esc(c.code+" — "+c.title)+'</option>').join("")+'</select>'+
     '<select id="itemTypeFilter"><option value="">All types</option>'+["Multiple Choice","Multiple Select","Short Response","Essay","Passage Analysis","Primary Source Analysis","Argument Analysis","Oral Prompt","Disputation Prompt"].map(x=>'<option>'+x+'</option>').join("")+'</select>'+
     '<input id="itemSearch" placeholder="Search prompt, unit, topic, competency, or tag"></div><div class="toolbar-stat"><strong>'+P3.items.length+'</strong><span> reusable questions</span></div></div>'+
     '<div id="itemBankList"></div>';
