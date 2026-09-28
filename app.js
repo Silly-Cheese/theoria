@@ -667,7 +667,7 @@ function renderAssignments(){
         (a.submissionMode==="No Online Submission"?'<span class="badge">Instructor-managed</span>':'<button class="primary-btn small-btn" data-action="open-student-assignment" data-id="'+a.id+'">'+(submission?.status==="submitted"?(a.allowResubmission?"View / Revise":"View Submission"):(submission?.status==="draft"?"Continue Assignment":"Open Assignment"))+'</button>'))+
       '</div></div>';
   }).join("")+'</div>' : '<div class="empty-state"><div class="empty-symbol">A</div><h3>No assignments yet.</h3><p>'+(state.role==="instructor"?"Create coursework, readings, written responses, research milestones, or academic exercises.":"Nothing has been assigned in this section yet.")+'</p></div>';
-  return '<div class="page-head" style="margin-bottom:16px"><div><div class="panel-title">Coursework</div><p class="page-subtitle">'+(state.role==="instructor"?"Create, collect, review, and grade student coursework.":"Open assignments here, save drafts, and submit your work directly in Theoria.")+'</p></div>'+(state.role==="instructor"?'<button class="primary-btn small-btn" data-action="create-assignment">Create Assignment</button>':'')+'</div>'+list;
+  return '<div class="page-head" style="margin-bottom:16px"><div><div class="panel-title">Coursework</div><p class="page-subtitle">'+(state.role==="instructor"?"Create, bulk-plan, collect, review, and grade student coursework.":"Open assignments here, save drafts, and submit your work directly in Theoria.")+'</p></div>'+(state.role==="instructor"?'<div class="inline-actions"><button class="secondary-btn small-btn" data-action="bulk-import-assignments">Bulk Import Unit</button><button class="primary-btn small-btn" data-action="create-assignment">Create Assignment</button></div>':'')+'</div>'+list;
 }
 
 function renderResources(){
@@ -793,6 +793,293 @@ function renderSectionDetail(tab="overview"){
   }
 }
 
+
+function stripAssignmentJsonFence(text){
+  let value=String(text||"").trim();
+  value=value.replace(/^\s*```(?:json)?\s*/i,"").replace(/\s*```\s*$/,"").trim();
+  const firstArray=value.indexOf("["),lastArray=value.lastIndexOf("]");
+  const firstObject=value.indexOf("{"),lastObject=value.lastIndexOf("}");
+  if(firstArray>=0&&lastArray>firstArray)return value.slice(firstArray,lastArray+1);
+  if(firstObject>=0&&lastObject>firstObject)return value.slice(firstObject,lastObject+1);
+  return value;
+}
+
+function addDaysToIsoDate(dateString,days){
+  if(!dateString)return "";
+  const date=new Date(dateString+"T12:00:00");
+  if(Number.isNaN(date.getTime()))return "";
+  date.setDate(date.getDate()+Number(days||0));
+  const y=date.getFullYear(),m=String(date.getMonth()+1).padStart(2,"0"),d=String(date.getDate()).padStart(2,"0");
+  return y+"-"+m+"-"+d;
+}
+
+function bulkAssignmentPrompt(section,course,unit){
+  const topics=(unit?.topics||[]).map(topic=>{
+    const pieces=[
+      (topic.number||topic.id)+" — "+topic.title,
+      topic.learningObjective?"Objective: "+topic.learningObjective:"",
+      topic.essentialKnowledge?"Essential knowledge: "+topic.essentialKnowledge:"",
+      topic.competencyCodes?.length?"Competencies: "+topic.competencyCodes.join(", "):""
+    ].filter(Boolean);
+    return pieces.join(" | ");
+  });
+
+  return [
+    "Create a complete unit assignment set for Theoria.",
+    "",
+    "Course: "+(course?.code||"")+" — "+(course?.title||""),
+    "Section: "+(section?.sectionName||""),
+    "Unit: "+(unit?.order||"")+" — "+(unit?.title||""),
+    unit?.description?"Unit description: "+unit.description:"",
+    "",
+    "Return ONLY valid JSON. Do not use Markdown fences, commentary, headings, or explanatory prose.",
+    "Return either a JSON array of assignment objects or an object with a single \"assignments\" array.",
+    "",
+    "Each assignment object may use:",
+    "{",
+    '  "title": "assignment title",',
+    '  "type": "Academic Exercise | Written Response | Research Assignment | Reading Response | Exegetical Exercise | Primary Source Analysis | Argument Analysis | Seminar Preparation | Assignment",',
+    '  "description": "one-sentence student-facing overview",',
+    '  "instructionSteps": ["step one", "step two"],',
+    '  "requirements": ["requirement one", "requirement two"],',
+    '  "points": 100,',
+    '  "topicNumber": "1.1",',
+    '  "dueDate": "YYYY-MM-DD",',
+    '  "dueOffsetDays": 7,',
+    '  "status": "Draft | Published",',
+    '  "submissionMode": "Text + Link | Text Response | Link / Document | Completion Confirmation | No Online Submission",',
+    '  "allowResubmission": false,',
+    '  "tags": ["essay", "primary-source"],',
+    '  "order": 1',
+    "}",
+    "",
+    "Rules:",
+    "- Design a coherent sequence of coursework for the entire unit, not isolated random assignments.",
+    "- Use only topic numbers from the selected unit below.",
+    "- Use instructionSteps for ordered student directions and requirements for deliverables/rules.",
+    "- Use either dueDate OR dueOffsetDays. dueOffsetDays means days after the unit start date that I will choose in Theoria.",
+    "- Keep assignment types and submission modes exactly within the allowed values.",
+    "- Set reasonable point values and order the assignments pedagogically.",
+    "- Do not create a formal examination unless I explicitly ask; formal exams belong in Theoria Assessments.",
+    "",
+    "UNIT TOPICS:",
+    ...(topics.length?topics:["No topics are currently defined for this unit. Leave topicNumber empty."])
+  ].filter(Boolean).join("\n");
+}
+
+function normalizeBulkAssignment(raw,index,unit,unitStartDate,defaults,existingTitles){
+  const errors=[],warnings=[];
+  if(!raw||typeof raw!=="object"||Array.isArray(raw))return {index,errors:["Assignment is not a JSON object."],warnings:[],data:null};
+
+  const allowedTypes=["Academic Exercise","Written Response","Research Assignment","Reading Response","Exegetical Exercise","Primary Source Analysis","Argument Analysis","Seminar Preparation","Assignment"];
+  const typeAliases={
+    "essay":"Written Response",
+    "research":"Research Assignment",
+    "reading":"Reading Response",
+    "exegesis":"Exegetical Exercise",
+    "primary source":"Primary Source Analysis",
+    "argument":"Argument Analysis",
+    "seminar":"Seminar Preparation"
+  };
+  let type=String(raw.type||"Assignment").trim();
+  if(!allowedTypes.includes(type))type=typeAliases[type.toLowerCase()]||type;
+  if(!allowedTypes.includes(type)){warnings.push("Unknown assignment type defaulted to Assignment.");type="Assignment";}
+
+  const title=String(raw.title||raw.name||"").trim();
+  if(!title)errors.push("Assignment title is required.");
+  if(title&&existingTitles.has(title.toLowerCase()))warnings.push("An assignment with this title already exists in the section.");
+
+  const pointsRaw=Number(raw.points??100);
+  const points=Number.isFinite(pointsRaw)&&pointsRaw>=0?pointsRaw:100;
+  if(!Number.isFinite(pointsRaw)||pointsRaw<0)warnings.push("Points defaulted to 100.");
+
+  const allowedStatuses=["Draft","Published"];
+  const status=allowedStatuses.includes(String(raw.status||""))?String(raw.status):defaults.status;
+  if(raw.status&&!allowedStatuses.includes(String(raw.status)))warnings.push("Status defaulted to "+defaults.status+".");
+
+  const allowedSubmissionModes=["Text + Link","Text Response","Link / Document","Completion Confirmation","No Online Submission"];
+  const submissionMode=allowedSubmissionModes.includes(String(raw.submissionMode||""))?String(raw.submissionMode):defaults.submissionMode;
+  if(raw.submissionMode&&!allowedSubmissionModes.includes(String(raw.submissionMode)))warnings.push("Submission mode defaulted to "+defaults.submissionMode+".");
+
+  const instructionSteps=(Array.isArray(raw.instructionSteps)?raw.instructionSteps:(Array.isArray(raw.instructions)?raw.instructions:[])).map(x=>String(x).trim()).filter(Boolean);
+  const requirements=(Array.isArray(raw.requirements)?raw.requirements:[]).map(x=>String(x).trim()).filter(Boolean);
+  const tags=(Array.isArray(raw.tags)?raw.tags:String(raw.tags||"").split(",")).map(x=>String(x).trim()).filter(Boolean);
+
+  const topicNumber=String(raw.topicNumber||raw.topic||"").trim();
+  const topic=topicNumber?(unit?.topics||[]).find(t=>String(t.number||"").trim().toLowerCase()===topicNumber.toLowerCase()):null;
+  if(topicNumber&&!topic)warnings.push("Topic "+topicNumber+" was not found in the selected unit and will be left unassigned.");
+
+  let dueDate=String(raw.dueDate||"").trim();
+  if(dueDate&&!/^\d{4}-\d{2}-\d{2}$/.test(dueDate)){warnings.push("Invalid dueDate ignored.");dueDate="";}
+  const dueOffsetRaw=raw.dueOffsetDays;
+  const dueOffsetDays=dueOffsetRaw===undefined||dueOffsetRaw===null||dueOffsetRaw===""?null:Number(dueOffsetRaw);
+  if(!dueDate&&dueOffsetDays!==null){
+    if(!Number.isFinite(dueOffsetDays))warnings.push("Invalid dueOffsetDays ignored.");
+    else if(!unitStartDate)warnings.push("dueOffsetDays was provided, but no Unit Start Date is set; due date will be blank.");
+    else dueDate=addDaysToIsoDate(unitStartDate,dueOffsetDays);
+  }
+
+  const orderRaw=Number(raw.order??index+1);
+  const unitSequence=Number.isFinite(orderRaw)?orderRaw:index+1;
+
+  return {
+    index,errors,warnings,
+    data:{
+      title,type,points,dueDate,status,
+      description:String(raw.description||raw.overview||"").trim(),
+      instructionSteps,requirements,
+      submissionMode,
+      allowResubmission:raw.allowResubmission===undefined?defaults.allowResubmission:!!raw.allowResubmission,
+      tags,
+      unitId:unit?.id||"",
+      unitTitle:unit?.title||"",
+      unitNumber:unit?.order||"",
+      topicId:topic?.id||"",
+      topicTitle:topic?.title||"",
+      topicNumber:topic?.number||"",
+      unitSequence
+    }
+  };
+}
+
+async function bulkImportAssignmentsModal(){
+  if(state.role!=="instructor"||!state.currentSection||!state.sectionData)return;
+  const section=state.currentSection,course=state.sectionData.course,framework=state.sectionData.framework;
+  if(!framework?.units?.length)return showToast("Create at least one course unit before bulk-importing unit assignments.");
+
+  let selectedUnit=framework.units[0];
+  let parsedRows=[];
+  const existingTitles=new Set((state.sectionData.assignments||[]).map(a=>String(a.title||"").trim().toLowerCase()).filter(Boolean));
+
+  const modal=openModal({
+    eyebrow:"Unit Coursework",
+    title:"Bulk Import Assignments",
+    wide:true,
+    body:'<div class="academic-form">'+
+      '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Unit & Defaults</h3><p>Select the unit and scheduling defaults for the assignment set.</p></div></div>'+
+        '<div class="compact-field-grid"><div class="field"><label>Unit</label><select id="bulkAssignmentUnit">'+framework.units.map(u=>'<option value="'+u.id+'">Unit '+esc(u.order||"")+' — '+esc(u.title)+'</option>').join("")+'</select></div>'+
+        '<div class="field"><label>Unit Start Date</label><input id="bulkAssignmentStart" type="date"></div>'+
+        '<div class="field"><label>Default Status</label><select id="bulkAssignmentStatus"><option>Draft</option><option>Published</option></select></div></div>'+
+        '<div class="compact-field-grid" style="margin-top:12px"><div class="field"><label>Default Submission</label><select id="bulkAssignmentSubmission"><option>Text + Link</option><option>Text Response</option><option>Link / Document</option><option>Completion Confirmation</option><option>No Online Submission</option></select></div>'+
+        '<div class="field"><label class="checkbox-line submission-setting"><input type="checkbox" id="bulkAssignmentResubmit"> Allow resubmission by default</label></div></div>'+
+        '<div class="bulk-import-prompt-row"><div><strong>Generate the whole unit in ChatGPT</strong><span>The prompt includes this unit’s actual topics, objectives, and allowed Theoria assignment fields.</span></div><button type="button" class="secondary-btn" id="copyAssignmentPrompt">Copy ChatGPT Unit Prompt</button></div>'+
+      '</section>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Add Assignment Set</h3><p>Paste the complete JSON response once or upload a .json file.</p></div></div>'+
+        '<div class="compact-field-grid"><div class="field"><label>JSON File</label><input id="bulkAssignmentFile" type="file" accept=".json,application/json"></div><div class="field"><label>Expected Format</label><div class="static-field">JSON array or {"assignments":[...]}</div></div></div>'+
+        '<div class="field"><label>Paste Complete Unit Assignment Set</label><textarea id="bulkAssignmentJson" class="bulk-json-editor" spellcheck="false" placeholder="Paste the complete JSON assignment set here"></textarea></div>'+
+        '<button type="button" class="primary-btn" id="previewBulkAssignments">Validate & Preview</button>'+
+      '</section>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>03</span><h3>Import Preview</h3><p>Review titles, dates, points, topics, and warnings before saving anything.</p></div><div id="bulkAssignmentSummary"></div></div><div id="bulkAssignmentResults"><div class="empty-mini">Paste or upload an assignment set, then validate it.</div></div></section>'+
+      '<div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button type="button" class="primary-btn" id="importBulkAssignments" disabled>Import Assignments</button></div>'+
+    '</div>'
+  });
+
+  const unitSelect=modal.querySelector("#bulkAssignmentUnit");
+  const startInput=modal.querySelector("#bulkAssignmentStart");
+  const statusSelect=modal.querySelector("#bulkAssignmentStatus");
+  const submissionSelect=modal.querySelector("#bulkAssignmentSubmission");
+  const resubmitInput=modal.querySelector("#bulkAssignmentResubmit");
+  const textarea=modal.querySelector("#bulkAssignmentJson");
+  const fileInput=modal.querySelector("#bulkAssignmentFile");
+  const summary=modal.querySelector("#bulkAssignmentSummary");
+  const results=modal.querySelector("#bulkAssignmentResults");
+  const importButton=modal.querySelector("#importBulkAssignments");
+
+  const defaults=()=>({
+    status:statusSelect.value||"Draft",
+    submissionMode:submissionSelect.value||"Text + Link",
+    allowResubmission:resubmitInput.checked
+  });
+  const resetPreview=()=>{
+    parsedRows=[];
+    summary.innerHTML="";
+    results.innerHTML='<div class="empty-mini">Validate the current assignment set before importing.</div>';
+    importButton.disabled=true;
+    importButton.textContent="Import Assignments";
+  };
+
+  unitSelect.addEventListener("change",()=>{selectedUnit=framework.units.find(u=>u.id===unitSelect.value)||framework.units[0];resetPreview();});
+  [startInput,statusSelect,submissionSelect,resubmitInput].forEach(input=>input.addEventListener("change",resetPreview));
+
+  modal.querySelector("#copyAssignmentPrompt").addEventListener("click",async()=>{
+    const prompt=bulkAssignmentPrompt(section,course,selectedUnit);
+    try{
+      await navigator.clipboard.writeText(prompt);
+      showToast("Unit assignment prompt copied for ChatGPT.");
+    }catch(_){
+      textarea.value=prompt;
+      showToast("Clipboard access was unavailable, so the prompt was placed in the editor.");
+    }
+  });
+
+  fileInput.addEventListener("change",async()=>{
+    const file=fileInput.files?.[0];if(!file)return;
+    try{textarea.value=await file.text();resetPreview();}catch(_){showToast("The JSON file could not be read.");}
+  });
+
+  modal.querySelector("#previewBulkAssignments").addEventListener("click",()=>{
+    let payload;
+    try{
+      const parsed=JSON.parse(stripAssignmentJsonFence(textarea.value));
+      payload=Array.isArray(parsed)?parsed:(Array.isArray(parsed?.assignments)?parsed.assignments:null);
+      if(!payload)throw new Error("Expected a JSON array or an object with an assignments array.");
+    }catch(error){
+      parsedRows=[];
+      summary.innerHTML='<span class="badge danger">Invalid JSON</span>';
+      results.innerHTML='<div class="notice danger-notice">'+esc(error.message||"The assignment set is not valid JSON.")+'</div>';
+      importButton.disabled=true;
+      return;
+    }
+
+    parsedRows=payload.map((row,index)=>normalizeBulkAssignment(row,index,selectedUnit,startInput.value,defaults(),existingTitles));
+    const valid=parsedRows.filter(row=>row.data&&!row.errors.length);
+    const invalid=parsedRows.filter(row=>row.errors.length);
+    const warnings=parsedRows.filter(row=>row.warnings.length);
+    const totalPoints=valid.reduce((n,row)=>n+Number(row.data.points||0),0);
+
+    summary.innerHTML='<div class="bulk-preview-counts"><span><strong>'+valid.length+'</strong> valid</span><span><strong>'+invalid.length+'</strong> invalid</span><span><strong>'+warnings.length+'</strong> warnings</span><span><strong>'+totalPoints+'</strong> total pts</span></div>';
+    results.innerHTML=parsedRows.length?'<div class="bulk-preview-list">'+parsedRows.map(row=>
+      '<div class="bulk-preview-row '+(row.errors.length?'invalid':row.warnings.length?'warning':'valid')+'"><div class="bulk-preview-number">'+(row.index+1)+'</div><div><strong>'+esc(row.data?.title||"Invalid assignment")+'</strong><span>'+esc(row.data?.type||"")+(row.data?.topicNumber?' • Topic '+esc(row.data.topicNumber):'')+(row.data?.dueDate?' • Due '+esc(row.data.dueDate):'')+(row.data?' • '+esc(row.data.points)+' pts':'')+'</span>'+
+      (row.errors.length?'<div class="bulk-messages errors">'+row.errors.map(x=>'<div>✕ '+esc(x)+'</div>').join("")+'</div>':'')+
+      (row.warnings.length?'<div class="bulk-messages warnings">'+row.warnings.map(x=>'<div>! '+esc(x)+'</div>').join("")+'</div>':'')+
+      '</div></div>'
+    ).join("")+'</div>':'<div class="empty-mini">No assignments were found in the JSON.</div>';
+
+    importButton.disabled=!valid.length;
+    importButton.textContent=valid.length?"Import "+valid.length+" Assignment"+(valid.length===1?"":"s"):"Import Assignments";
+  });
+
+  importButton.addEventListener("click",async()=>{
+    const valid=parsedRows.filter(row=>row.data&&!row.errors.length);
+    if(!valid.length)return;
+    importButton.disabled=true;importButton.textContent="Importing…";
+    try{
+      for(let offset=0;offset<valid.length;offset+=400){
+        const batch=writeBatch(db);
+        valid.slice(offset,offset+400).forEach(row=>{
+          const ref=doc(collection(db,"sections",section.id,"assignments"));
+          batch.set(ref,{
+            ...row.data,
+            importedInBulk:true,
+            createdAt:serverTimestamp(),
+            updatedAt:serverTimestamp()
+          });
+        });
+        await batch.commit();
+      }
+      closeModal();
+      state.sectionData=await loadSectionData(section);
+      renderSectionDetail("assignments");
+      const skipped=parsedRows.length-valid.length;
+      showToast(valid.length+" assignment"+(valid.length===1?"":"s")+" imported for "+selectedUnit.title+(skipped?" • "+skipped+" invalid skipped":"")+".");
+    }catch(error){
+      importButton.disabled=false;
+      importButton.textContent="Import "+valid.length+" Assignment"+(valid.length===1?"":"s");
+      showToast(humanizeFirebaseError(error));
+    }
+  });
+}
+
 function openAssignmentModal(existing){
   const types=["Academic Exercise","Written Response","Research Assignment","Reading Response","Exegetical Exercise","Primary Source Analysis","Argument Analysis","Seminar Preparation","Assignment"];
   const steps=Array.isArray(existing?.instructionSteps)&&existing.instructionSteps.length ? existing.instructionSteps : [""];
@@ -858,6 +1145,14 @@ function openAssignmentModal(existing){
       requirements,
       submissionMode:String(fd.get("submissionMode")||"Text + Link"),
       allowResubmission:form.elements.allowResubmission.checked,
+      unitId:existing?.unitId||"",
+      unitTitle:existing?.unitTitle||"",
+      unitNumber:existing?.unitNumber||"",
+      topicId:existing?.topicId||"",
+      topicTitle:existing?.topicTitle||"",
+      topicNumber:existing?.topicNumber||"",
+      tags:existing?.tags||[],
+      unitSequence:existing?.unitSequence||0,
       updatedAt:serverTimestamp()
     };
     try{
@@ -1346,6 +1641,7 @@ document.addEventListener("click",async event=>{
   if(action==="edit-section") return openSectionModal(state.currentSection);
   if(action==="section-tab") return renderSectionDetail(btn.dataset.tab);
   if(action==="create-assignment") return openAssignmentModal();
+  if(action==="bulk-import-assignments") return bulkImportAssignmentsModal();
   if(action==="edit-assignment") return openAssignmentModal(state.sectionData.assignments.find(x=>x.id===btn.dataset.id));
   if(action==="delete-assignment") return deleteAssignment(btn.dataset.id);
   if(action==="open-student-assignment") return openStudentAssignmentModal(btn.dataset.id);
