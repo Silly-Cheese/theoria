@@ -55,7 +55,16 @@ async function logCourseEvent(courseId,action,targetType="",targetId="",details=
 async function loadOwnAcademicEvidence(){
   const s=state(),records=[],mastery=[];
   if(!s?.user)return {records,mastery};
-  for(const section of s.sections||[]){
+  const sectionsById=new Map((s.sections||[]).map(section=>[section.id,section]));
+  try{
+    const enrollmentSnap=await getDocs(collection(db,"users",s.user.uid,"enrollments"));
+    for(const enrollment of enrollmentSnap.docs){
+      if(!sectionsById.has(enrollment.id)){
+        sectionsById.set(enrollment.id,{id:enrollment.id,...enrollment.data()});
+      }
+    }
+  }catch(_){}
+  for(const section of sectionsById.values()){
     try{
       const rec=await getDoc(doc(db,"sections",section.id,"academicRecords",s.user.uid));
       if(rec.exists())records.push({sectionId:section.id,...rec.data()});
@@ -217,6 +226,14 @@ async function prerequisiteModal(courseId){
   };
 }
 
+async function evaluateEnrollmentEligibility(section,courseOverride=null){
+  const s=state();if(!s?.user||s.role!=="student")return {ready:true,checks:[]};
+  const course=courseOverride||courseById(section?.courseId);
+  if(!course)return {ready:true,checks:[]};
+  const evidence=await loadOwnAcademicEvidence();
+  return evaluateCourseReadiness(course,evidence,s.user.uid);
+}
+
 async function renderProgression(){
   const el=$("#progressionContent"),s=state();if(!el||!s?.user)return;
   el.innerHTML='<div class="empty-mini">Evaluating academic progression…</div>';
@@ -339,7 +356,10 @@ async function setEnrollmentLifecycle(studentId,status){
     }else{
       const batch=writeBatch(db);
       batch.delete(doc(db,"sections",section.id,"members",studentId));
-      batch.delete(doc(db,"users",studentId,"enrollments",section.id));
+      batch.set(doc(db,"users",studentId,"enrollments",section.id),{
+        sectionId:section.id,courseId:section.courseId,courseCode:section.courseCode,courseTitle:section.courseTitle,
+        sectionName:section.sectionName,term:section.term,status,endedAt:serverTimestamp(),updatedAt:serverTimestamp()
+      },{merge:true});
       await batch.commit();
     }
     await addDoc(collection(db,"sections",section.id,"enrollmentHistory"),{
@@ -698,7 +718,8 @@ window.TheoriaPhase5={
   enhanceCourse,
   logSectionEvent,
   logCourseEvent,
-  renderInstructorAttention
+  renderInstructorAttention,
+  evaluateEnrollmentEligibility
 };
 
 if(window.TheoriaCore)onReady();
