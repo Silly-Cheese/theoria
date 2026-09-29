@@ -199,8 +199,18 @@ async function loadWorkspace(){
     }
     state.courses=courses;
 
-    const sectionSnap = await getDocs(query(collection(db,"sections"),where("ownerId","==",state.user.uid)));
-    state.sections = sectionSnap.docs.map(d => ({id:d.id,...d.data()}));
+    const [sectionSnap,staffSectionSnap] = await Promise.all([
+      getDocs(query(collection(db,"sections"),where("ownerId","==",state.user.uid))),
+      getDocs(collection(db,"users",state.user.uid,"staffSections"))
+    ]);
+    const sectionMap=new Map(sectionSnap.docs.map(d=>[d.id,{id:d.id,...d.data(),staffRole:"owner"}]));
+    for(const staffRef of staffSectionSnap.docs){
+      try{
+        const sec=await getDoc(doc(db,"sections",staffRef.id));
+        if(sec.exists()&&!sectionMap.has(sec.id))sectionMap.set(sec.id,{id:sec.id,...sec.data(),staffRole:staffRef.data().role||"staff"});
+      }catch(error){console.warn("Unable to load staff section",staffRef.id,error);}
+    }
+    state.sections=[...sectionMap.values()];
   }else{
     const enrollmentSnap = await getDocs(collection(db,"users",state.user.uid,"enrollments"));
     const sections = [];
@@ -210,12 +220,16 @@ async function loadWorkspace(){
     }
     state.sections = sections;
     const uniqueCourseIds = [...new Set(sections.map(s => s.courseId).filter(Boolean))];
-    const courses = [];
+    const byId=new Map();
     for(const id of uniqueCourseIds){
       const c = await getDoc(doc(db,"courses",id));
-      if(c.exists()) courses.push({id:c.id,...c.data()});
+      if(c.exists()) byId.set(c.id,{id:c.id,...c.data()});
     }
-    state.courses = courses;
+    try{
+      const catalogSnap=await getDocs(query(collection(db,"courses"),where("catalogPublished","==",true)));
+      catalogSnap.docs.forEach(d=>byId.set(d.id,{id:d.id,...d.data()}));
+    }catch(error){console.warn("Unable to load published course catalog for progression:",error);}
+    state.courses=[...byId.values()];
   }
 
   state.courses.sort((a,b)=>String(a.code||"").localeCompare(String(b.code||"")));
@@ -234,7 +248,7 @@ function sectionCard(section){
     '<div class="card-kicker">'+esc(section.courseCode || "THEO")+' • '+esc(section.term || "Academic Term")+'</div>'+
     '<h3>'+esc(section.courseTitle || section.sectionName || "Untitled Section")+'</h3>'+
     '<p>'+esc(section.sectionName || ("Section "+(section.sectionNumber||"001")))+'</p>'+
-    '<div class="card-meta"><span>'+esc(section.format || "Course")+'</span><span>'+esc(section.sectionNumber ? "Section "+section.sectionNumber : "Section")+'</span>'+(state.role==="instructor"?'<span class="badge '+(live?'live':'closed')+'">'+(live?'Enrollment Open':'Enrollment Closed')+'</span>':'')+(entranceRequired?'<span class="badge gold">Entrance Exam</span>':'')+'</div>'+
+    '<div class="card-meta"><span>'+esc(section.format || "Course")+'</span><span>'+esc(section.sectionNumber ? "Section "+section.sectionNumber : "Section")+'</span>'+(section.status==="Archived"?'<span class="badge">Archived</span>':state.role==="instructor"?'<span class="badge '+(live?'live':'closed')+'">'+(live?'Enrollment Open':'Enrollment Closed')+'</span>':'')+(entranceRequired?'<span class="badge gold">Entrance Exam</span>':'')+(section.staffRole&&section.staffRole!=="owner"?'<span class="badge">'+esc(String(section.staffRole).replace(/_/g," "))+'</span>':'')+'</div>'+
     '<div class="card-actions"><button class="secondary-btn small-btn" data-action="open-section" data-id="'+section.id+'">Open Section</button>'+(state.role==="instructor"?'<button class="text-btn" data-action="copy-code" data-code="'+esc(section.joinCode||"")+'">'+esc(section.joinCode||"No Code")+'</button>':'')+'</div>'+
   '</article>';
 }
@@ -254,9 +268,10 @@ function courseCard(course){
 }
 
 function renderHome(){
-  const sectionCount=state.sections.length;
+  const activeSections=state.sections.filter(s=>s.status!=="Archived");
+  const sectionCount=activeSections.length;
   const courseCount=state.courses.length;
-  const openEnrollmentCount=state.sections.filter(s=>s.joinOpen!==false).length;
+  const openEnrollmentCount=activeSections.filter(s=>s.joinOpen!==false).length;
   const academicTerms=[...new Set(state.sections.map(s=>String(s.term||"").trim()).filter(Boolean))];
   const disciplines=[...new Set(state.courses.map(c=>String(c.discipline||"").trim()).filter(Boolean))];
 
@@ -270,8 +285,8 @@ function renderHome(){
       '<div class="stat"><div class="stat-label">Academic Terms</div><div class="stat-value">'+academicTerms.length+'</div><div class="stat-note">Represented in your sections</div></div>'+
       '<div class="stat"><div class="stat-label">Disciplines</div><div class="stat-value">'+disciplines.length+'</div><div class="stat-note">Areas of theological study</div></div>';
 
-  $("#homeSections").innerHTML = state.sections.length
-    ? '<div class="card-grid">'+state.sections.slice(0,3).map(sectionCard).join("")+'</div>'
+  $("#homeSections").innerHTML = activeSections.length
+    ? '<div class="card-grid">'+activeSections.slice(0,3).map(sectionCard).join("")+'</div>'
     : '<div class="empty-state"><div class="empty-symbol">Θ</div><h3>No active sections yet.</h3><p>'+(state.role==="instructor"?"Create a course framework, then create a teaching section from it.":"Join a section with the code provided by your instructor.")+'</p>'+(state.role==="student"?'<button class="primary-btn" data-go="sections">Join a Section</button>':'<button class="primary-btn" data-action="create-section">Create Section</button>')+'</div>';
 
   const thirdNumber=state.role==="instructor"?openEnrollmentCount:academicTerms.length;
@@ -309,7 +324,10 @@ function renderSections(){
     el.innerHTML = '<div class="empty-state"><div class="empty-symbol">S</div><h3>No '+(state.role==="instructor"?"teaching":"enrolled")+' sections yet.</h3><p>'+(state.role==="instructor"?"Create a section from one of your course frameworks. Theoria will issue a join code automatically.":"Use the join code above to enter a section.")+'</p>'+(state.role==="instructor"?'<button class="primary-btn" data-action="create-section">Create Section</button>':'')+'</div>';
     return;
   }
-  el.innerHTML = '<div class="card-grid">'+state.sections.map(sectionCard).join("")+'</div>';
+  const active=state.sections.filter(s=>s.status!=="Archived");
+  const archived=state.sections.filter(s=>s.status==="Archived");
+  el.innerHTML=(active.length?'<section class="section-status-group"><div class="page-head compact-head"><div><div class="panel-title">Active Sections</div><p class="page-subtitle">'+active.length+' current teaching space'+(active.length===1?"":"s")+'.</p></div></div><div class="card-grid">'+active.map(sectionCard).join("")+'</div></section>':'')+
+    (archived.length?'<section class="section-status-group archived-section-group"><div class="page-head compact-head"><div><div class="panel-title">Archived Sections</div><p class="page-subtitle">Read-only historical teaching spaces with preserved records.</p></div></div><div class="card-grid">'+archived.map(sectionCard).join("")+'</div></section>':'');
 }
 
 async function generateJoinCode(){
@@ -899,6 +917,7 @@ function renderCourseDetail(){
     '<div class="detail-hero"><div class="detail-top"><div><div class="eyebrow">'+esc(c.code||"Course")+(c.catalogCourse?' • THEORIA CATALOG':'')+'</div><h1 class="detail-title">'+esc(c.title)+'</h1><div class="detail-meta"><span>'+esc(c.discipline||"Theology")+'</span><span>'+esc(c.level||"Advanced")+'</span><span>'+esc(c.status||"Active")+'</span>'+(c.catalogCourse?'<span class="badge '+(c.catalogPublished?'live':'gold')+'">'+(c.catalogPublished?'Published Catalog':'Catalog Draft')+'</span>':'')+'</div></div>'+(instructor?'<div class="inline-actions"><button class="secondary-btn small-btn" data-action="edit-course">Edit Course</button><button class="secondary-btn small-btn" data-action="bulk-import-framework" data-course="'+c.id+'">Bulk Import Framework</button><button class="primary-btn small-btn" data-action="add-unit">Add Unit</button></div>':'')+'</div>'+(c.description?'<p class="page-subtitle" style="margin-top:16px">'+esc(c.description)+'</p>':'')+'</div>'+
     '<div class="framework-layout"><div><div class="panel-head" style="padding-left:0;border:0"><div class="panel-title">Course Framework</div></div><div class="unit-list">'+units+'</div></div>'+
     '<aside><div class="panel"><div class="panel-head"><div class="panel-title">Academic Competencies</div>'+(instructor?'<button class="panel-link" data-action="add-competency">+ Add</button>':'')+'</div><div class="panel-body"><div class="competency-list">'+competencies+'</div></div></div></aside></div>';
+  window.TheoriaPhase5?.enhanceCourse?.(state.currentCourse);
 }
 
 
@@ -2060,6 +2079,7 @@ function renderSectionDetail(tab="overview"){
   if(["analytics","records","progress","record"].includes(tab) && window.TheoriaPhase4?.renderSectionTab){
     window.TheoriaPhase4.renderSectionTab(tab);
   }
+  window.TheoriaPhase5?.enhanceSection?.(s,tab);
 }
 
 
@@ -2956,15 +2976,19 @@ function openGradeModal(assignmentId,studentId){
   const modal=openModal({
     eyebrow:"Gradebook",
     title:(s?.displayName||"Student")+" — "+(a?.title||"Assignment"),
-    body:'<form id="gradeForm"><div class="notice">Possible points: <strong>'+esc(a?.points||0)+'</strong></div><div class="field"><label>Score</label><input type="number" min="0" step="0.1" name="score" value="'+esc(existing?.score??"")+'" required></div><div class="field"><label>Instructor Comment</label><textarea class="editor-compact" rows="2" name="comment" placeholder="Optional concise feedback">'+esc(existing?.comment||"")+'</textarea></div><div class="modal-foot" style="margin:24px -24px -24px"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Grade</button></div></form>'
+    body:'<form id="gradeForm"><div class="notice">Possible points: <strong>'+esc(a?.points||0)+'</strong></div><div class="compact-field-grid"><div class="field"><label>Score</label><input type="number" min="0" step="0.1" name="score" value="'+esc(existing?.score??"")+'" required></div><div class="field"><label>Grade Status</label><select name="gradeStatus"><option>Normal</option><option>Late</option><option>Missing</option><option>Excused</option></select></div></div><div class="field"><label>Instructor Comment</label><textarea class="editor-compact" rows="2" name="comment" placeholder="Optional concise feedback">'+esc(existing?.comment||"")+'</textarea></div>'+(existing?'<div class="field"><label>Reason for Grade Change</label><textarea class="editor-compact" rows="2" name="overrideReason" required placeholder="Required because this changes an existing grade."></textarea></div>':'')+'<div class="modal-foot" style="margin:24px -24px -24px"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Grade</button></div></form>'
   });
-  modal.querySelector("#gradeForm").addEventListener("submit",async e=>{
+  const gradeForm=modal.querySelector("#gradeForm");
+  gradeForm.elements.gradeStatus.value=existing?.gradeStatus||"Normal";
+  gradeForm.addEventListener("submit",async e=>{
     e.preventDefault();const fd=new FormData(e.currentTarget);const score=Number(fd.get("score"));
     try{
       await setDoc(doc(db,"sections",state.currentSection.id,"grades",assignmentId+"_"+studentId),{
         assignmentId,studentId,studentName:s?.displayName||"Student",assignmentTitle:a?.title||"Assignment",
-        score,maxPoints:Number(a?.points||0),comment:String(fd.get("comment")).trim(),updatedAt:serverTimestamp()
+        score,maxPoints:Number(a?.points||0),gradeStatus:String(fd.get("gradeStatus")||"Normal"),comment:String(fd.get("comment")).trim(),
+        overrideReason:String(fd.get("overrideReason")||"").trim(),updatedAt:serverTimestamp()
       },{merge:true});
+      if(existing&&window.TheoriaPhase5?.logSectionEvent)await window.TheoriaPhase5.logSectionEvent(state.currentSection.id,"grade_changed","student",studentId,{assignmentId,assignmentTitle:a?.title||"",priorScore:existing.score,newScore:score,reason:String(fd.get("overrideReason")||"").trim()});
       closeModal();state.sectionData=await loadSectionData(state.currentSection);renderSectionDetail("gradebook");showToast("Grade saved.");
     }catch(error){showToast(humanizeFirebaseError(error));}
   });
@@ -3313,12 +3337,12 @@ async function joinSection(section,code){
       joinedAt:serverTimestamp(),
       status:"enrolled",
       accommodations:{
-        timeMultiplier:1,
-        breaks:false,
-        calculator:false,
-        largeText:false,
-        reducedDistractions:false,
-        notes:""
+        timeMultiplier:Number(state.profile?.defaultAccommodations?.timeMultiplier||1),
+        breaks:!!state.profile?.defaultAccommodations?.breaks,
+        calculator:!!state.profile?.defaultAccommodations?.calculator,
+        largeText:!!state.profile?.defaultAccommodations?.largeText,
+        reducedDistractions:!!state.profile?.defaultAccommodations?.reducedDistractions,
+        notes:String(state.profile?.defaultAccommodations?.notes||"")
       }
     });
     batch.set(doc(db,"users",state.user.uid,"enrollments",section.id),{
