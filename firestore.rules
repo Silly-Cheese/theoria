@@ -262,7 +262,10 @@ service cloud.firestore {
       match /enrollments/{sectionId} {
         allow read: if isSelf(userId);
         allow delete: if isSelf(userId) || sectionOwner(sectionId);
-        allow create, update: if isSelf(userId) && sectionMemberAfter(sectionId);
+        allow create: if isSelf(userId) && sectionMemberAfter(sectionId);
+        allow update: if (
+          isSelf(userId) && sectionMemberAfter(sectionId)
+        ) || sectionOwner(sectionId);
       }
 
       match /staffSections/{sectionId} {
