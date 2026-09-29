@@ -504,7 +504,7 @@ service cloud.firestore {
 
       match /gradingPathways/{userId} {
         allow read: if sectionGrader(sectionId) || isSelf(userId);
-        allow create, update: if sectionOwner(sectionId)
+        allow create, update: if sectionAcademicManager(sectionId)
           || (
             isSelf(userId)
             && gradingSelectionOpen(sectionId)
@@ -595,14 +595,16 @@ service cloud.firestore {
           request.resource.data.sectionId == ''
           || sectionCourseworkManager(request.resource.data.sectionId)
         );
-      allow update: if assessmentOwner(assessmentId)
+      allow update: if (
+          assessmentOwner(assessmentId)
+          || (
+            assessmentData(assessmentId).sectionId != ''
+            && sectionCourseworkManager(assessmentData(assessmentId).sectionId)
+          )
+        )
         && request.resource.data.ownerId == resource.data.ownerId
         && request.resource.data.courseId == resource.data.courseId
-        && (
-          request.resource.data.sectionId == resource.data.sectionId
-          || request.resource.data.sectionId == ''
-          || sectionCourseworkManager(request.resource.data.sectionId)
-        );
+        && request.resource.data.sectionId == resource.data.sectionId;
       allow delete: if assessmentOwner(assessmentId)
         || (
           assessmentData(assessmentId).sectionId != ''
@@ -666,6 +668,10 @@ service cloud.firestore {
 
         allow update: if assessmentOwner(assessmentId)
           || (
+            assessmentData(assessmentId).sectionId != ''
+            && sectionGrader(assessmentData(assessmentId).sectionId)
+          )
+          || (
             isSelf(studentId)
             && assessmentMember(assessmentId)
             && resource.data.status == 'in_progress'
@@ -700,7 +706,11 @@ service cloud.firestore {
             && assessmentMember(assessmentId)
             && request.resource.data.studentId == uid();
           allow update: if false;
-          allow delete: if assessmentOwner(assessmentId);
+          allow delete: if assessmentOwner(assessmentId)
+            || (
+              assessmentData(assessmentId).sectionId != ''
+              && sectionAcademicManager(assessmentData(assessmentId).sectionId)
+            );
         }
       }
 
