@@ -439,6 +439,24 @@ async function removeStaff(sectionId,userId){
 
 /* -------------------- INSTRUCTOR APPROVALS -------------------- */
 
+async function studentApprovalsModal(studentId){
+  const student=state()?.sectionData?.members?.find(x=>x.id===studentId);
+  if(!student)return;
+  const courses=(state()?.courses||[]).filter(c=>c.prerequisitePolicy?.instructorApproval===true);
+  const statuses=[];
+  for(const course of courses){
+    const approval=await courseApproval(course.id,studentId);
+    statuses.push({course,approval});
+  }
+  modal({
+    eyebrow:"Academic Progression Approval",
+    title:student.displayName||"Student",
+    wide:true,
+    body:courses.length?'<div class="approval-course-list">'+statuses.map(({course,approval})=>'<div class="approval-course-row"><div><span>'+esc(course.discipline||"Course")+'</span><strong>'+esc(course.code+" — "+course.title)+'</strong><small>'+esc(prerequisiteSummary(course))+'</small></div>'+(approval?.approved===true?'<span class="badge live">Approved</span>':'<button class="primary-btn small-btn" data-phase5-action="approve-progression" data-course="'+course.id+'" data-student="'+studentId+'">Approve Readiness</button>')+'</div>').join("")+'</div>':'<div class="empty-state compact-empty"><div class="empty-symbol">↗</div><h3>No courses require manual approval.</h3><p>Enable Instructor Approval in a course progression policy to use this gate.</p></div>',
+    footer:'<button class="primary-btn" data-close-modal>Done</button>'
+  });
+}
+
 async function approveProgression(courseId,studentId){
   const course=courseById(courseId);if(!course||!isInstructor())return;
   try{
@@ -591,7 +609,7 @@ function lifecycleMenu(studentId){
   modal({
     eyebrow:"Enrollment Lifecycle",
     title:student.displayName||"Student",
-    body:'<div class="operations-grid compact-operations"><button class="operation-card" data-phase5-action="set-lifecycle" data-student="'+studentId+'" data-status="Completed"><span>✓</span><strong>Mark Completed</strong><small>Preserve section access and mark course participation complete.</small></button><button class="operation-card danger-operation" data-phase5-action="set-lifecycle" data-student="'+studentId+'" data-status="Withdrawn"><span>W</span><strong>Withdraw</strong><small>Remove active access and preserve an enrollment-history record.</small></button><button class="operation-card danger-operation" data-phase5-action="set-lifecycle" data-student="'+studentId+'" data-status="Removed"><span>×</span><strong>Remove</strong><small>Remove active access while preserving academic evidence and history.</small></button></div>',
+    body:'<div class="operations-grid compact-operations"><button class="operation-card" data-phase5-action="student-approvals" data-student="'+studentId+'"><span>↗</span><strong>Course Readiness Approval</strong><small>Grant manual instructor approval for progression-gated courses.</small></button><button class="operation-card" data-phase5-action="set-lifecycle" data-student="'+studentId+'" data-status="Completed"><span>✓</span><strong>Mark Completed</strong><small>Preserve section access and mark course participation complete.</small></button><button class="operation-card danger-operation" data-phase5-action="set-lifecycle" data-student="'+studentId+'" data-status="Withdrawn"><span>W</span><strong>Withdraw</strong><small>Remove active access and preserve an enrollment-history record.</small></button><button class="operation-card danger-operation" data-phase5-action="set-lifecycle" data-student="'+studentId+'" data-status="Removed"><span>×</span><strong>Remove</strong><small>Remove active access while preserving academic evidence and history.</small></button></div>',
     footer:'<button class="secondary-btn" data-close-modal>Cancel</button>'
   });
 }
@@ -622,6 +640,39 @@ window.addEventListener("theoria:page",e=>{
   if(e.detail.page==="academic-profile")renderAcademicProfile();
 });
 
+document.addEventListener("click",e=>{
+  const s=state(),section=s?.currentSection;
+  if(!section)return;
+  const actionEl=e.target.closest("[data-action],[data-phase3-action],[data-phase4-action],[data-phase5-action]");
+  if(!actionEl)return;
+  const action=actionEl.dataset.action||actionEl.dataset.phase3Action||actionEl.dataset.phase4Action||actionEl.dataset.phase5Action||"";
+  const safeActions=new Set([
+    "section-tab","back-sections","open-section","gradebook-jump","student-assessment-details","student-assessment-results",
+    "assessment-tab","open-assessment","back-assessments","receipt","print-record","record-history","mastery-student",
+    "open-mastery-section","mastery-back","reports-back","audit-log","enrollment-history","restore-section","section-operations"
+  ]);
+  if(section.status==="Archived"&&!safeActions.has(action)){
+    e.preventDefault();e.stopImmediatePropagation();toast("Archived sections are read-only. Restore the section before making academic changes.");return;
+  }
+
+  const role=section.staffRole&&section.staffRole!=="owner"?section.staffRole:"owner";
+  if(role==="grader"){
+    const allowed=new Set([
+      ...safeActions,"grade-candidate","auto-score","horizontal-grade","open-gradebook-assessment","set-grade",
+      "record-audit","portfolio","open-section-resource"
+    ]);
+    if(!allowed.has(action)){
+      e.preventDefault();e.stopImmediatePropagation();toast("Your Grader role does not include this section-administration action.");return;
+    }
+  }
+  if(role==="teaching_assistant"){
+    const blocked=new Set(["edit-section","delete-section","archive-section","staff-management","manage-prerequisites","certify-record","review-appeal"]);
+    if(blocked.has(action)){
+      e.preventDefault();e.stopImmediatePropagation();toast("Your Teaching Assistant role does not include this administrative action.");return;
+    }
+  }
+},true);
+
 document.addEventListener("click",async e=>{
   const b=e.target.closest("[data-phase5-action]");if(!b)return;
   const a=b.dataset.phase5Action;
@@ -635,7 +686,8 @@ document.addEventListener("click",async e=>{
   if(a==="audit-log"){closeModal();return auditLogModal(b.dataset.section);}
   if(a==="lifecycle-menu")return lifecycleMenu(b.dataset.student);
   if(a==="set-lifecycle"){closeModal();return setEnrollmentLifecycle(b.dataset.student,b.dataset.status);}
-  if(a==="approve-progression")return approveProgression(b.dataset.course,b.dataset.student);
+  if(a==="student-approvals"){closeModal();return studentApprovalsModal(b.dataset.student);}
+  if(a==="approve-progression"){closeModal();await approveProgression(b.dataset.course,b.dataset.student);return studentApprovalsModal(b.dataset.student);}
 });
 
 window.TheoriaPhase5={
