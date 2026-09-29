@@ -402,8 +402,7 @@ service cloud.firestore {
       }
 
       match /items/{itemId} {
-        allow read: if isSystemOwner()
-          || courseOwner(courseId)
+        allow read: if canManageCourse(courseId)
           || (
             isInstructor()
             && courseIsPublishedCatalog(courseId)
@@ -411,8 +410,7 @@ service cloud.firestore {
         allow create, update, delete: if canManageCourse(courseId);
 
         match /versions/{versionId} {
-          allow read: if isSystemOwner()
-            || courseOwner(courseId)
+          allow read: if canManageCourse(courseId)
             || (
               isInstructor()
               && courseIsPublishedCatalog(courseId)
