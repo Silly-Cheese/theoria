@@ -1471,7 +1471,9 @@ async function loadAssessment(id){
     submissions=s.docs.map(d=>({id:d.id,...d.data()}));
     results=r.docs.map(d=>({id:d.id,...d.data()}));
     if(assessment.sectionId){
-      const m=await getDocs(collection(db,"sections",assessment.sectionId,"members"));
+      const m=assessment.entranceExam
+        ? await getDocs(collection(db,"sections",assessment.sectionId,"entranceCandidates"))
+        : await getDocs(collection(db,"sections",assessment.sectionId,"members"));
       members=m.docs.map(d=>({id:d.id,...d.data()})).sort((x,y)=>String(x.displayName||"").localeCompare(String(y.displayName||"")));
     }
   }
@@ -1883,6 +1885,149 @@ async function removeItem(id){
   batch.update(doc(db,"assessments",a.id),{questionIds,questionPool,poolQuestionCount:questionPool.length,randomDrawPlan,questionCount,totalPoints,competencyBlueprint:competencyDerivation.rows,competencyBlueprintAuto:true,competencyBlueprintMappedPoints:competencyDerivation.taggedExpectedPoints,competencyBlueprintUnmappedPoints:competencyDerivation.untaggedExpectedPoints,updatedAt:serverTimestamp()});
   try{await batch.commit();await openAssessment(a.id,"items");}catch(err){toast(err.message||"Unable to remove question.");}
 }
+
+
+async function deleteEntranceAssessmentTree(assessmentId){
+  if(!assessmentId)return;
+  const submissionSnap=await getDocs(collection(db,"assessments",assessmentId,"submissions"));
+  for(const sub of submissionSnap.docs){
+    const events=await getDocs(collection(db,"assessments",assessmentId,"submissions",sub.id,"events"));
+    for(let offset=0;offset<events.docs.length;offset+=400){
+      const batch=writeBatch(db);
+      events.docs.slice(offset,offset+400).forEach(d=>batch.delete(d.ref));
+      await batch.commit();
+    }
+  }
+  for(const name of ["questions","keys","results","submissions"]){
+    const snap=await getDocs(collection(db,"assessments",assessmentId,name));
+    for(let offset=0;offset<snap.docs.length;offset+=400){
+      const batch=writeBatch(db);
+      snap.docs.slice(offset,offset+400).forEach(d=>batch.delete(d.ref));
+      await batch.commit();
+    }
+  }
+  await deleteDoc(doc(db,"assessments",assessmentId));
+}
+
+async function configureEntranceExam(sectionId){
+  const s=state();
+  if(!s||s.role!=="instructor")return;
+  const section=s.sections.find(sec=>sec.id===sectionId)||s.currentSection;
+  if(!section)return toast("Section not found.");
+
+  await loadAssessments();
+  const templates=P3.assessments.filter(a=>!a.sectionId&&a.courseId===section.courseId&&Number(a.questionCount||a.questionIds?.length||0)>0);
+  if(!templates.length){
+    const modal=core().openModal({
+      eyebrow:"Entrance Examination",
+      title:"Create an Assessment Template First",
+      body:'<div class="academic-banner"><div class="kicker">'+esc(section.courseCode||"Course")+'</div><h3>'+esc(section.courseTitle||"Course")+'</h3><p>Entrance examinations are built from the same reusable Question Bank assessment templates used elsewhere in Theoria.</p></div><div class="notice"><strong>No eligible assessment templates exist for this course yet.</strong><p>Create an assessment template, choose its Question Bank items, then return here to assign it as the entrance examination.</p></div>',
+      footer:'<button class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" id="createEntranceTemplate">Create Assessment Template</button>'
+    });
+    modal.querySelector("#createEntranceTemplate").onclick=()=>{core().closeModal();core().setPage("assessments");setTimeout(()=>assessmentModal(),60);};
+    return;
+  }
+
+  let hasExistingAttempts=false;
+  if(section.entranceAssessmentId){
+    try{
+      const existingAttempts=await getDocs(collection(db,"assessments",section.entranceAssessmentId,"submissions"));
+      hasExistingAttempts=existingAttempts.docs.length>0;
+    }catch(_){}
+  }
+
+  const modal=core().openModal({
+    eyebrow:"Entrance Examination",
+    title:section.entranceAssessmentId?"Change Entrance Examination":"Configure Entrance Examination",
+    wide:true,
+    body:'<form id="entranceExamForm" class="academic-form">'+
+      '<div class="academic-banner"><div class="kicker">'+esc(section.courseCode||"Course")+'</div><h3>'+esc(section.sectionName||section.courseTitle||"Section")+'</h3><p>Students must complete and pass the selected instructor-created assessment before Theoria allows enrollment.</p></div>'+
+      (hasExistingAttempts?'<div class="notice danger-notice"><strong>This section already has entrance-exam attempts.</strong><p>Replacing the exam will permanently clear those entrance attempts and results. Enrolled students are not affected.</p></div>':'')+
+      '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Assessment Template</h3><p>Select a completed template built from this course’s Question Bank.</p></div></div>'+
+        '<div class="field"><label>Entrance Examination</label><select name="templateId">'+templates.map(t=>'<option value="'+t.id+'" '+(t.id===section.entranceTemplateSourceId?'selected':'')+'>'+esc(t.title)+' • '+esc(t.questionCount||t.questionIds?.length||0)+' questions • '+esc(t.totalPoints||0)+' pts</option>').join("")+'</select></div>'+
+      '</section>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Passing Requirement</h3><p>The final graded percentage must meet or exceed this threshold before enrollment unlocks.</p></div></div>'+
+        '<div class="field"><label>Passing Score</label><div class="input-with-suffix"><input name="passPercent" type="number" min="1" max="100" step="1" value="'+esc(section.entrancePassPercent||70)+'" required><span>%</span></div></div>'+
+      '</section>'+
+      '<div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">'+(section.entranceAssessmentId?"Replace Entrance Exam":"Configure Entrance Exam")+'</button></div>'+
+    '</form>'
+  });
+
+  const form=modal.querySelector("#entranceExamForm");
+  form.onsubmit=async e=>{
+    e.preventDefault();
+    const fd=new FormData(form),templateId=String(fd.get("templateId")),passPercent=Math.max(1,Math.min(100,Math.round(Number(fd.get("passPercent")||70))));
+    const template=templates.find(x=>x.id===templateId);
+    if(!template)return toast("Choose an assessment template.");
+    if(hasExistingAttempts&&!confirm("Replace the entrance examination and permanently clear existing entrance attempts and results?"))return;
+
+    const button=form.querySelector('button[type="submit"]');button.disabled=true;button.textContent="Configuring…";
+    try{
+      const source=await loadAssessment(template.id);
+      if(!source.questions.length)throw new Error("The selected template has no questions.");
+
+      const ref=doc(collection(db,"assessments"));
+      const clone={
+        ...Object.fromEntries(Object.entries(source.assessment).filter(([k])=>!["id","createdAt","updatedAt","sectionId","sectionName","status","opensAt","closesAt","templateSourceId","entranceExam"].includes(k))),
+        ownerId:s.user.uid,
+        sectionId:section.id,
+        sectionName:section.sectionName,
+        templateSourceId:template.id,
+        entranceExam:true,
+        entrancePassPercent:passPercent,
+        title:template.title,
+        status:"Published",
+        opensAt:null,
+        closesAt:null,
+        questionIds:source.questions.map(q=>q.id),
+        questionPool:(template.questionPool?.length?template.questionPool:source.questions.map(q=>({id:q.id,itemId:q.itemId||"",type:q.type,points:Number(q.points||0)}))),
+        poolQuestionCount:source.questions.length,
+        questionCount:Number(template.questionCount||source.questions.length),
+        totalPoints:Number(template.totalPoints||source.questions.reduce((n,q)=>n+Number(q.points||0),0)),
+        createdAt:serverTimestamp(),
+        updatedAt:serverTimestamp()
+      };
+      await setDoc(ref,clone);
+
+      for(let offset=0;offset<source.questions.length;offset+=180){
+        const batch=writeBatch(db),chunk=source.questions.slice(offset,offset+180);
+        for(const q of chunk){
+          const cleanQ=Object.fromEntries(Object.entries(q).filter(([k])=>k!=="id"));
+          batch.set(doc(db,"assessments",ref.id,"questions",q.id),{...cleanQ,clonedAt:serverTimestamp()});
+          const key=source.keys.find(k=>k.id===q.id);
+          if(key){
+            const cleanK=Object.fromEntries(Object.entries(key).filter(([k])=>k!=="id"));
+            batch.set(doc(db,"assessments",ref.id,"keys",q.id),{...cleanK,clonedAt:serverTimestamp()});
+          }
+        }
+        await batch.commit();
+      }
+
+      const oldAssessmentId=section.entranceAssessmentId||"";
+      await updateDoc(doc(db,"sections",section.id),{
+        entranceExamRequired:true,
+        entranceAssessmentId:ref.id,
+        entranceTemplateSourceId:template.id,
+        entranceExamTitle:template.title,
+        entrancePassPercent:passPercent,
+        entranceConfiguredAt:serverTimestamp(),
+        updatedAt:serverTimestamp()
+      });
+
+      if(oldAssessmentId&&oldAssessmentId!==ref.id){
+        try{await deleteEntranceAssessmentTree(oldAssessmentId);}catch(error){console.warn("Old entrance examination cleanup failed:",error);}
+      }
+
+      core().closeModal();
+      await core().reloadCurrentSection("overview");
+      toast("Entrance examination configured. Students must earn "+passPercent+"% before enrollment.");
+    }catch(error){
+      button.disabled=false;button.textContent=section.entranceAssessmentId?"Replace Entrance Exam":"Configure Entrance Exam";
+      toast(error.message||"Unable to configure the entrance examination.");
+    }
+  };
+}
+
 
 async function assignAssessmentModal(assessmentId,preferredSectionId=""){
   if(!P3.current || P3.current.id!==assessmentId) await openAssessment(assessmentId);
@@ -2344,15 +2489,20 @@ async function startExam(id,confirmed=false){
     if(sub&&sub.status!=="in_progress")return receipt(id);
 
     const memberSnap=await getDoc(doc(db,"sections",a.sectionId,"members",s.user.uid));
-    if(!memberSnap.exists())return toast("You are not enrolled in the section assigned to this assessment.");
-    const acc=memberSnap.data().accommodations||{};
+    let participantData=memberSnap.exists()?memberSnap.data():null;
+    if(!participantData&&a.entranceExam===true){
+      const candidateSnap=await getDoc(doc(db,"sections",a.sectionId,"entranceCandidates",s.user.uid));
+      if(candidateSnap.exists())participantData=candidateSnap.data();
+    }
+    if(!participantData)return toast(a.entranceExam?"Your entrance-exam access has not been initialized. Re-enter the section join code.":"You are not enrolled in the section assigned to this assessment.");
+    const acc=participantData.accommodations||{};
     if(!sub&&!confirmed){
       const minutes=Math.round(Number(a.durationMinutes||0)*Number(acc.timeMultiplier||1));
       const modal=core().openModal({
-        eyebrow:"Formal Assessment",
+        eyebrow:a.entranceExam?"Entrance Examination":"Formal Assessment",
         title:a.title,
         wide:true,
-        body:'<div class="exam-preflight"><div class="preflight-warning"><strong>Before you begin</strong><p>Beginning creates your official candidate record and starts the examination timer. Refreshing the browser does not create a new attempt.</p></div>'+
+        body:'<div class="exam-preflight"><div class="preflight-warning"><strong>Before you begin</strong><p>'+(a.entranceExam?"This examination is required before enrollment. Beginning creates your entrance candidate record and starts the examination timer.":"Beginning creates your official candidate record and starts the examination timer.")+' Refreshing the browser does not create a new attempt.</p></div>'+
           '<div class="detail-list"><div><span>Assessment</span><strong>'+esc(a.type)+'</strong></div><div><span>Time Allowed</span><strong>'+(minutes?minutes+" minutes":"Untimed")+'</strong></div><div><span>Closes</span><strong>'+esc(dateText(a.closesAt))+'</strong></div><div><span>Backtracking</span><strong>'+(a.backtracking!==false?"Permitted":"Restricted")+'</strong></div><div><span>Grading</span><strong>'+(a.anonymousGrading!==false?"Anonymous candidate number":"Named")+'</strong></div></div>'+
           (a.instructions?'<div class="preflight-instructions"><div class="eyebrow">Instructor Instructions</div><p>'+esc(a.instructions).replace(/\n/g,"<br>")+'</p></div>':'')+
           '<div class="accommodation-summary"><div class="eyebrow">Assessment Access</div><span>'+esc(acc.timeMultiplier||1)+'× time</span>'+(acc.breaks?'<span>Breaks permitted</span>':'')+(acc.calculator?'<span>Calculator permitted</span>':'')+(acc.largeText?'<span>Large text</span>':'')+'</div>'+
@@ -2551,7 +2701,21 @@ async function persistResult(sub,grading,existing,overallComment=existing?.overa
   batch.set(doc(db,"assessments",a.id,"results",sub.studentId),{studentId:sub.studentId,candidateNumber:sub.candidateNumber,totalScore:m.total,maxScore:m.max,percent:m.percent,grading,partScores:m.partScores,released,complete:m.complete,overallComment,gradedAt:serverTimestamp(),gradedBy:state().user.uid},{merge:true});
   if(m.complete){
     batch.update(doc(db,"assessments",a.id,"submissions",sub.studentId),{status:"graded",updatedAt:serverTimestamp()});
-    batch.set(doc(db,"sections",a.sectionId,"assessmentGrades",a.id+"_"+sub.studentId),{assessmentId:a.id,assessmentTitle:a.title,assessmentType:a.type,studentId:sub.studentId,score:m.total,maxScore:m.max,percent:m.percent,partScores:m.partScores,released,updatedAt:serverTimestamp()},{merge:true});
+    if(a.entranceExam===true){
+      const passPercent=Number(a.entrancePassPercent||70);
+      batch.set(doc(db,"sections",a.sectionId,"entranceCandidates",sub.studentId),{
+        status:m.percent>=passPercent?"passed":"failed",
+        score:m.total,
+        maxScore:m.max,
+        percent:m.percent,
+        passPercent,
+        assessmentId:a.id,
+        gradedAt:serverTimestamp(),
+        updatedAt:serverTimestamp()
+      },{merge:true});
+    }else{
+      batch.set(doc(db,"sections",a.sectionId,"assessmentGrades",a.id+"_"+sub.studentId),{assessmentId:a.id,assessmentTitle:a.title,assessmentType:a.type,studentId:sub.studentId,score:m.total,maxScore:m.max,percent:m.percent,partScores:m.partScores,released,updatedAt:serverTimestamp()},{merge:true});
+    }
   }
   await batch.commit();
 }
@@ -2649,6 +2813,7 @@ document.addEventListener("click",async e=>{
   if(a==="new-assessment")return assessmentModal();
   if(a==="assign-assessment")return assignAssessmentModal(b.dataset.id);
   if(a==="assign-current-section")return chooseAssessmentForSection(b.dataset.section);
+  if(a==="configure-entrance-exam")return configureEntranceExam(b.dataset.section);
   if(a==="edit-assignment")return editAssignedAssessmentModal(b.dataset.id);
   if(a==="delete-assigned"||a==="delete-assessment")return deleteAssessment(b.dataset.id);
   if(a==="bulk-import-questions")return bulkImportQuestionsModal();
@@ -2687,6 +2852,6 @@ document.addEventListener("click",async e=>{
   if(a==="calculator")return calculator();
 });
 
-window.TheoriaPhase3={renderSectionTab,renderAssessments,renderItemBank,openAssessment};
+window.TheoriaPhase3={renderSectionTab,renderAssessments,renderItemBank,openAssessment,configureEntranceExam,startEntranceExam:(id)=>startExam(id)};
 
 if(window.TheoriaCore)onReady();
