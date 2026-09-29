@@ -1509,3 +1509,81 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .entrance-source-stats{width:100%}
   .entrance-source-stats span{flex:1}
 }
+
+/* -------------------- Phase 5: Academic Intelligence -------------------- */
+.progression-grid{display:grid;gap:12px;margin-top:18px}
+.progression-course-card{display:grid;grid-template-columns:46px minmax(0,1fr) auto;gap:14px;align-items:start;padding:16px 17px;border:1px solid var(--line);border-radius:10px;background:#fff}
+.progression-course-card.ready{border-left:3px solid #486f5b}
+.progression-course-card.locked{border-left:3px solid #a57c39}
+.progression-sequence{display:grid;place-items:center;width:38px;height:38px;border:1px solid var(--line);border-radius:50%;font-family:"Libre Baskerville",serif;color:var(--burgundy);background:#faf8f3}
+.progression-course-card>div:nth-child(2)>span{font-size:7px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted)}
+.progression-course-card h3{margin:3px 0 5px;font-family:"Libre Baskerville",serif;font-size:15px;font-weight:400;color:var(--ink)}
+.progression-course-card p{margin:0;font-size:8px;line-height:1.5;color:var(--slate)}
+.readiness-checks{display:grid;gap:6px;margin-top:12px}
+.readiness-checks>div{display:grid;grid-template-columns:24px 1fr;gap:8px;align-items:start;padding:8px 9px;border:1px solid var(--line);border-radius:7px;background:#faf8f3}
+.readiness-checks>div>span{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;font-weight:700;background:#eee8dc;color:var(--slate)}
+.readiness-checks .ok>span{background:#e7f0ea;color:#38604a}
+.readiness-checks .missing>span{background:#f8e8ea;color:#7b3039}
+.readiness-checks strong{display:block;font-size:8px;color:var(--ink)}
+.readiness-checks small{display:block;margin-top:2px;font-size:7px;color:var(--muted);line-height:1.45}
+
+.prerequisite-course-grid,.policy-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.compact-policy{min-height:76px}
+.progression-competency-row{grid-template-columns:34px minmax(120px,.7fr) minmax(150px,1fr) 105px 34px!important}
+
+.student-profile-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:16px 0}
+.student-profile-summary>div{padding:14px;border:1px solid var(--line);border-radius:8px;background:#faf8f3}
+.student-profile-summary span{display:block;font-size:7px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.student-profile-summary strong{display:block;margin-top:4px;font-family:"Libre Baskerville",serif;font-size:22px;font-weight:400;color:var(--burgundy)}
+.profile-record-row{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.profile-record-row:last-child{border-bottom:0}
+.profile-record-row strong{display:block;font-size:9px;color:var(--ink)}
+.profile-record-row span{display:block;margin-top:2px;font-size:7px;color:var(--muted)}
+.profile-record-row b{font-size:9px;color:var(--burgundy)}
+
+.operations-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.compact-operations{grid-template-columns:1fr}
+.operation-card{display:grid;grid-template-columns:34px 1fr;gap:2px 10px;text-align:left;padding:14px;border:1px solid var(--line);border-radius:9px;background:#fff;cursor:pointer}
+.operation-card:hover{background:#faf8f3}
+.operation-card>span{grid-row:1/3;display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#f2ede3;color:var(--burgundy);font-weight:700}
+.operation-card strong{font-size:9px;color:var(--ink)}
+.operation-card small{font-size:7px;line-height:1.45;color:var(--muted)}
+.danger-operation{border-color:#e4c8cc;background:#fffafb}
+.danger-operation>span{background:#f8e8ea;color:#7b3039}
+
+.audit-timeline{display:grid;gap:0}
+.audit-event{display:grid;grid-template-columns:28px 1fr;gap:10px;position:relative;padding:10px 0}
+.audit-event:before{content:"";position:absolute;left:13px;top:36px;bottom:-10px;width:1px;background:var(--line)}
+.audit-event:last-child:before{display:none}
+.audit-event-mark{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:#f2ede3;color:var(--burgundy);font-weight:700;z-index:1}
+.audit-event strong{display:block;font-size:9px;text-transform:capitalize;color:var(--ink)}
+.audit-event span,.audit-event small{display:block;margin-top:2px;font-size:7px;color:var(--muted)}
+.staff-role-row,.approval-course-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.staff-role-row:last-child,.approval-course-row:last-child{border-bottom:0}
+.staff-role-row strong,.approval-course-row strong{display:block;font-size:9px;color:var(--ink)}
+.staff-role-row span,.approval-course-row span,.approval-course-row small{display:block;font-size:7px;color:var(--muted)}
+.approval-course-list{display:grid;gap:0}
+
+.version-history-list{display:grid;gap:9px;margin-top:16px}
+.version-history-row{padding:12px 13px;border:1px solid var(--line);border-radius:8px;background:#faf8f3}
+.version-history-row.current{border-left:3px solid var(--burgundy);background:#fff}
+.version-history-row>div{display:flex;justify-content:space-between;gap:10px}
+.version-history-row strong{font-size:9px;color:var(--ink)}
+.version-history-row span{font-size:7px;color:var(--muted)}
+.version-history-row p{margin:7px 0 0;font-size:8px;line-height:1.5;color:var(--slate)}
+
+.analytics-flag{background:#fff9f0}
+.analytics-answer{display:inline-block;margin:2px 3px 2px 0;padding:3px 5px;border:1px solid var(--line);border-radius:5px;background:#faf8f3;font-size:7px;color:var(--slate)}
+.grade-status-note{display:block;margin-top:2px;font-size:6px;text-transform:uppercase;letter-spacing:.06em;color:#8a622d}
+.section-status-group+.section-status-group{margin-top:28px}
+.archived-section-group{opacity:.86}
+.entrance-source-overview{border-left:3px solid var(--burgundy)}
+
+@media(max-width:760px){
+  .progression-course-card{grid-template-columns:38px 1fr}
+  .progression-course-card>.badge,.progression-course-card>.card-actions{grid-column:2}
+  .prerequisite-course-grid,.policy-grid,.operations-grid,.student-profile-summary{grid-template-columns:1fr}
+  .progression-competency-row{grid-template-columns:30px 1fr!important}
+  .progression-competency-row .req-course,.progression-competency-row .req-code,.progression-competency-row .input-with-suffix{grid-column:2}
+  .approval-course-row,.staff-role-row{align-items:flex-start;flex-direction:column}
+}
