@@ -1492,3 +1492,20 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 @media(max-width:700px){
   .delete-impact-grid{grid-template-columns:1fr}
 }
+
+/* Cross-course entrance exam source */
+.entrance-source-preview{margin-top:10px}
+.entrance-source-card{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 13px;border:1px solid var(--line);border-radius:8px;background:#faf8f3}
+.entrance-source-card.cross-course{border-left:3px solid var(--burgundy)}
+.entrance-source-card>div:first-child span{display:block;font-size:7px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.entrance-source-card>div:first-child strong{display:block;margin-top:3px;font-size:10px;color:var(--ink)}
+.entrance-source-card>div:first-child small{display:block;margin-top:3px;font-size:8px;color:var(--slate)}
+.entrance-source-stats{display:flex;gap:8px;flex-wrap:wrap}
+.entrance-source-stats span{min-width:72px;padding:7px 8px;border:1px solid var(--line);border-radius:6px;background:#fff;text-align:center;font-size:7px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.entrance-source-stats strong{display:block;font-size:12px;color:var(--burgundy);letter-spacing:0;text-transform:none}
+.entrance-source-overview .panel-subtitle{margin-top:3px;font-size:8px;color:var(--muted)}
+@media(max-width:700px){
+  .entrance-source-card{align-items:flex-start;flex-direction:column}
+  .entrance-source-stats{width:100%}
+  .entrance-source-stats span{flex:1}
+}
