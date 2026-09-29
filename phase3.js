@@ -982,8 +982,16 @@ async function loadAssessments(){
   const s=state();if(!s)return [];
   const list=[];
   if(s.role==="instructor"){
-    const snap=await getDocs(query(collection(db,"assessments"),where("ownerId","==",s.user.uid)));
-    snap.docs.forEach(d=>list.push({id:d.id,...d.data()}));
+    const byId=new Map();
+    const owned=await getDocs(query(collection(db,"assessments"),where("ownerId","==",s.user.uid)));
+    owned.docs.forEach(d=>byId.set(d.id,{id:d.id,...d.data()}));
+    for(const section of (s.sections||[]).filter(sec=>sec.staffRole&&sec.staffRole!=="owner")){
+      try{
+        const delegated=await getDocs(query(collection(db,"assessments"),where("sectionId","==",section.id)));
+        delegated.docs.forEach(d=>byId.set(d.id,{id:d.id,...d.data(),delegatedRole:section.staffRole}));
+      }catch(error){console.warn("Unable to load delegated section assessments:",section.id,error);}
+    }
+    list.push(...byId.values());
   }else{
     for(const section of s.sections){
       const refs=await getDocs(collection(db,"sections",section.id,"assessmentRefs"));
@@ -2584,8 +2592,8 @@ async function renderSectionAssessments(){
   try{
     let list=[];
     if(s.role==="instructor"){
-      const snap=await getDocs(query(collection(db,"assessments"),where("ownerId","==",s.user.uid)));
-      list=snap.docs.map(d=>({id:d.id,...d.data()})).filter(a=>a.sectionId===section.id);
+      const snap=await getDocs(query(collection(db,"assessments"),where("sectionId","==",section.id)));
+      list=snap.docs.map(d=>({id:d.id,...d.data()}));
     }else{
       const refs=await getDocs(collection(db,"sections",section.id,"assessmentRefs"));
       for(const r of refs.docs){
