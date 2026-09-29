@@ -3066,6 +3066,7 @@ async function removeStudentFromSection(studentId){
       const batch=writeBatch(db);
       batch.delete(doc(db,"sections",section.id,"members",studentId));
       batch.delete(doc(db,"users",studentId,"enrollments",section.id));
+      batch.delete(doc(db,"sections",section.id,"entranceCandidates",studentId));
       await batch.commit();
       closeModal();
       state.sectionData=await loadSectionData(section);
@@ -3169,16 +3170,20 @@ async function deleteSectionCompletely(){
 async function beginEntranceExam(section,joinCode){
   if(!section?.entranceAssessmentId)return showToast("The instructor has not configured the entrance examination yet.");
   try{
-    await setDoc(doc(db,"sections",section.id,"entranceCandidates",state.user.uid),{
-      userId:state.user.uid,
-      displayName:state.profile?.displayName||state.user.displayName||"Student",
-      email:state.user.email||"",
-      status:"pending",
-      joinCode,
-      assessmentId:section.entranceAssessmentId,
-      createdAt:serverTimestamp(),
-      updatedAt:serverTimestamp()
-    },{merge:true});
+    const candidateRef=doc(db,"sections",section.id,"entranceCandidates",state.user.uid);
+    const existingCandidate=await getDoc(candidateRef);
+    if(!existingCandidate.exists()){
+      await setDoc(candidateRef,{
+        userId:state.user.uid,
+        displayName:state.profile?.displayName||state.user.displayName||"Student",
+        email:state.user.email||"",
+        status:"pending",
+        joinCode,
+        assessmentId:section.entranceAssessmentId,
+        createdAt:serverTimestamp(),
+        updatedAt:serverTimestamp()
+      });
+    }
     closeModal();
     if(window.TheoriaPhase3?.startEntranceExam){
       await window.TheoriaPhase3.startEntranceExam(section.entranceAssessmentId);
