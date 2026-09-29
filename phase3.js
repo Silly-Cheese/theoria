@@ -1345,7 +1345,10 @@ async function assessmentModal(existing){
     questionUnit.addEventListener("change",renderBankQuestions);
     questionType.addEventListener("change",renderBankQuestions);
     randomDrawToggle.addEventListener("change",()=>{
-      if(randomDrawToggle.checked)form.elements.randomizeQuestions.checked=true;
+      if(randomDrawToggle.checked){
+        const randomizeInput=form.querySelector('[name="randomizeQuestions"]');
+        if(randomizeInput)randomizeInput.checked=true;
+      }
       renderRandomDrawPlan();
       syncCompetencyBlueprint();
     });
@@ -1494,7 +1497,7 @@ async function assessmentModal(existing){
       sectionId:existing?.sectionId||"",sectionName:existing?.sectionName||"",templateSourceId:existing?.templateSourceId||"",
       title:String(fd.get("title")).trim(),type,mode:type==="Oral Examination"?"oral":"written",
       status:existing?.status||"Draft",durationMinutes:Number(fd.get("durationMinutes")||0),opensAt:timestampFrom(fd.get("opensAt")),closesAt:timestampFrom(fd.get("closesAt")),
-      instructions:instructionSteps.join("\n"),instructionSteps,anonymousGrading:form.elements.anonymousGrading.checked,backtracking:form.elements.backtracking.checked,randomizeQuestions:randomDrawEnabled?true:form.elements.randomizeQuestions.checked,
+      instructions:instructionSteps.join("\n"),instructionSteps,anonymousGrading:form.querySelector('[name="anonymousGrading"]')?.checked===true,backtracking:form.querySelector('[name="backtracking"]')?.checked===true,randomizeQuestions:randomDrawEnabled?true:form.querySelector('[name="randomizeQuestions"]')?.checked===true,
       randomDrawEnabled:existing?!!existing.randomDrawEnabled:randomDrawEnabled,
       randomDrawPlan:existing?(existing.randomDrawPlan||[]):randomDrawPlan,
       feedbackPolicy:String(fd.get("feedbackPolicy")),contentBlueprint,competencyBlueprint,competencyBlueprintAuto:true,competencyBlueprintMappedPoints:competencyDerivation.taggedExpectedPoints,competencyBlueprintUnmappedPoints:competencyDerivation.untaggedExpectedPoints,parts:existing?.parts?.length?existing.parts:defaultParts(type),
@@ -1677,7 +1680,7 @@ function configureRandomDrawModal(){
   const form=modal.querySelector("#randomDrawConfigForm");
   form.onsubmit=async e=>{
     e.preventDefault();
-    const enabled=form.elements.enabled.checked;
+    const enabled=form.querySelector('[name="enabled"]')?.checked===true;
     let plan=[],questionCount=d.questions.length,totalPoints=d.questions.reduce((n,q)=>n+Number(q.points||0),0);
     if(enabled){
       for(const [type,questions] of groups){
@@ -2677,13 +2680,13 @@ async function renderGradingPolicy(){
     if(categoryTotal!==0&&categoryTotal!==100)return toast("Coursework category weights must total 100%, or all remain 0 for points-based grading.");
     const courseworkRules={
       dropLowest:Math.max(0,Math.floor(Number(fd.get("dropLowest")||0))),
-      missingAsZero:e.currentTarget.elements.missingAsZero.checked,
+      missingAsZero:e.currentTarget.querySelector('[name="missingAsZero"]')?.checked===true,
       latePenaltyPercent:Math.max(0,Math.min(100,Number(fd.get("latePenaltyPercent")||0))),
       categoryWeights
     };
     const gradingPeriods=[...new Set(String(fd.get("gradingPeriods")||"Overall").split(",").map(x=>x.trim()).filter(Boolean))];
     if(!gradingPeriods.length)gradingPeriods.push("Overall");
-    const gradingPolicy={selectionOpen:e.currentTarget.elements.selectionOpen.checked,selectionDeadline:timestampFrom(fd.get("deadline")),gradingPeriods,examination,composite,courseworkRules,updatedAt:serverTimestamp()};
+    const gradingPolicy={selectionOpen:e.currentTarget.querySelector('[name="selectionOpen"]')?.checked===true,selectionDeadline:timestampFrom(fd.get("deadline")),gradingPeriods,examination,composite,courseworkRules,updatedAt:serverTimestamp()};
     try{
       await updateDoc(doc(db,"sections",section.id),{gradingPolicy,updatedAt:serverTimestamp()});
       section.gradingPolicy=gradingPolicy;
@@ -2727,11 +2730,14 @@ function accommodationsModal(studentId){
       '<label class="policy-card" style="margin-top:14px"><input type="checkbox" name="persistentProfile"><div><strong>Save as Persistent Access Profile</strong><span>Use these authorized settings as the student’s default in future sections unless another instructor sets a section-specific override.</span></div></label>'+
       '<div class="modal-foot" style="margin:24px -24px -24px"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Accommodations</button></div></form>'
   });
-  const form=modal.querySelector("#accommodationForm");form.timeMultiplier.value=String(a.timeMultiplier||1);
+  const form=modal?.querySelector("#accommodationForm");
+  if(!form){core().closeModal();return toast("The accommodation editor could not be initialized. Refresh Theoria and try again.");}
+  const timeMultiplierInput=form.querySelector('[name="timeMultiplier"]');
+  if(timeMultiplierInput)timeMultiplierInput.value=String(a.timeMultiplier||1);
   form.addEventListener("submit",async e=>{
-    e.preventDefault();const fd=new FormData(form),accommodations={timeMultiplier:Number(fd.get("timeMultiplier")||1),breaks:form.elements.breaks.checked,calculator:form.elements.calculator.checked,largeText:form.elements.largeText.checked,reducedDistractions:form.elements.reducedDistractions.checked,notes:String(fd.get("notes")||"").trim()};
+    e.preventDefault();const fd=new FormData(form),accommodations={timeMultiplier:Number(fd.get("timeMultiplier")||1),breaks:form.querySelector('[name="breaks"]')?.checked===true,calculator:form.querySelector('[name="calculator"]')?.checked===true,largeText:form.querySelector('[name="largeText"]')?.checked===true,reducedDistractions:form.querySelector('[name="reducedDistractions"]')?.checked===true,notes:String(fd.get("notes")||"").trim()};
     try{
-      const usePersistent=form.elements.persistentProfile.checked;
+      const usePersistent=form.querySelector('[name="persistentProfile"]')?.checked===true;
       if(usePersistent){
         await setDoc(doc(db,"academicAccess",studentId),{
           studentId,accommodations,notes:accommodations.notes||"",
