@@ -1332,9 +1332,8 @@ async function assessmentModal(existing){
 
   form.onsubmit=async e=>{
     e.preventDefault();const fd=new FormData(form),course=s.courses.find(x=>x.id===(existing?.courseId||String(fd.get("courseId"))))||selectedCourse;
-    const type=form.querySelector('input[name="type"]:checked')?.value||"Unit Evaluation",contentBlueprint=readBlueprint("content"),competencyBlueprint=readBlueprint("competency");
+    const type=form.querySelector('input[name="type"]:checked')?.value||"Unit Evaluation",contentBlueprint=readBlueprint("content");
     if(contentBlueprint.length&&roundBlueprint(totalWeight(contentBlueprint))!==100)return toast("Content blueprint must total 100%.");
-    if(competencyBlueprint.length&&roundBlueprint(totalWeight(competencyBlueprint))!==100)return toast("Competency blueprint must total 100%.");
     const instructionSteps=[...instructionBox.querySelectorAll(".structured-input")].map(x=>x.value.trim()).filter(Boolean);
     const chosenQuestions=existing?[]:bankQuestions.filter(q=>selectedQuestionIds.has(q.id));
     const randomDrawEnabled=!existing&&!!randomDrawToggle?.checked;
@@ -1364,6 +1363,16 @@ async function assessmentModal(existing){
       plannedTotalPoints=randomDrawPlan.reduce((n,row)=>n+(row.count*row.pointsPerQuestion),0);
     }
 
+    const blueprintQuestions=(existing?(P3.detail?.questions||[]):chosenQuestions).map(q=>({...q,points:Number(q.points??q.pointsDefault??1)}));
+    const competencyDerivation=deriveCompetencyBlueprint(
+      blueprintQuestions,
+      fw.competencies||[],
+      existing
+        ? {randomDrawEnabled:!!existing.randomDrawEnabled,randomDrawPlan:existing.randomDrawPlan||[]}
+        : {randomDrawEnabled,randomDrawPlan}
+    );
+    const competencyBlueprint=competencyDerivation.rows;
+
     const data={
       ownerId:s.user.uid,courseId:course.id,courseCode:course.code,courseTitle:course.title,
       sectionId:existing?.sectionId||"",sectionName:existing?.sectionName||"",templateSourceId:existing?.templateSourceId||"",
@@ -1372,7 +1381,7 @@ async function assessmentModal(existing){
       instructions:instructionSteps.join("\n"),instructionSteps,anonymousGrading:form.elements.anonymousGrading.checked,backtracking:form.elements.backtracking.checked,randomizeQuestions:randomDrawEnabled?true:form.elements.randomizeQuestions.checked,
       randomDrawEnabled:existing?!!existing.randomDrawEnabled:randomDrawEnabled,
       randomDrawPlan:existing?(existing.randomDrawPlan||[]):randomDrawPlan,
-      feedbackPolicy:String(fd.get("feedbackPolicy")),contentBlueprint,competencyBlueprint,parts:existing?.parts?.length?existing.parts:defaultParts(type),
+      feedbackPolicy:String(fd.get("feedbackPolicy")),contentBlueprint,competencyBlueprint,competencyBlueprintAuto:true,competencyBlueprintMappedPoints:competencyDerivation.taggedExpectedPoints,competencyBlueprintUnmappedPoints:competencyDerivation.untaggedExpectedPoints,parts:existing?.parts?.length?existing.parts:defaultParts(type),
       questionIds:existing?.questionIds||[],questionPool:existing?(existing.questionPool||[]):[],
       poolQuestionCount:existing?Number(existing.poolQuestionCount||existing.questionIds?.length||0):chosenQuestions.length,
       questionCount:existing?Number(existing.questionCount||0):plannedQuestionCount,
@@ -1401,6 +1410,7 @@ async function assessmentModal(existing){
             batch.set(ref,{
               itemId:item.id,order,partId:(data.parts?.[0]?.id||"main"),type:item.type,prompt:item.prompt,
               stimulus:item.stimulus||"",sourceTitle:item.sourceTitle||"",options:item.options||[],points:Number(item.pointsDefault||1),
+              unitId:item.unitId||"",unitTitle:item.unitTitle||"",unitNumber:Number(item.unitNumber||0),
               topicId:item.topicId||"",topicTitle:item.topicTitle||"",topicNumber:item.topicNumber||"",
               competencyIds:item.competencyIds||[],competencyCodes:item.competencyCodes||[],createdAt:serverTimestamp()
             });
@@ -1470,7 +1480,7 @@ function overviewView(){
   return '<div class="section-summary"><div class="summary-block"><div class="summary-label">Status</div><div class="summary-value">'+esc(a.status)+'</div></div><div class="summary-block"><div class="summary-label">'+(a.randomDrawEnabled?"Questions / Student":"Questions")+'</div><div class="summary-value">'+esc(a.questionCount||0)+'</div></div><div class="summary-block"><div class="summary-label">Points</div><div class="summary-value">'+esc(a.totalPoints||0)+'</div></div><div class="summary-block"><div class="summary-label">Duration</div><div class="summary-value">'+esc(a.durationMinutes||0)+'m</div></div></div>'+
     '<div class="grid-2"><div class="panel"><div class="panel-head"><div class="panel-title">Administration</div></div><div class="panel-body"><div class="detail-list"><div><span>Opens</span><strong>'+esc(dateText(a.opensAt))+'</strong></div><div><span>Closes</span><strong>'+esc(dateText(a.closesAt))+'</strong></div><div><span>Anonymous grading</span><strong>'+(a.anonymousGrading!==false?"Enabled":"Disabled")+'</strong></div><div><span>Backtracking</span><strong>'+(a.backtracking!==false?"Allowed":"Restricted")+'</strong></div></div></div></div>'+randomPanel+'</div>'+
     '<div class="grid-2" style="margin-top:18px"><div class="panel"><div class="panel-head"><div class="panel-title">Examination Parts</div><span class="badge '+(totalWeight(a.parts)===100?'live':'gold')+'">'+totalWeight(a.parts)+'%</span></div><div class="panel-body">'+(a.parts||[]).map(x=>'<div class="blueprint-row"><span>'+esc(x.title)+'</span><strong>'+esc(x.weight)+'%</strong></div>').join("")+'</div></div>'+blueprintPanel("Content Blueprint",a.contentBlueprint)+'</div>'+
-    '<div style="margin-top:18px">'+blueprintPanel("Competency Blueprint",a.competencyBlueprint)+'</div>';
+    '<div style="margin-top:18px">'+blueprintPanel("Competency Blueprint · Auto",a.competencyBlueprint)+'</div>';
 }
 
 function itemsView(){
@@ -1532,9 +1542,14 @@ function configureRandomDrawModal(){
     }
     const questionPool=d.questions.map(q=>({id:q.id,itemId:q.itemId||"",type:q.type,points:Number(q.points||0)}));
     try{
+      const competencyDerivation=await calculateAssessmentCompetencyBlueprint(a,d.questions,null,{randomDrawEnabled:enabled,randomDrawPlan:plan});
       await updateDoc(doc(db,"assessments",a.id),{
         randomDrawEnabled:enabled,randomDrawPlan:plan,randomizeQuestions:enabled?true:!!a.randomizeQuestions,
-        questionPool,poolQuestionCount:d.questions.length,questionCount,totalPoints,updatedAt:serverTimestamp()
+        questionPool,poolQuestionCount:d.questions.length,questionCount,totalPoints,
+        competencyBlueprint:competencyDerivation.rows,competencyBlueprintAuto:true,
+        competencyBlueprintMappedPoints:competencyDerivation.taggedExpectedPoints,
+        competencyBlueprintUnmappedPoints:competencyDerivation.untaggedExpectedPoints,
+        updatedAt:serverTimestamp()
       });
       core().closeModal();await openAssessment(a.id,"items");toast(enabled?"Random draw updated.":"Random draw disabled; all assessment questions will be used.");
     }catch(err){toast(err.message||"Unable to update the random draw.");}
@@ -1726,10 +1741,27 @@ async function addItemsModal(){
       });
       batch.set(doc(db,"assessments",a.id,"keys",ref.id),{itemId:item.id,correctAnswer:item.correctAnswer??"",explanation:item.explanation||"",rubric:item.rubric||[],createdAt:serverTimestamp()});
     }
+    const addedQuestions=ids.map(id=>{
+      const item=available.find(x=>x.id===id);
+      return item?{...item,points:Number(item.pointsDefault||1)}:null;
+    }).filter(Boolean);
+    const combinedQuestions=[...P3.detail.questions,...addedQuestions];
+    const updatedRandomDrawPlan=(a.randomDrawPlan||[]).map(row=>({
+      ...row,
+      available:combinedQuestions.filter(q=>q.type===row.type).length
+    }));
+    const competencyDerivation=deriveCompetencyBlueprint(combinedQuestions,fw.competencies||[],{
+      randomDrawEnabled:!!a.randomDrawEnabled,
+      randomDrawPlan:updatedRandomDrawPlan
+    });
     batch.update(doc(db,"assessments",a.id),{
       questionIds,questionPool,poolQuestionCount:questionPool.length,
+      randomDrawPlan:updatedRandomDrawPlan,
       questionCount:a.randomDrawEnabled?Number(a.questionCount||0):order,
       totalPoints:a.randomDrawEnabled?Number(a.totalPoints||0):total,
+      competencyBlueprint:competencyDerivation.rows,competencyBlueprintAuto:true,
+      competencyBlueprintMappedPoints:competencyDerivation.taggedExpectedPoints,
+      competencyBlueprintUnmappedPoints:competencyDerivation.untaggedExpectedPoints,
       updatedAt:serverTimestamp()
     });
     try{await batch.commit();core().closeModal();await openAssessment(a.id,"items");toast(ids.length+" question"+(ids.length===1?"":"s")+" added.");}catch(err){toast(err.message||"Unable to add questions.");}
@@ -1761,8 +1793,11 @@ function configureItemModal(id){
       totalPoints=randomDrawPlan.reduce((n,row)=>n+(Number(row.count||0)*Number(row.pointsPerQuestion||0)),0);
     }else totalPoints+=delta;
 
+    const updatedQuestions=P3.detail.questions.map(x=>x.id===q.id?{...x,points}:x);
+    const fw=await framework(a.courseId);
+    const competencyDerivation=deriveCompetencyBlueprint(updatedQuestions,fw.competencies||[],{randomDrawEnabled:!!a.randomDrawEnabled,randomDrawPlan});
     batch.update(doc(db,"assessments",a.id,"questions",id),{partId:String(fd.get("partId")),points,updatedAt:serverTimestamp()});
-    batch.update(doc(db,"assessments",a.id),{questionPool,randomDrawPlan,totalPoints,updatedAt:serverTimestamp()});
+    batch.update(doc(db,"assessments",a.id),{questionPool,randomDrawPlan,totalPoints,competencyBlueprint:competencyDerivation.rows,competencyBlueprintAuto:true,competencyBlueprintMappedPoints:competencyDerivation.taggedExpectedPoints,competencyBlueprintUnmappedPoints:competencyDerivation.untaggedExpectedPoints,updatedAt:serverTimestamp()});
     try{await batch.commit();core().closeModal();await openAssessment(a.id,"items");}catch(err){toast(err.message||"Unable to configure question.");}
   });
 }
@@ -1786,10 +1821,12 @@ async function removeItem(id){
     ? randomDrawPlan.reduce((n,row)=>n+(Number(row.count||0)*Number(row.pointsPerQuestion||0)),0)
     : remaining.reduce((n,x)=>n+Number(x.points||0),0);
 
+  const fw=await framework(a.courseId);
+  const competencyDerivation=deriveCompetencyBlueprint(remaining,fw.competencies||[],{randomDrawEnabled:!!a.randomDrawEnabled,randomDrawPlan});
   const batch=writeBatch(db);
   batch.delete(doc(db,"assessments",a.id,"questions",id));
   batch.delete(doc(db,"assessments",a.id,"keys",id));
-  batch.update(doc(db,"assessments",a.id),{questionIds,questionPool,poolQuestionCount:questionPool.length,randomDrawPlan,questionCount,totalPoints,updatedAt:serverTimestamp()});
+  batch.update(doc(db,"assessments",a.id),{questionIds,questionPool,poolQuestionCount:questionPool.length,randomDrawPlan,questionCount,totalPoints,competencyBlueprint:competencyDerivation.rows,competencyBlueprintAuto:true,competencyBlueprintMappedPoints:competencyDerivation.taggedExpectedPoints,competencyBlueprintUnmappedPoints:competencyDerivation.untaggedExpectedPoints,updatedAt:serverTimestamp()});
   try{await batch.commit();await openAssessment(a.id,"items");}catch(err){toast(err.message||"Unable to remove question.");}
 }
 
