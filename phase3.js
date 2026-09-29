@@ -1117,7 +1117,7 @@ async function assessmentModal(existing){
       '</section>'+
       '<section class="form-section"><div class="form-section-head"><div><span>03</span><h3>Student Instructions</h3><p>Add concise instructions one line at a time.</p></div><button type="button" class="secondary-btn small-btn" id="addAssessmentInstruction">+ Add Instruction</button></div><div id="assessmentInstructions" class="structured-list"></div></section>'+
       '<section class="form-section"><div class="form-section-head"><div><span>04</span><h3>Content Blueprint</h3><p>Choose course units and assign their intended share of the assessment.</p></div><div class="inline-actions"><button type="button" class="secondary-btn small-btn" id="balanceContentBlueprint">Balance</button><button type="button" class="secondary-btn small-btn" id="addContentBlueprint">+ Add Target</button></div></div><div id="contentBlueprintRows" class="blueprint-builder"></div><div class="builder-total"><span>Total</span><strong id="contentBlueprintTotal">0%</strong></div></section>'+
-      '<section class="form-section"><div class="form-section-head"><div><span>05</span><h3>Competency Blueprint</h3><p>Define the academic competencies this assessment is intended to measure.</p></div><div class="inline-actions"><button type="button" class="secondary-btn small-btn" id="balanceCompetencyBlueprint">Balance</button><button type="button" class="secondary-btn small-btn" id="addCompetencyBlueprint">+ Add Target</button></div></div><div id="competencyBlueprintRows" class="blueprint-builder"></div><div class="builder-total"><span>Total</span><strong id="competencyBlueprintTotal">0%</strong></div></section>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>05</span><h3>Competency Blueprint</h3><p>Automatically calculated from the questions in this assessment and the competencies attached to those questions.</p></div><span class="badge live">Auto</span></div><div id="competencyBlueprintRows" class="blueprint-builder auto-blueprint-builder"></div><div id="competencyBlueprintAutoNote" class="auto-blueprint-note">Select competency-tagged questions to build the blueprint.</div><div class="builder-total"><span>Mapped competency weight</span><strong id="competencyBlueprintTotal">0%</strong></div></section>'+
       (!existing?'<section class="form-section question-bank-builder"><div class="form-section-head"><div><span>06</span><h3>Question Pool</h3><p>Select every question that may appear on this assessment. You can then use all selected questions or draw a random number from each question type.</p></div><div class="question-selection-summary"><strong id="selectedQuestionCount">0</strong><span>in pool</span><b id="selectedQuestionPoints">0 pts total</b></div></div>'+
         '<div class="question-bank-toolbar"><div class="field"><label>Search Question Bank</label><input id="assessmentQuestionSearch" placeholder="Search prompt, topic, competency, or tag"></div><div class="field"><label>Question Type</label><select id="assessmentQuestionType"><option value="">All question types</option></select></div><button type="button" class="secondary-btn small-btn question-select-filtered" id="selectFilteredQuestions">Select Filtered</button></div>'+
         '<div class="random-draw-panel"><label class="policy-card random-draw-toggle"><input type="checkbox" id="randomDrawEnabled"><div><strong>Random Draw by Question Type</strong><span>Each student receives a locked random subset from this pool. Their version does not change on refresh or resume.</span></div></label><div id="randomDrawPlan" class="random-draw-plan hidden"></div></div>'+
@@ -1136,6 +1136,7 @@ async function assessmentModal(existing){
   const randomDrawToggle=modal.querySelector("#randomDrawEnabled");
   const randomDrawPlanBox=modal.querySelector("#randomDrawPlan");
   const drawCounts=new Map();
+  let syncCompetencyBlueprint=()=>{};
 
   const selectedQuestions=()=>bankQuestions.filter(q=>selectedQuestionIds.has(q.id));
   const selectedGroups=()=>{
@@ -1180,6 +1181,7 @@ async function assessmentModal(existing){
       });
       const total=[...drawCounts.values()].reduce((n,x)=>n+Number(x||0),0);
       const totalEl=modal.querySelector("#randomDrawTotal");if(totalEl)totalEl.textContent=String(total);
+      syncCompetencyBlueprint();
     };
     randomDrawPlanBox.querySelectorAll(".random-draw-count").forEach(input=>input.addEventListener("input",refreshTotal));
     refreshTotal();
@@ -1191,6 +1193,7 @@ async function assessmentModal(existing){
     modal.querySelector("#selectedQuestionCount").textContent=String(selected.length);
     modal.querySelector("#selectedQuestionPoints").textContent=selected.reduce((n,q)=>n+Number(q.pointsDefault||1),0)+" pts total";
     renderRandomDrawPlan();
+    syncCompetencyBlueprint();
   };
 
   const filteredQuestions=()=>{
@@ -1228,6 +1231,7 @@ async function assessmentModal(existing){
     randomDrawToggle.addEventListener("change",()=>{
       if(randomDrawToggle.checked)form.elements.randomizeQuestions.checked=true;
       renderRandomDrawPlan();
+      syncCompetencyBlueprint();
     });
     modal.querySelector("#selectFilteredQuestions").addEventListener("click",()=>{
       filteredQuestions().forEach(q=>selectedQuestionIds.add(q.id));
@@ -1259,31 +1263,63 @@ async function assessmentModal(existing){
     if(rowData.label&&!match)options='<option value="'+esc(rowData.id||rowData.label)+'" data-label="'+esc(rowData.label)+'">'+esc(rowData.label)+'</option>'+options;
     row.innerHTML='<select class="blueprint-target">'+options+'</select><div class="input-with-suffix mini"><input class="blueprint-weight" type="number" min="0" max="100" step="0.5" value="'+esc(rowData.weight??0)+'"><span>%</span></div><button type="button" class="row-remove" aria-label="Remove">×</button>';
     if(rowData.id)row.querySelector(".blueprint-target").value=match?.id||rowData.id;
-    row.querySelector(".blueprint-weight").oninput=()=>updateTotal(kind);row.querySelector(".row-remove").onclick=()=>{row.remove();updateTotal(kind);};box.appendChild(row);updateTotal(kind);
+    row.querySelector(".blueprint-weight").oninput=()=>updateTotal(kind);row.querySelector(".row-remove").onclick=()=>{row.remove();updateTotal(kind);};
+    if(kind==="competency"){
+      row.classList.add("auto-blueprint-row");
+      row.querySelector(".blueprint-target").disabled=true;
+      row.querySelector(".blueprint-weight").readOnly=true;
+      row.querySelector(".row-remove").classList.add("hidden");
+    }
+    box.appendChild(row);updateTotal(kind);
   };
   const buildDefaults=()=>{
     contentBox.innerHTML="";competencyBox.innerHTML="";
     const content=existing?.contentBlueprint?.length?existing.contentBlueprint:targetOptions("content").slice(0,Math.min(4,targetOptions("content").length)).map(x=>({...x,weight:0}));
-    const comps=existing?.competencyBlueprint?.length?existing.competencyBlueprint:targetOptions("competency").slice(0,Math.min(4,targetOptions("competency").length)).map(x=>({...x,weight:0}));
-    content.forEach(x=>addBlueprintRow("content",x));comps.forEach(x=>addBlueprintRow("competency",x));
+    content.forEach(x=>addBlueprintRow("content",x));
   };
   buildDefaults();
+
+  const competencyPlanOptions=()=>{
+    if(existing)return {randomDrawEnabled:!!existing.randomDrawEnabled,randomDrawPlan:existing.randomDrawPlan||[]};
+    if(!randomDrawToggle?.checked)return {randomDrawEnabled:false,randomDrawPlan:[]};
+    const groups=selectedGroups();
+    return {
+      randomDrawEnabled:true,
+      randomDrawPlan:[...groups.entries()].map(([type,questions])=>({type,count:Math.max(0,Math.floor(Number(drawCounts.get(type)||0))),available:questions.length}))
+    };
+  };
+
+  syncCompetencyBlueprint=()=>{
+    const questions=(existing?(P3.detail?.questions||[]):selectedQuestions()).map(q=>({...q,points:Number(q.points??q.pointsDefault??1)}));
+    const derived=deriveCompetencyBlueprint(questions,fw.competencies||[],competencyPlanOptions());
+    competencyBox.innerHTML="";
+    derived.rows.forEach(row=>addBlueprintRow("competency",row));
+    const note=modal.querySelector("#competencyBlueprintAutoNote");
+    if(note){
+      if(!questions.length)note.textContent="Add questions to this assessment to generate its competency blueprint.";
+      else if(!derived.rows.length)note.textContent="None of the current questions have competencies attached. Add competency tags in the Question Bank to generate this blueprint.";
+      else{
+        const mapped=derived.taggedExpectedPoints;
+        const unmapped=derived.untaggedExpectedPoints;
+        note.textContent="Auto-calculated from "+derived.taggedQuestions+" competency-tagged question"+(derived.taggedQuestions===1?"":"s")+" • "+mapped+" mapped expected point"+(mapped===1?"":"s")+(unmapped?" • "+unmapped+" expected point"+(unmapped===1?"":"s")+" currently has no competency tag":"")+(competencyPlanOptions().randomDrawEnabled?" • weighted for the configured random draw":"")+".";
+      }
+    }
+    updateTotal("competency");
+  };
+  syncCompetencyBlueprint();
   const balance=kind=>{
     const box=kind==="content"?contentBox:competencyBox,rows=[...box.querySelectorAll(".blueprint-edit-row")];if(!rows.length)return toast("Add at least one blueprint target.");
     const base=Math.floor((100/rows.length)*10)/10;let used=0;
     rows.forEach((row,i)=>{const value=i===rows.length-1?roundBlueprint(100-used):base;row.querySelector(".blueprint-weight").value=value;used+=value;});updateTotal(kind);
   };
   modal.querySelector("#addContentBlueprint").onclick=()=>addBlueprintRow("content");
-  modal.querySelector("#addCompetencyBlueprint").onclick=()=>addBlueprintRow("competency");
   modal.querySelector("#balanceContentBlueprint").onclick=()=>balance("content");
-  modal.querySelector("#balanceCompetencyBlueprint").onclick=()=>balance("competency");
   modal.querySelectorAll('input[name="type"]').forEach(input=>input.onchange=()=>modal.querySelectorAll(".type-tile").forEach(tile=>tile.classList.toggle("selected",tile.querySelector("input").checked)));
 
   if(!existing)form.querySelector("#assessmentCourse").onchange=async e=>{
     selectedCourse=s.courses.find(x=>x.id===e.target.value);fw=await framework(selectedCourse.id);
     contentBox.innerHTML="";competencyBox.innerHTML="";
     targetOptions("content").slice(0,Math.min(4,targetOptions("content").length)).forEach(x=>addBlueprintRow("content",{...x,weight:0}));
-    targetOptions("competency").slice(0,Math.min(4,targetOptions("competency").length)).forEach(x=>addBlueprintRow("competency",{...x,weight:0}));
     selectedQuestionIds.clear();drawCounts.clear();
     await loadBankQuestions(selectedCourse);
     populateQuestionTypes();renderBankQuestions();updateQuestionSummary();
