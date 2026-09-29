@@ -697,6 +697,60 @@ function enhanceCourse(course){
   if(actions&&!actions.querySelector('[data-phase5-action="manage-prerequisites"]')&&(state().isSystemOwner||core().canManageCourse(c))){
     actions.insertAdjacentHTML("beforeend",'<button class="secondary-btn small-btn" data-phase5-action="manage-prerequisites" data-course="'+c.id+'">Progression</button>');
   }
+  if(actions&&!actions.querySelector('[data-phase5-action="course-staff"]')&&(state().isSystemOwner||c.ownerId===state().user.uid)){
+    actions.insertAdjacentHTML("beforeend",'<button class="secondary-btn small-btn" data-phase5-action="course-staff" data-course="'+c.id+'">Course Staff</button>');
+  }
+  if(actions&&c.courseStaffRole==="coordinator"&&!actions.querySelector(".course-coordinator-badge")){
+    actions.insertAdjacentHTML("beforeend",'<span class="badge live course-coordinator-badge">Course Coordinator</span>');
+  }
+}
+
+async function courseStaffManagementModal(courseId){
+  const course=courseById(courseId);if(!course)return;
+  const s=state();
+  if(!(s.isSystemOwner||course.ownerId===s.user.uid))return toast("Only the System Owner or course owner can manage Course Coordinators.");
+  let staff=[];
+  try{
+    const snap=await getDocs(collection(db,"courses",courseId,"staff"));
+    staff=snap.docs.map(d=>({id:d.id,...d.data()}));
+  }catch(_){}
+
+  const m=modal({
+    eyebrow:"Course Governance",
+    title:"Course Coordinators — "+(course.code||course.title),
+    wide:true,
+    body:'<div class="academic-banner"><div class="kicker">Master Course Role</div><h3>'+esc(course.code+" — "+course.title)+'</h3><p>Course Coordinators can maintain the framework, competencies, Question Bank, course metadata, and progression policy without receiving System Owner catalog-governance powers.</p></div>'+
+      '<div class="panel"><div class="panel-head"><div class="panel-title">Current Course Coordinators</div></div><div class="panel-body">'+(staff.length?staff.map(x=>'<div class="staff-role-row"><div><strong>'+esc(x.displayName||x.email||x.id)+'</strong><span>'+esc(x.email||"")+'</span></div><span class="badge live">Course Coordinator</span><button class="text-btn danger-text" data-phase5-action="remove-course-staff" data-course="'+courseId+'" data-user="'+x.id+'">Remove</button></div>').join(""):'<div class="empty-mini">No Course Coordinators assigned.</div>')+'</div></div>'+
+      '<form id="addCourseStaffForm" class="panel" style="margin-top:16px"><div class="panel-head"><div class="panel-title">Add Course Coordinator</div></div><div class="panel-body"><div class="field"><label>Instructor Email</label><input name="email" type="email" required placeholder="instructor@example.com"></div><button class="primary-btn" type="submit">Add Course Coordinator</button></div></form>',
+    footer:'<button class="primary-btn" data-close-modal>Done</button>'
+  });
+
+  m.querySelector("#addCourseStaffForm").onsubmit=async e=>{
+    e.preventDefault();const email=String(new FormData(e.currentTarget).get("email")||"").trim().toLowerCase();
+    try{
+      const qSnap=await getDocs(query(collection(db,"directory"),where("email","==",email)));
+      const userDoc=qSnap.docs.find(d=>d.data().role==="instructor");
+      if(!userDoc)return toast("No instructor account with that email is available in the Theoria directory.");
+      if(userDoc.id===course.ownerId)return toast("The course owner already has full course access.");
+      const user=userDoc.data();
+      await setDoc(doc(db,"courses",courseId,"staff",userDoc.id),{
+        userId:userDoc.id,displayName:user.displayName||email,email,role:"coordinator",
+        addedBy:s.user.uid,addedAt:serverTimestamp(),updatedAt:serverTimestamp()
+      },{merge:true});
+      await logCourseEvent(courseId,"course_coordinator_added","user",userDoc.id,{email});
+      closeModal();toast("Course Coordinator added.");await courseStaffManagementModal(courseId);
+    }catch(error){toast(error.message||"Unable to add the Course Coordinator.");}
+  };
+}
+
+async function removeCourseStaff(courseId,userId){
+  const course=courseById(courseId),s=state();if(!course||!(s.isSystemOwner||course.ownerId===s.user.uid))return;
+  if(!confirm("Remove this Course Coordinator?"))return;
+  try{
+    await deleteDoc(doc(db,"courses",courseId,"staff",userId));
+    await logCourseEvent(courseId,"course_coordinator_removed","user",userId,{});
+    closeModal();toast("Course Coordinator removed.");await courseStaffManagementModal(courseId);
+  }catch(error){toast(error.message||"Unable to remove the Course Coordinator.");}
 }
 
 /* -------------------- EVENT WIRING -------------------- */
@@ -752,6 +806,8 @@ document.addEventListener("click",async e=>{
   const b=e.target.closest("[data-phase5-action]");if(!b)return;
   const a=b.dataset.phase5Action;
   if(a==="manage-prerequisites")return prerequisiteModal(b.dataset.course);
+  if(a==="course-staff")return courseStaffManagementModal(b.dataset.course);
+  if(a==="remove-course-staff")return removeCourseStaff(b.dataset.course,b.dataset.user);
   if(a==="section-operations")return sectionOperationsModal(b.dataset.section);
   if(a==="archive-section"){closeModal();return archiveSection(b.dataset.section);}
   if(a==="restore-section"){closeModal();return restoreSection(b.dataset.section);}
