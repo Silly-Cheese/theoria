@@ -2803,6 +2803,9 @@ async function startExam(id,confirmed=false){
         answers:{},marked:[],currentIndex:0,elapsedSeconds:0,questionOrder:order,
         accommodationsApplied:{timeMultiplier:Number(acc.timeMultiplier||1),breaks:!!acc.breaks,calculator:!!acc.calculator,largeText:!!acc.largeText,reducedDistractions:!!acc.reducedDistractions}
       });
+      if(a.entranceExam===true){
+        await setDoc(doc(db,"users",s.user.uid,"entranceAttempts",a.sectionId),{status:"in_progress",assessmentId:a.id,updatedAt:serverTimestamp()},{merge:true});
+      }
       subSnap=await getDoc(doc(db,"assessments",id,"submissions",s.user.uid));sub={id:subSnap.id,...subSnap.data()};
     }
 
@@ -2927,6 +2930,9 @@ async function submitExam(auto=false){
   await saveExam();
   try{
     await updateDoc(doc(db,"assessments",P3.exam.assessment.id,"submissions",state().user.uid),{answers:P3.exam.answers,marked:P3.exam.marked,currentIndex:P3.exam.index,status:"submitted",submittedAt:serverTimestamp(),updatedAt:serverTimestamp()});
+    if(P3.exam.assessment.entranceExam===true){
+      await setDoc(doc(db,"users",state().user.uid,"entranceAttempts",P3.exam.assessment.sectionId),{status:"submitted",assessmentId:P3.exam.assessment.id,submittedAt:serverTimestamp(),updatedAt:serverTimestamp()},{merge:true});
+    }
     const id=P3.exam.assessment.id;
     clearInterval(P3.timer);document.removeEventListener("visibilitychange",visibilityEvent);window.removeEventListener("beforeunload",unloadEvent);P3.exam=null;receipt(id,auto);
   }catch(err){toast(err.message||"Unable to submit assessment.");}
