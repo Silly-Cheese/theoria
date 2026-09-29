@@ -127,6 +127,32 @@ service cloud.firestore {
         && existsAfter(/databases/$(database)/documents/sections/$(sectionId)/members/$(uid()));
     }
 
+    function sectionData(sectionId) {
+      return get(/databases/$(database)/documents/sections/$(sectionId)).data;
+    }
+
+    function sectionRequiresEntranceExam(sectionId) {
+      return (
+          ('entranceExamRequired' in sectionData(sectionId))
+          && sectionData(sectionId).entranceExamRequired == true
+        )
+        || (
+          ('entranceExamRequired' in courseData(sectionData(sectionId).courseId))
+          && courseData(sectionData(sectionId).courseId).entranceExamRequired == true
+        );
+    }
+
+    function entranceCandidate(sectionId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/sections/$(sectionId)/entranceCandidates/$(uid()));
+    }
+
+    function entranceCandidatePassed(sectionId) {
+      return entranceCandidate(sectionId)
+        && get(/databases/$(database)/documents/sections/$(sectionId)/entranceCandidates/$(uid())).data.status == 'passed'
+        && get(/databases/$(database)/documents/sections/$(sectionId)/entranceCandidates/$(uid())).data.assessmentId == sectionData(sectionId).entranceAssessmentId;
+    }
+
     function assessmentData(assessmentId) {
       return get(/databases/$(database)/documents/assessments/$(assessmentId)).data;
     }
@@ -135,10 +161,23 @@ service cloud.firestore {
       return signedIn() && assessmentData(assessmentId).ownerId == uid();
     }
 
+    function assessmentEntranceCandidate(assessmentId) {
+      return signedIn()
+        && ('entranceExam' in assessmentData(assessmentId))
+        && assessmentData(assessmentId).entranceExam == true
+        && assessmentData(assessmentId).sectionId != ''
+        && ('entranceAssessmentId' in sectionData(assessmentData(assessmentId).sectionId))
+        && sectionData(assessmentData(assessmentId).sectionId).entranceAssessmentId == assessmentId
+        && entranceCandidate(assessmentData(assessmentId).sectionId);
+    }
+
     function assessmentMember(assessmentId) {
       return signedIn()
         && assessmentData(assessmentId).sectionId != ''
-        && sectionMember(assessmentData(assessmentId).sectionId);
+        && (
+          sectionMember(assessmentData(assessmentId).sectionId)
+          || assessmentEntranceCandidate(assessmentId)
+        );
     }
 
     function assessmentOpen(assessmentId) {
@@ -188,7 +227,8 @@ service cloud.firestore {
       allow delete: if false;
 
       match /enrollments/{sectionId} {
-        allow read, delete: if isSelf(userId);
+        allow read: if isSelf(userId);
+        allow delete: if isSelf(userId) || sectionOwner(sectionId);
         allow create, update: if isSelf(userId) && sectionMemberAfter(sectionId);
       }
     }
@@ -301,7 +341,22 @@ service cloud.firestore {
         allow create: if isSelf(userId)
           && request.resource.data.userId == uid()
           && request.resource.data.role == 'student'
-          && get(/databases/$(database)/documents/sections/$(sectionId)).data.joinOpen == true;
+          && get(/databases/$(database)/documents/sections/$(sectionId)).data.joinOpen == true
+          && (
+            !sectionRequiresEntranceExam(sectionId)
+            || entranceCandidatePassed(sectionId)
+          );
+        allow update: if sectionOwner(sectionId);
+        allow delete: if sectionOwner(sectionId) || isSelf(userId);
+      }
+
+      match /entranceCandidates/{userId} {
+        allow read: if sectionOwner(sectionId) || isSelf(userId);
+        allow create: if isSelf(userId)
+          && sectionData(sectionId).joinOpen == true
+          && request.resource.data.userId == uid()
+          && request.resource.data.status == 'pending'
+          && request.resource.data.assessmentId == sectionData(sectionId).entranceAssessmentId;
         allow update: if sectionOwner(sectionId);
         allow delete: if sectionOwner(sectionId) || isSelf(userId);
       }
@@ -418,7 +473,8 @@ service cloud.firestore {
             && resource.data.studentId == uid()
           );
         allow create: if sectionOwner(sectionId);
-        allow update, delete: if false;
+        allow update: if false;
+        allow delete: if sectionOwner(sectionId);
       }
     }
 
@@ -441,7 +497,10 @@ service cloud.firestore {
         || (
           signedIn()
           && resource.data.sectionId != ''
-          && exists(/databases/$(database)/documents/sections/$(resource.data.sectionId)/members/$(uid()))
+          && (
+            exists(/databases/$(database)/documents/sections/$(resource.data.sectionId)/members/$(uid()))
+            || assessmentEntranceCandidate(assessmentId)
+          )
           && resource.data.status in ['Published', 'Closed']
         );
       allow create: if isInstructor()
@@ -466,7 +525,7 @@ service cloud.firestore {
           || (
             signedIn()
             && assessmentData(assessmentId).sectionId != ''
-            && sectionMember(assessmentData(assessmentId).sectionId)
+            && assessmentMember(assessmentId)
             && exists(/databases/$(database)/documents/assessments/$(assessmentId)/submissions/$(uid()))
             && get(/databases/$(database)/documents/assessments/$(assessmentId)/submissions/$(uid())).data.status == 'in_progress'
           );
