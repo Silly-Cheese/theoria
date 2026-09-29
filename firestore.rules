@@ -633,8 +633,15 @@ service cloud.firestore {
           signedIn()
           && resource.data.sectionId != ''
           && (
-            sectionStaff(resource.data.sectionId)
-            || exists(/databases/$(database)/documents/sections/$(resource.data.sectionId)/members/$(uid()))
+            sectionOwner(resource.data.sectionId)
+            || sectionStaff(resource.data.sectionId)
+          )
+        )
+        || (
+          signedIn()
+          && resource.data.sectionId != ''
+          && (
+            exists(/databases/$(database)/documents/sections/$(resource.data.sectionId)/members/$(uid()))
             || assessmentEntranceCandidate(assessmentId)
           )
           && resource.data.status in ['Published', 'Closed']
