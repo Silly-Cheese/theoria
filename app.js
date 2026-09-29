@@ -1881,7 +1881,7 @@ async function autoSortResourcesModal(){
 function renderStudents(){
   const members=state.sectionData.members;
   if(!members.length) return '<div class="empty-state"><div class="empty-symbol">S</div><h3>No students enrolled.</h3><p>Display the section join code and have students enroll.</p></div>';
-  return '<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Student</th><th>Email</th><th>Joined</th><th>Status</th><th>Assessment Access</th><th>Actions</th></tr></thead><tbody>'+members.map(m=>'<tr><td><strong>'+esc(m.displayName||"Student")+'</strong></td><td>'+esc(m.email||"—")+'</td><td>'+esc(formatDate(m.joinedAt))+'</td><td><span class="badge live">Enrolled</span></td><td><button class="text-btn" data-phase3-action="accommodations" data-student="'+m.id+'">Accommodations</button></td><td><button class="danger-btn small-btn" data-action="remove-section-student" data-student="'+m.id+'">Remove</button></td></tr>').join("")+'</tbody></table></div>';
+  return '<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Student</th><th>Email</th><th>Joined</th><th>Status</th><th>Assessment Access</th><th>Actions</th></tr></thead><tbody>'+members.map(m=>{const status=String(m.status||"enrolled");return '<tr><td><strong>'+esc(m.displayName||"Student")+'</strong></td><td>'+esc(m.email||"—")+'</td><td>'+esc(formatDate(m.joinedAt||m.reinstatedAt))+'</td><td><span class="badge '+(status==="completed"?"gold":"live")+'">'+esc(status==="completed"?"Completed":"Enrolled")+'</span></td><td><button class="text-btn" data-phase3-action="accommodations" data-student="'+m.id+'">Accommodations</button></td><td><button class="danger-btn small-btn" data-action="remove-section-student" data-student="'+m.id+'">Remove</button></td></tr>';}).join("")+'</tbody></table></div>';
 }
 
 function gradebookCourseworkPolicyAverage(assignments,gradeMap,studentId,policy){
@@ -3311,7 +3311,7 @@ async function previewJoin(code){
           eyebrow:"Course Prerequisites",
           title:"Enrollment requirements are not yet complete",
           body:'<div class="academic-banner"><div class="kicker">'+esc(section.courseCode||"Course")+'</div><h3>'+esc(section.courseTitle||"Theoria Course")+'</h3><p>This course has progression requirements in addition to any section entrance examination.</p></div><div class="readiness-checks">'+(eligibility.checks||[]).map(x=>'<div class="'+(x.ok===true?'ok':x.ok===false?'missing':'pending')+'"><span>'+(x.ok===true?'✓':x.ok===false?'!':'•')+'</span><div><strong>'+esc(x.label)+'</strong><small>'+esc(x.detail)+' • '+esc(x.value)+'</small></div></div>').join("")+'</div><div class="notice" style="margin-top:12px">Open <strong>Progression</strong> to review your full readiness map.</div>',
-          footer:'<button class="secondary-btn" data-go="progression" data-close-modal>View Progression</button><button class="primary-btn" data-close-modal>Close</button>'
+          footer:'<button class="primary-btn" data-close-modal>Close</button>'
         });
         return;
       }
