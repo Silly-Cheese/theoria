@@ -142,14 +142,62 @@ function invalidate(sectionId){
 
 function courseworkPercent(bundle,studentId){
   const gradeMap=new Map(bundle.grades.filter(g=>g.studentId===studentId).map(g=>[g.assignmentId,g]));
-  let earned=0,possible=0,graded=0;
+  const rules=bundle.section.gradingPolicy?.courseworkRules||{};
+  const missingAsZero=rules.missingAsZero===true;
+  const latePenalty=Math.max(0,Math.min(100,Number(rules.latePenaltyPercent||0)));
+  const entries=[];
+
   for(const a of bundle.assignments){
-    const g=gradeMap.get(a.id);
+    const g=gradeMap.get(a.id),status=String(g?.gradeStatus||"Normal");
+    if(status==="Excused")continue;
+    const max=Number(a.points||0);
     if(g&&g.score!==null&&g.score!==undefined){
-      earned+=Number(g.score||0);possible+=Number(a.points||0);graded++;
+      let score=Number(g.score||0);
+      if(status==="Late"&&latePenalty)score=score*(1-latePenalty/100);
+      entries.push({assignment:a,grade:g,score,max,percent:max?score/max*100:0,status});
+    }else if(missingAsZero){
+      entries.push({assignment:a,grade:null,score:0,max,percent:0,status:"Missing"});
     }
   }
-  return {percent:possible?pct(earned,possible):null,earned,possible,graded,total:bundle.assignments.length};
+
+  const dropCount=Math.max(0,Math.min(entries.length,Math.floor(Number(rules.dropLowest||0))));
+  const dropped=new Set([...entries].sort((a,b)=>a.percent-b.percent).slice(0,dropCount).map(x=>x.assignment.id));
+  const kept=entries.filter(x=>!dropped.has(x.assignment.id));
+
+  const categoryWeights=rules.categoryWeights&&typeof rules.categoryWeights==="object"?rules.categoryWeights:{};
+  const categoryTotal=Object.values(categoryWeights).reduce((n,x)=>n+Number(x||0),0);
+  let percentValue=null,earned=0,possible=0;
+
+  kept.forEach(x=>{earned+=x.score;possible+=x.max;});
+
+  if(categoryTotal===100){
+    let weighted=0,usedWeight=0;
+    const groups=new Map();
+    kept.forEach(x=>{
+      const key=x.assignment.type||"Assignment";
+      if(!groups.has(key))groups.set(key,[]);
+      groups.get(key).push(x);
+    });
+    for(const [key,weightRaw] of Object.entries(categoryWeights)){
+      const weight=Number(weightRaw||0);if(!weight)continue;
+      const group=groups.get(key)||[];
+      const gp=group.reduce((n,x)=>n+x.max,0),ge=group.reduce((n,x)=>n+x.score,0);
+      if(gp){weighted+=(ge/gp*100)*weight;usedWeight+=weight;}
+    }
+    percentValue=usedWeight?round(weighted/usedWeight):null;
+  }else{
+    percentValue=possible?pct(earned,possible):null;
+  }
+
+  return {
+    percent:percentValue,
+    earned:round(earned),
+    possible:round(possible),
+    graded:kept.filter(x=>x.grade).length,
+    total:bundle.assignments.length,
+    dropped:[...dropped],
+    rules
+  };
 }
 
 function examComponent(bundle,studentId,type){
