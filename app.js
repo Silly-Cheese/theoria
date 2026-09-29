@@ -776,8 +776,13 @@ function openCourseModal(existing){
       updatedAt:serverTimestamp()
     };
     try{
+      let courseId=existing?.id||"";
       if(editing) await updateDoc(doc(db,"courses",existing.id),data);
-      else await addDoc(collection(db,"courses"),{...data,ownerId:state.user.uid,createdAt:serverTimestamp()});
+      else{
+        const created=await addDoc(collection(db,"courses"),{...data,ownerId:state.user.uid,createdAt:serverTimestamp()});
+        courseId=created.id;
+      }
+      if(courseId&&window.TheoriaPhase5?.logCourseEvent)await window.TheoriaPhase5.logCourseEvent(courseId,editing?"course_updated":"course_created","course",courseId,{code:data.code,title:data.title,status:data.status,entranceExamRequired:!!data.entranceExamRequired});
       closeModal();
       await loadWorkspace();
       showToast(editing?"Course updated.":"Catalog course created. Build its framework and Question Bank, then publish it when ready.");
@@ -1367,8 +1372,10 @@ function openUnitModal(existing){
     e.preventDefault(); const fd=new FormData(e.currentTarget);
     const data={order:Number(fd.get("order")),title:String(fd.get("title")).trim(),description:String(fd.get("description")).trim(),updatedAt:serverTimestamp()};
     try{
+      let targetId=existing?.id||"";
       if(existing) await updateDoc(doc(db,"courses",state.currentCourse.id,"units",existing.id),data);
-      else await addDoc(collection(db,"courses",state.currentCourse.id,"units"),{...data,createdAt:serverTimestamp()});
+      else{const created=await addDoc(collection(db,"courses",state.currentCourse.id,"units"),{...data,createdAt:serverTimestamp()});targetId=created.id;}
+      if(window.TheoriaPhase5?.logCourseEvent)await window.TheoriaPhase5.logCourseEvent(state.currentCourse.id,existing?"course_unit_updated":"course_unit_created","unit",targetId,{order:data.order,title:data.title});
       closeModal(); state.courseFramework=await loadCourseFramework(state.currentCourse.id); renderCourseDetail(); showToast("Unit saved.");
     }catch(error){showToast(humanizeFirebaseError(error));}
   });
@@ -1403,8 +1410,10 @@ function openCompetencyModal(existing,courseId=state.currentCourse?.id || state.
       updatedAt:serverTimestamp()
     };
     try{
+      let targetId=existing?.id||"";
       if(existing) await updateDoc(doc(db,"courses",courseId,"competencies",existing.id),data);
-      else await addDoc(collection(db,"courses",courseId,"competencies"),{...data,createdAt:serverTimestamp()});
+      else{const created=await addDoc(collection(db,"courses",courseId,"competencies"),{...data,createdAt:serverTimestamp()});targetId=created.id;}
+      if(window.TheoriaPhase5?.logCourseEvent)await window.TheoriaPhase5.logCourseEvent(courseId,existing?"competency_updated":"competency_created","competency",targetId,{code:data.code,name:data.name});
       closeModal();
       if(state.currentSection?.courseId===courseId && $("#page-section-detail")?.classList.contains("active")){
         state.sectionData=await loadSectionData(state.currentSection);
@@ -1444,8 +1453,10 @@ function openTopicModal(unitId,existing){
       updatedAt:serverTimestamp()
     };
     try{
+      let targetId=existing?.id||"";
       if(existing) await updateDoc(doc(db,"courses",state.currentCourse.id,"units",unitId,"topics",existing.id),data);
-      else await addDoc(collection(db,"courses",state.currentCourse.id,"units",unitId,"topics"),{...data,createdAt:serverTimestamp()});
+      else{const created=await addDoc(collection(db,"courses",state.currentCourse.id,"units",unitId,"topics"),{...data,createdAt:serverTimestamp()});targetId=created.id;}
+      if(window.TheoriaPhase5?.logCourseEvent)await window.TheoriaPhase5.logCourseEvent(state.currentCourse.id,existing?"topic_updated":"topic_created","topic",targetId,{unitId,number:data.number,title:data.title,competencyCodes:data.competencyCodes});
       closeModal(); state.courseFramework=await loadCourseFramework(state.currentCourse.id); renderCourseDetail(); showToast("Topic saved.");
     }catch(error){showToast(humanizeFirebaseError(error));}
   });
@@ -2523,8 +2534,10 @@ function openAssignmentModal(existing){
       updatedAt:serverTimestamp()
     };
     try{
+      let targetId=existing?.id||"";
       if(existing) await updateDoc(doc(db,"sections",state.currentSection.id,"assignments",existing.id),data);
-      else await addDoc(collection(db,"sections",state.currentSection.id,"assignments"),{...data,createdAt:serverTimestamp()});
+      else{const created=await addDoc(collection(db,"sections",state.currentSection.id,"assignments"),{...data,createdAt:serverTimestamp()});targetId=created.id;}
+      if(window.TheoriaPhase5?.logSectionEvent)await window.TheoriaPhase5.logSectionEvent(state.currentSection.id,existing?"assignment_updated":"assignment_created","assignment",targetId,{title:data.title,points:data.points,gradingPeriod:data.gradingPeriod,status:data.status});
       closeModal(); state.sectionData=await loadSectionData(state.currentSection);renderSectionDetail("assignments");showToast("Assignment saved.");
     }catch(error){showToast(humanizeFirebaseError(error));}
   });
@@ -3025,8 +3038,10 @@ function openResourceModal(existing){
       updatedAt:serverTimestamp()
     };
     try{
+      let targetId=existing?.id||"";
       if(existing) await updateDoc(doc(db,"sections",state.currentSection.id,"resources",existing.id),data);
-      else await addDoc(collection(db,"sections",state.currentSection.id,"resources"),{...data,createdAt:serverTimestamp()});
+      else{const created=await addDoc(collection(db,"sections",state.currentSection.id,"resources"),{...data,createdAt:serverTimestamp()});targetId=created.id;}
+      if(window.TheoriaPhase5?.logSectionEvent)await window.TheoriaPhase5.logSectionEvent(state.currentSection.id,existing?"resource_updated":"resource_created","resource",targetId,{title:data.title,type:data.type,unitId:data.unitId});
       closeModal();state.sectionData=await loadSectionData(state.currentSection);renderSectionDetail("resources");showToast("Resource saved.");
     }catch(error){showToast(humanizeFirebaseError(error));}
   });
