@@ -370,7 +370,7 @@ function bulkCourseCreatorPrompt(requestText=""){
     '- level must be one of: "Introductory", "Intermediate", "Advanced", "Graduate-style".',
     '- status must be one of: "Draft", "Active", "Archived". Use Draft unless I explicitly ask for another status.',
     "- catalogPublished should normally be false so the System Owner can review the course before publishing it.",
-    "- Set entranceExamRequired to true only for courses that must gate enrollment behind an instructor-created entrance examination."
+    "- Set entranceExamRequired to true only for courses that must gate enrollment behind an instructor-created entrance examination.",
     "- Include a complete framework for each course unless my request explicitly asks for course shells only.",
     "- Framework competencies must use unique stable codes within each course.",
     "- Unit order values must be unique positive integers within each course.",
