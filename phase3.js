@@ -783,13 +783,56 @@ async function itemHistoryModal(courseId,itemId){
   try{
     const snap=await getDocs(collection(db,"courses",courseId,"items",itemId,"versions"));
     const versions=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>Number(b.version||0)-Number(a.version||0));
+
+    const usage=[];
+    try{
+      const owned=await getDocs(query(collection(db,"assessments"),where("ownerId","==",state().user.uid)));
+      for(const aDoc of owned.docs){
+        const a={id:aDoc.id,...aDoc.data()};
+        if(!a.sectionId)continue;
+        const qSnap=await getDocs(collection(db,"assessments",a.id,"questions"));
+        const matches=qSnap.docs.map(d=>({id:d.id,...d.data()})).filter(q=>q.itemId===itemId);
+        if(!matches.length)continue;
+        const [resultSnap,subSnap]=await Promise.all([
+          getDocs(collection(db,"assessments",a.id,"results")),
+          getDocs(collection(db,"assessments",a.id,"submissions"))
+        ]);
+        const results=resultSnap.docs.map(d=>({id:d.id,...d.data()})).filter(r=>r.complete===true);
+        const submissions=subSnap.docs.map(d=>({id:d.id,...d.data()}));
+        for(const q of matches){
+          const scores=[];
+          for(const result of results){
+            const score=result.grading?.[q.id]?.score;
+            if(score!==undefined&&score!==null)scores.push(Number(score));
+          }
+          const avg=scores.length?scores.reduce((x,y)=>x+y,0)/scores.length:null;
+          const difficulty=avg!==null&&Number(q.points||0)?Math.round((avg/Number(q.points))*1000)/10:null;
+          const answerCounts=new Map();
+          submissions.forEach(sub=>{
+            const ans=sub.answers?.[q.id];
+            if(ans===undefined)return;
+            const key=Array.isArray(ans)?ans.join(", "):String(ans);
+            answerCounts.set(key,(answerCounts.get(key)||0)+1);
+          });
+          usage.push({
+            assessmentId:a.id,title:a.title||"Assessment",sectionName:a.sectionName||"Section",
+            questionId:q.id,attempts:scores.length,difficulty,
+            responses:[...answerCounts.entries()].sort((x,y)=>y[1]-x[1]).slice(0,4)
+          });
+        }
+      }
+    }catch(error){console.warn("Unable to aggregate Question Bank analytics:",error);}
+
     core().openModal({
-      eyebrow:"Question Bank Version History",
+      eyebrow:"Question Bank History & Analytics",
       title:"Question v"+(item.version||1),
       wide:true,
       body:'<div class="academic-banner"><div class="kicker">'+esc(item.courseCode||"Question Bank")+'</div><h3>'+esc((item.prompt||"Question").slice(0,180))+'</h3><p>Assessment copies remain immutable. Editing the master Question Bank creates a new version instead of rewriting prior assessment history.</p></div>'+
-        '<div class="version-history-list"><div class="version-history-row current"><div><strong>v'+esc(item.version||1)+' — Current</strong><span>'+esc(item.type||"Question")+' • '+esc(item.topicNumber||"No topic")+'</span></div><p>'+esc(item.prompt||"")+'</p></div>'+
-        versions.map(v=>'<div class="version-history-row"><div><strong>v'+esc(v.version||v.id)+'</strong><span>'+esc(v.type||"Question")+' • '+esc(v.topicNumber||"No topic")+'</span></div><p>'+esc(v.prompt||"")+'</p></div>').join("")+'</div>',
+        '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Version History</h3><p>The master item evolves while prior assessment snapshots remain unchanged.</p></div></div><div class="version-history-list"><div class="version-history-row current"><div><strong>v'+esc(item.version||1)+' — Current</strong><span>'+esc(item.type||"Question")+' • '+esc(item.topicNumber||"No topic")+'</span></div><p>'+esc(item.prompt||"")+'</p></div>'+
+        versions.map(v=>'<div class="version-history-row"><div><strong>v'+esc(v.version||v.id)+'</strong><span>'+esc(v.type||"Question")+' • '+esc(v.topicNumber||"No topic")+'</span></div><p>'+esc(v.prompt||"")+'</p></div>').join("")+'</div></section>'+
+        '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Performance Across Your Assessments</h3><p>How this Question Bank item has performed in assigned assessments you own.</p></div></div>'+
+        (usage.length?'<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Assessment</th><th>Attempts</th><th>Difficulty</th><th>Response Pattern</th></tr></thead><tbody>'+usage.map(u=>'<tr><td><strong>'+esc(u.title)+'</strong><span class="grade-sub">'+esc(u.sectionName)+'</span></td><td>'+u.attempts+'</td><td>'+(u.difficulty===null?"—":u.difficulty+"%")+'</td><td>'+(u.responses.length?u.responses.map(([k,v])=>'<span class="analytics-answer">'+esc(k||"(blank)")+': '+v+'</span>').join(" "):"—")+'</td></tr>').join("")+'</tbody></table></div>':'<div class="empty-mini">This item has not produced scored evidence in one of your assigned assessments yet.</div>')+
+        '</section>',
       footer:'<button class="primary-btn" data-close-modal>Close</button>'
     });
   }catch(error){toast(error.message||"Unable to load question history.");}
