@@ -194,7 +194,9 @@ async function prerequisiteModal(courseId){
   };
   comps.forEach(addRow);m.querySelector("#addCompetencyReq").onclick=()=>addRow();
 
-  m.querySelector("#prerequisiteForm").onsubmit=async e=>{
+  const prerequisiteForm=m?.querySelector("#prerequisiteForm");
+  if(!prerequisiteForm){closeModal();return toast("The progression editor could not be initialized. Refresh Theoria and try again.");}
+  prerequisiteForm.onsubmit=async e=>{
     e.preventDefault();const fd=new FormData(e.currentTarget);
     const competencyRequirements=[...box.querySelectorAll(".progression-competency-row")].map(row=>({
       courseId:row.querySelector(".req-course").value,
@@ -205,16 +207,16 @@ async function prerequisiteModal(courseId){
       requiredCourseIds:fd.getAll("requiredCourse"),
       minFinalPercent:Number(fd.get("minFinalPercent")||0),
       competencyRequirements,
-      instructorApproval:e.currentTarget.elements.instructorApproval.checked,
+      instructorApproval:e.currentTarget.querySelector('[name="instructorApproval"]')?.checked===true,
       updatedAt:serverTimestamp()
     };
     try{
       await updateDoc(doc(db,"courses",course.id),{
         prerequisitePolicy,
-        entranceExamRequired:e.currentTarget.elements.entranceExamRequired.checked,
+        entranceExamRequired:e.currentTarget.querySelector('[name="entranceExamRequired"]')?.checked===true,
         updatedAt:serverTimestamp()
       });
-      Object.assign(course,{prerequisitePolicy,entranceExamRequired:e.currentTarget.elements.entranceExamRequired.checked});
+      Object.assign(course,{prerequisitePolicy,entranceExamRequired:e.currentTarget.querySelector('[name="entranceExamRequired"]')?.checked===true});
       await logCourseEvent(course.id,"progression_policy_updated","course",course.id,{
         requiredCourseIds:prerequisitePolicy.requiredCourseIds,
         competencyRequirements:competencyRequirements.map(x=>({courseId:x.courseId,code:x.code,minPercent:x.minPercent})),
