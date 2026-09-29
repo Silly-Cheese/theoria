@@ -232,7 +232,7 @@ function sectionCard(section){
     '<div class="card-kicker">'+esc(section.courseCode || "THEO")+' • '+esc(section.term || "Academic Term")+'</div>'+
     '<h3>'+esc(section.courseTitle || section.sectionName || "Untitled Section")+'</h3>'+
     '<p>'+esc(section.sectionName || ("Section "+(section.sectionNumber||"001")))+'</p>'+
-    '<div class="card-meta"><span>'+esc(section.format || "Course")+'</span><span>'+esc(section.sectionNumber ? "Section "+section.sectionNumber : "Section")+'</span>'+(state.role==="instructor"?'<span class="badge '+(live?'live':'closed')+'">'+(live?'Enrollment Open':'Enrollment Closed')+'</span>':'')+'</div>'+
+    '<div class="card-meta"><span>'+esc(section.format || "Course")+'</span><span>'+esc(section.sectionNumber ? "Section "+section.sectionNumber : "Section")+'</span>'+(state.role==="instructor"?'<span class="badge '+(live?'live':'closed')+'">'+(live?'Enrollment Open':'Enrollment Closed')+'</span>':'')+(section.entranceExamRequired?'<span class="badge gold">Entrance Exam</span>':'')+'</div>'+
     '<div class="card-actions"><button class="secondary-btn small-btn" data-action="open-section" data-id="'+section.id+'">Open Section</button>'+(state.role==="instructor"?'<button class="text-btn" data-action="copy-code" data-code="'+esc(section.joinCode||"")+'">'+esc(section.joinCode||"No Code")+'</button>':'')+'</div>'+
   '</article>';
 }
@@ -345,6 +345,7 @@ function bulkCourseCreatorPrompt(requestText=""){
     '      "status": "Draft",',
     '      "description": "A concise catalog description.",',
     '      "catalogPublished": false,',
+    '      "entranceExamRequired": false,',
     '      "framework": {',
     '        "competencies": [',
     '          {"code":"ARG-1","name":"Argument Analysis","description":"Evaluate arguments with precision.","order":1}',
@@ -369,6 +370,7 @@ function bulkCourseCreatorPrompt(requestText=""){
     '- level must be one of: "Introductory", "Intermediate", "Advanced", "Graduate-style".',
     '- status must be one of: "Draft", "Active", "Archived". Use Draft unless I explicitly ask for another status.',
     "- catalogPublished should normally be false so the System Owner can review the course before publishing it.",
+    "- Set entranceExamRequired to true only for courses that must gate enrollment behind an instructor-created entrance examination."
     "- Include a complete framework for each course unless my request explicitly asks for course shells only.",
     "- Framework competencies must use unique stable codes within each course.",
     "- Unit order values must be unique positive integers within each course.",
@@ -460,7 +462,8 @@ function normalizeBulkCourseImport(payload){
         discipline:String(raw.discipline||"Theology").trim()||"Theology",
         level,status,
         description:String(raw.description||"").trim(),
-        catalogPublished
+        catalogPublished,
+        entranceExamRequired:raw.entranceExamRequired===true
       },
       framework
     });
