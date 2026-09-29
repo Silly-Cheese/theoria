@@ -151,7 +151,9 @@ function courseworkPercent(bundle,studentId){
     const g=gradeMap.get(a.id),status=String(g?.gradeStatus||"Normal");
     if(status==="Excused")continue;
     const max=Number(a.points||0);
-    if(g&&g.score!==null&&g.score!==undefined){
+    if(status==="Missing"){
+      entries.push({assignment:a,grade:g||null,score:0,max,percent:0,status});
+    }else if(g&&g.score!==null&&g.score!==undefined){
       let score=Number(g.score||0);
       if(status==="Late"&&latePenalty)score=score*(1-latePenalty/100);
       entries.push({assignment:a,grade:g,score,max,percent:max?score/max*100:0,status});
