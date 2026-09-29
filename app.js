@@ -1700,7 +1700,7 @@ function renderAssignments(){
       (a.topicNumber?' • Topic '+esc(a.topicNumber):'')+
       '</div><h4>'+esc(a.title)+'</h4>'+(a.description?'<p>'+esc(a.description)+'</p>':'')+
       (a.instructionSteps?.length?'<div class="assignment-step-preview">'+a.instructionSteps.slice(0,3).map((step,i)=>'<div><span>'+String(i+1).padStart(2,"0")+'</span>'+esc(step)+'</div>').join("")+(a.instructionSteps.length>3?'<small>+'+(a.instructionSteps.length-3)+' more step'+(a.instructionSteps.length-3===1?"":"s")+'</small>':'')+'</div>':'')+
-      '<div class="assignment-meta"><span>'+esc(a.points||0)+' points</span><span class="'+(due.late&&!submission?"late-text":"")+'">'+esc(due.label)+'</span>'+(a.requirements?.length?'<span>'+a.requirements.length+' requirement'+(a.requirements.length===1?"":"s")+'</span>':'')+'<span>'+esc(a.submissionMode||"Text + Link")+'</span>'+(state.role==="instructor"?'<span class="badge '+(a.status==="Published"?'live':'gold')+'">'+esc(a.status||"Published")+'</span>':'<span class="badge '+statusClass+'">'+esc(studentStatus)+'</span>')+'</div>'+
+      '<div class="assignment-meta"><span>'+esc(a.points||0)+' points</span><span>'+esc(a.gradingPeriod||"Overall")+'</span><span class="'+(due.late&&!submission?"late-text":"")+'">'+esc(due.label)+'</span>'+(a.requirements?.length?'<span>'+a.requirements.length+' requirement'+(a.requirements.length===1?"":"s")+'</span>':'')+'<span>'+esc(a.submissionMode||"Text + Link")+'</span>'+(state.role==="instructor"?'<span class="badge '+(a.status==="Published"?'live':'gold')+'">'+esc(a.status||"Published")+'</span>':'<span class="badge '+statusClass+'">'+esc(studentStatus)+'</span>')+'</div>'+
       (grade&&state.role==="student"?'<div class="assignment-grade-preview"><strong>'+esc(grade.score)+' / '+esc(a.points||0)+'</strong>'+(grade.comment?'<span>'+esc(grade.comment)+'</span>':'')+'</div>':'')+
       '</div><div class="inline-actions">'+
       (state.role==="instructor"?'<button class="secondary-btn small-btn" data-action="assignment-submissions" data-id="'+a.id+'">Submissions</button><button class="text-btn" data-action="edit-assignment" data-id="'+a.id+'">Edit</button><button class="danger-btn small-btn" data-action="delete-assignment" data-id="'+a.id+'">Delete</button>':
@@ -1891,7 +1891,9 @@ function gradebookCourseworkPolicyAverage(assignments,gradeMap,studentId,policy)
     const grade=gradeMap.get(assignment.id+"_"+studentId),status=String(grade?.gradeStatus||"Normal");
     if(status==="Excused")continue;
     const max=Number(assignment.points||0);
-    if(grade&&grade.score!==null&&grade.score!==undefined){
+    if(status==="Missing"){
+      entries.push({assignment,score:0,max,percent:0});
+    }else if(grade&&grade.score!==null&&grade.score!==undefined){
       let score=Number(grade.score||0);
       if(status==="Late"&&latePenalty)score*=1-latePenalty/100;
       entries.push({assignment,score,max,percent:max?score/max*100:0});
@@ -2425,6 +2427,7 @@ function openAssignmentModal(existing){
       '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Scoring & Schedule</h3><p>Set the practical details without leaving the page.</p></div></div>'+
         '<div class="compact-field-grid"><div class="field"><label>Points</label><div class="input-with-suffix"><input type="number" min="0" step="0.1" name="points" value="'+esc(existing?.points??100)+'" required><span>pts</span></div></div>'+
         '<div class="field"><label>Due Date</label><input type="date" name="dueDate" value="'+esc(existing?.dueDate||"")+'"></div>'+
+        '<div class="field"><label>Grading Period</label><select name="gradingPeriod" id="assignmentGradingPeriod"></select></div>'+
         '<div class="field"><label>Status</label><select name="status"><option>Published</option><option>Draft</option></select></div></div>'+
         '<div class="compact-field-grid" style="margin-top:12px"><div class="field"><label>Student Submission</label><select name="submissionMode"><option>Text + Link</option><option>Text Response</option><option>Link / Document</option><option>Completion Confirmation</option><option>No Online Submission</option></select></div><div class="field"><label class="checkbox-line submission-setting"><input type="checkbox" name="allowResubmission" '+(existing?.allowResubmission?'checked':'')+'> Allow students to revise after submitting</label></div></div>'+
       '</section>'+
@@ -2439,6 +2442,9 @@ function openAssignmentModal(existing){
   const form=modal.querySelector("#assignmentForm");
   form.status.value=existing?.status||"Published";
   form.submissionMode.value=existing?.submissionMode||"Text + Link";
+  const gradingPeriods=(state.currentSection?.gradingPolicy?.gradingPeriods?.length?state.currentSection.gradingPolicy.gradingPeriods:["Overall"]);
+  form.querySelector("#assignmentGradingPeriod").innerHTML=gradingPeriods.map(period=>'<option value="'+esc(period)+'">'+esc(period)+'</option>').join("");
+  form.querySelector("#assignmentGradingPeriod").value=gradingPeriods.includes(existing?.gradingPeriod)?existing.gradingPeriod:gradingPeriods[0];
 
   const assignmentFramework=state.sectionData?.framework||{units:[]};
   const assignmentUnit=form.querySelector("#assignmentUnit"),assignmentTopic=form.querySelector("#assignmentTopic");
@@ -2480,6 +2486,7 @@ function openAssignmentModal(existing){
       type:String(fd.get("type")||"Assignment"),
       points:Number(fd.get("points")),
       dueDate:String(fd.get("dueDate")||""),
+      gradingPeriod:String(fd.get("gradingPeriod")||"Overall"),
       status:String(fd.get("status")),
       description:String(fd.get("description")||"").trim(),
       instructionSteps,
@@ -3017,8 +3024,15 @@ function openGradeModal(assignmentId,studentId){
   });
   const gradeForm=modal.querySelector("#gradeForm");
   gradeForm.elements.gradeStatus.value=existing?.gradeStatus||"Normal";
+  const syncGradeStatus=()=>{
+    const status=gradeForm.elements.gradeStatus.value,scoreInput=gradeForm.elements.score;
+    if(status==="Missing"){scoreInput.value="0";scoreInput.readOnly=true;}
+    else if(status==="Excused"){scoreInput.required=false;scoreInput.readOnly=true;scoreInput.value=existing?.score??"0";}
+    else{scoreInput.required=true;scoreInput.readOnly=false;}
+  };
+  gradeForm.elements.gradeStatus.addEventListener("change",syncGradeStatus);syncGradeStatus();
   gradeForm.addEventListener("submit",async e=>{
-    e.preventDefault();const fd=new FormData(e.currentTarget);const score=Number(fd.get("score"));
+    e.preventDefault();const fd=new FormData(e.currentTarget),gradeStatus=String(fd.get("gradeStatus")||"Normal");const score=gradeStatus==="Missing"?0:Number(fd.get("score")||0);
     try{
       await setDoc(doc(db,"sections",state.currentSection.id,"grades",assignmentId+"_"+studentId),{
         assignmentId,studentId,studentName:s?.displayName||"Student",assignmentTitle:a?.title||"Assignment",
