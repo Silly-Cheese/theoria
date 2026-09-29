@@ -2004,6 +2004,16 @@ async function configureEntranceExam(sectionId){
       }
 
       const oldAssessmentId=section.entranceAssessmentId||"";
+
+      if(oldAssessmentId&&oldAssessmentId!==ref.id){
+        const candidates=await getDocs(collection(db,"sections",section.id,"entranceCandidates"));
+        for(let offset=0;offset<candidates.docs.length;offset+=400){
+          const batch=writeBatch(db);
+          candidates.docs.slice(offset,offset+400).forEach(d=>batch.delete(d.ref));
+          await batch.commit();
+        }
+      }
+
       await updateDoc(doc(db,"sections",section.id),{
         entranceExamRequired:true,
         entranceAssessmentId:ref.id,
