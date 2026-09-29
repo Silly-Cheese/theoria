@@ -1922,17 +1922,66 @@ async function configureEntranceExam(sectionId){
   if(!section)return toast("Section not found.");
 
   await loadAssessments();
-  const templates=P3.assessments.filter(a=>!a.sectionId&&a.courseId===section.courseId&&a.mode!=="oral"&&Number(a.questionCount||a.questionIds?.length||0)>0);
+
+  // Entrance examinations are intentionally allowed to come from a different
+  // course. This lets a second-course or advanced-course section test mastery
+  // of prior coursework before enrollment.
+  const templates=P3.assessments
+    .filter(a=>!a.sectionId&&a.mode!=="oral"&&Number(a.questionCount||a.questionIds?.length||0)>0)
+    .sort((a,b)=>{
+      const ac=String(a.courseCode||""),bc=String(b.courseCode||"");
+      return ac.localeCompare(bc)||String(a.title||"").localeCompare(String(b.title||""));
+    });
+
   if(!templates.length){
     const modal=core().openModal({
       eyebrow:"Entrance Examination",
       title:"Create an Assessment Template First",
-      body:'<div class="academic-banner"><div class="kicker">'+esc(section.courseCode||"Course")+'</div><h3>'+esc(section.courseTitle||"Course")+'</h3><p>Entrance examinations are built from the same reusable Question Bank assessment templates used elsewhere in Theoria.</p></div><div class="notice"><strong>No eligible written assessment templates exist for this course yet.</strong><p>Create an assessment template, choose its Question Bank items, then return here to assign it as the entrance examination.</p></div>',
+      body:'<div class="academic-banner"><div class="kicker">'+esc(section.courseCode||"Course")+'</div><h3>'+esc(section.courseTitle||"Course")+'</h3><p>Entrance examinations can draw from assessment templates built from any course Question Bank you teach.</p></div><div class="notice"><strong>No eligible written assessment templates exist yet.</strong><p>Create an assessment template from the Question Bank of the prerequisite or prior course you want students tested on, then return here.</p></div>',
       footer:'<button class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" id="createEntranceTemplate">Create Assessment Template</button>'
     });
     modal.querySelector("#createEntranceTemplate").onclick=()=>{core().closeModal();core().setPage("assessments");setTimeout(()=>assessmentModal(),60);};
     return;
   }
+
+  const courseById=new Map((s.courses||[]).map(course=>[course.id,course]));
+  const grouped=new Map();
+  for(const template of templates){
+    const course=courseById.get(template.courseId)||{
+      id:template.courseId,
+      code:template.courseCode||"Course",
+      title:template.courseTitle||"Course",
+      discipline:""
+    };
+    if(!grouped.has(course.id))grouped.set(course.id,{course,templates:[]});
+    grouped.get(course.id).templates.push(template);
+  }
+
+  // Prefer an explicitly configured source. Otherwise, if this appears to be
+  // a later course in a discipline, prefer a different course from the same
+  // discipline before falling back to the current course.
+  const targetCourse=courseById.get(section.courseId);
+  let preferredTemplateId=section.entranceTemplateSourceId||"";
+  if(!preferredTemplateId){
+    const sameDisciplineDifferentCourse=templates.find(template=>{
+      const sourceCourse=courseById.get(template.courseId);
+      return sourceCourse
+        && template.courseId!==section.courseId
+        && targetCourse?.discipline
+        && String(sourceCourse.discipline||"").trim().toLowerCase()===String(targetCourse.discipline||"").trim().toLowerCase();
+    });
+    preferredTemplateId=(sameDisciplineDifferentCourse||templates.find(t=>t.courseId===section.courseId)||templates[0])?.id||"";
+  }
+
+  const templateOptions=[...grouped.values()].map(group=>{
+    const course=group.course;
+    const label=(course.code||"Course")+" — "+(course.title||"Untitled Course")+(course.discipline?" · "+course.discipline:"");
+    return '<optgroup label="'+esc(label)+'">'+group.templates.map(t=>
+      '<option value="'+t.id+'" '+(t.id===preferredTemplateId?'selected':'')+'>'+
+        esc(t.title)+' • '+esc(t.questionCount||t.questionIds?.length||0)+' questions • '+esc(t.totalPoints||0)+' pts'+
+      '</option>'
+    ).join("")+'</optgroup>';
+  }).join("");
 
   let hasExistingAttempts=false;
   if(section.entranceAssessmentId){
@@ -1947,10 +1996,11 @@ async function configureEntranceExam(sectionId){
     title:section.entranceAssessmentId?"Change Entrance Examination":"Configure Entrance Examination",
     wide:true,
     body:'<form id="entranceExamForm" class="academic-form">'+
-      '<div class="academic-banner"><div class="kicker">'+esc(section.courseCode||"Course")+'</div><h3>'+esc(section.sectionName||section.courseTitle||"Section")+'</h3><p>Students must complete and pass the selected instructor-created assessment before Theoria allows enrollment.</p></div>'+
+      '<div class="academic-banner"><div class="kicker">'+esc(section.courseCode||"Course")+'</div><h3>'+esc(section.sectionName||section.courseTitle||"Section")+'</h3><p>The entrance exam may test this course or prerequisite material from a different course or discipline.</p></div>'+
       (hasExistingAttempts?'<div class="notice danger-notice"><strong>This section already has entrance-exam attempts.</strong><p>Replacing the exam will permanently clear those entrance attempts and results. Enrolled students are not affected.</p></div>':'')+
-      '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Assessment Template</h3><p>Select a completed template built from this course’s Question Bank.</p></div></div>'+
-        '<div class="field"><label>Entrance Examination</label><select name="templateId">'+templates.map(t=>'<option value="'+t.id+'" '+(t.id===section.entranceTemplateSourceId?'selected':'')+'>'+esc(t.title)+' • '+esc(t.questionCount||t.questionIds?.length||0)+' questions • '+esc(t.totalPoints||0)+' pts</option>').join("")+'</select></div>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Prerequisite / Source Course</h3><p>Select an assessment template from any course you teach. For a second course in a sequence, you can deliberately choose the earlier course so the entrance exam measures prior mastery.</p></div></div>'+
+        '<div class="field"><label>Entrance Examination Template</label><select name="templateId" id="entranceTemplateSelect">'+templateOptions+'</select></div>'+
+        '<div id="entranceSourcePreview" class="entrance-source-preview"></div>'+
       '</section>'+
       '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Passing Requirement</h3><p>The final graded percentage must meet or exceed this threshold before enrollment unlocks.</p></div></div>'+
         '<div class="field"><label>Passing Score</label><div class="input-with-suffix"><input name="passPercent" type="number" min="1" max="100" step="1" value="'+esc(section.entrancePassPercent||70)+'" required><span>%</span></div></div>'+
@@ -1960,6 +2010,23 @@ async function configureEntranceExam(sectionId){
   });
 
   const form=modal.querySelector("#entranceExamForm");
+  const select=modal.querySelector("#entranceTemplateSelect");
+  const preview=modal.querySelector("#entranceSourcePreview");
+  const renderSourcePreview=()=>{
+    const template=templates.find(x=>x.id===select.value)||templates[0];
+    const sourceCourse=courseById.get(template?.courseId)||{};
+    const crossCourse=template?.courseId!==section.courseId;
+    preview.innerHTML=template
+      ? '<div class="entrance-source-card '+(crossCourse?'cross-course':'same-course')+'">'+
+          '<div><span>'+(crossCourse?'PREREQUISITE SOURCE':'CURRENT COURSE SOURCE')+'</span><strong>'+esc(template.courseCode||sourceCourse.code||"Course")+' — '+esc(template.courseTitle||sourceCourse.title||"Course")+'</strong>'+
+          '<small>'+(sourceCourse.discipline?esc(sourceCourse.discipline)+' • ':'')+esc(template.title||"Assessment Template")+'</small></div>'+
+          '<div class="entrance-source-stats"><span><strong>'+esc(template.questionCount||template.questionIds?.length||0)+'</strong> questions</span><span><strong>'+esc(template.totalPoints||0)+'</strong> points</span></div>'+
+        '</div>'
+      : '';
+  };
+  select.addEventListener("change",renderSourcePreview);
+  renderSourcePreview();
+
   form.onsubmit=async e=>{
     e.preventDefault();
     const fd=new FormData(form),templateId=String(fd.get("templateId")),passPercent=Math.max(1,Math.min(100,Math.round(Number(fd.get("passPercent")||70))));
@@ -1972,24 +2039,51 @@ async function configureEntranceExam(sectionId){
       const source=await loadAssessment(template.id);
       if(!source.questions.length)throw new Error("The selected template has no questions.");
 
+      const sourceCourse=courseById.get(template.courseId)||{};
       const ref=doc(collection(db,"assessments"));
+      const questionRefs=source.questions.map(()=>doc(collection(db,"assessments",ref.id,"questions")));
+      const questionIds=questionRefs.map(q=>q.id);
+
+      // The entrance assessment belongs academically to the destination
+      // section/course, while retaining explicit source-course provenance for
+      // every imported prerequisite question.
       const clone={
-        ...Object.fromEntries(Object.entries(source.assessment).filter(([k])=>!["id","createdAt","updatedAt","sectionId","sectionName","status","opensAt","closesAt","templateSourceId","entranceExam"].includes(k))),
+        ...Object.fromEntries(Object.entries(source.assessment).filter(([k])=>![
+          "id","createdAt","updatedAt","sectionId","sectionName","status","opensAt","closesAt",
+          "templateSourceId","entranceExam","courseId","courseCode","courseTitle","questionIds",
+          "questionPool","poolQuestionCount","questionCount","totalPoints"
+        ].includes(k))),
         ownerId:s.user.uid,
+        courseId:section.courseId,
+        courseCode:section.courseCode,
+        courseTitle:section.courseTitle,
         sectionId:section.id,
         sectionName:section.sectionName,
         templateSourceId:template.id,
         entranceExam:true,
         entrancePassPercent:passPercent,
+        entranceSourceCourseId:template.courseId,
+        entranceSourceCourseCode:template.courseCode||sourceCourse.code||"",
+        entranceSourceCourseTitle:template.courseTitle||sourceCourse.title||"",
+        entranceSourceDiscipline:sourceCourse.discipline||"",
+        entranceSourceTemplateTitle:template.title||"",
         title:template.title,
         status:"Published",
         opensAt:null,
         closesAt:null,
-        questionIds:source.questions.map(q=>q.id),
-        questionPool:(template.questionPool?.length?template.questionPool:source.questions.map(q=>({id:q.id,itemId:q.itemId||"",type:q.type,points:Number(q.points||0)}))),
+        randomDrawEnabled:false,
+        randomDrawPlan:[],
+        randomizeQuestions:!!template.randomizeQuestions,
+        questionIds,
+        questionPool:source.questions.map((q,index)=>({
+          id:questionRefs[index].id,
+          itemId:q.itemId||"",
+          type:q.type,
+          points:Number(q.points||0)
+        })),
         poolQuestionCount:source.questions.length,
-        questionCount:Number(template.questionCount||source.questions.length),
-        totalPoints:Number(template.totalPoints||source.questions.reduce((n,q)=>n+Number(q.points||0),0)),
+        questionCount:source.questions.length,
+        totalPoints:source.questions.reduce((n,q)=>n+Number(q.points||0),0),
         createdAt:serverTimestamp(),
         updatedAt:serverTimestamp()
       };
@@ -1997,13 +2091,25 @@ async function configureEntranceExam(sectionId){
 
       for(let offset=0;offset<source.questions.length;offset+=180){
         const batch=writeBatch(db),chunk=source.questions.slice(offset,offset+180);
-        for(const q of chunk){
-          const cleanQ=Object.fromEntries(Object.entries(q).filter(([k])=>k!=="id"));
-          batch.set(doc(db,"assessments",ref.id,"questions",q.id),{...cleanQ,clonedAt:serverTimestamp()});
-          const key=source.keys.find(k=>k.id===q.id);
+        for(let localIndex=0;localIndex<chunk.length;localIndex++){
+          const sourceQuestion=chunk[localIndex];
+          const absoluteIndex=offset+localIndex;
+          const questionRef=questionRefs[absoluteIndex];
+          const cleanQ=Object.fromEntries(Object.entries(sourceQuestion).filter(([k])=>k!=="id"));
+          batch.set(questionRef,{
+            ...cleanQ,
+            order:absoluteIndex+1,
+            sourceCourseId:template.courseId,
+            sourceCourseCode:template.courseCode||sourceCourse.code||"",
+            sourceCourseTitle:template.courseTitle||sourceCourse.title||"",
+            sourceTemplateId:template.id,
+            sourceTemplateTitle:template.title||"",
+            clonedAt:serverTimestamp()
+          });
+          const key=source.keys.find(k=>k.id===sourceQuestion.id);
           if(key){
             const cleanK=Object.fromEntries(Object.entries(key).filter(([k])=>k!=="id"));
-            batch.set(doc(db,"assessments",ref.id,"keys",q.id),{...cleanK,clonedAt:serverTimestamp()});
+            batch.set(doc(db,"assessments",ref.id,"keys",questionRef.id),{...cleanK,itemId:sourceQuestion.itemId||key.itemId||"",clonedAt:serverTimestamp()});
           }
         }
         await batch.commit();
@@ -2026,6 +2132,10 @@ async function configureEntranceExam(sectionId){
         entranceTemplateSourceId:template.id,
         entranceExamTitle:template.title,
         entrancePassPercent:passPercent,
+        entranceSourceCourseId:template.courseId,
+        entranceSourceCourseCode:template.courseCode||sourceCourse.code||"",
+        entranceSourceCourseTitle:template.courseTitle||sourceCourse.title||"",
+        entranceSourceDiscipline:sourceCourse.discipline||"",
         entranceConfiguredAt:serverTimestamp(),
         updatedAt:serverTimestamp()
       });
@@ -2035,7 +2145,11 @@ async function configureEntranceExam(sectionId){
         entranceAssessmentId:ref.id,
         entranceTemplateSourceId:template.id,
         entranceExamTitle:template.title,
-        entrancePassPercent:passPercent
+        entrancePassPercent:passPercent,
+        entranceSourceCourseId:template.courseId,
+        entranceSourceCourseCode:template.courseCode||sourceCourse.code||"",
+        entranceSourceCourseTitle:template.courseTitle||sourceCourse.title||"",
+        entranceSourceDiscipline:sourceCourse.discipline||""
       });
       const sectionIndex=s.sections.findIndex(x=>x.id===section.id);
       if(sectionIndex>=0)s.sections[sectionIndex]={...s.sections[sectionIndex],...section};
@@ -2047,7 +2161,8 @@ async function configureEntranceExam(sectionId){
 
       core().closeModal();
       await core().reloadCurrentSection("overview");
-      toast("Entrance examination configured. Students must earn "+passPercent+"% before enrollment.");
+      const sourceLabel=(template.courseCode||sourceCourse.code||"Prerequisite course");
+      toast("Entrance examination configured from "+sourceLabel+". Students must earn "+passPercent+"% before enrollment.");
     }catch(error){
       button.disabled=false;button.textContent=section.entranceAssessmentId?"Replace Entrance Exam":"Configure Entrance Exam";
       toast(error.message||"Unable to configure the entrance examination.");
