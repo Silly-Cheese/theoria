@@ -326,13 +326,62 @@ async function enrollmentHistoryModal(sectionId){
     const snap=await getDocs(collection(db,"sections",sectionId,"enrollmentHistory"));
     rows=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>toMillis(b.createdAt)-toMillis(a.createdAt));
   }catch(_){}
+  const latestByStudent=new Map();
+  rows.forEach(r=>{if(r.studentId&&!latestByStudent.has(r.studentId))latestByStudent.set(r.studentId,r);});
   modal({
     eyebrow:"Enrollment Lifecycle",
     title:"Enrollment History",
     wide:true,
-    body:rows.length?'<div class="audit-timeline">'+rows.map(r=>'<div class="audit-event"><div class="audit-event-mark">'+(r.status==="Removed"?"×":r.status==="Completed"?"✓":"•")+'</div><div><strong>'+esc(r.studentName||"Student")+' — '+esc(r.status||"Status")+'</strong><span>'+esc(r.reason||"")+'</span><small>'+esc(r.actorName||"System")+'</small></div></div>').join("")+'</div>':'<div class="empty-state compact-empty"><div class="empty-symbol">E</div><h3>No enrollment history yet.</h3><p>Withdrawals, removals, reinstatements, and completions will appear here.</p></div>',
+    body:rows.length?'<div class="audit-timeline">'+rows.map(r=>'<div class="audit-event"><div class="audit-event-mark">'+(r.status==="Removed"?"×":r.status==="Completed"?"✓":r.status==="Reinstated"?"↻":"•")+'</div><div><strong>'+esc(r.studentName||"Student")+' — '+esc(r.status||"Status")+'</strong><span>'+esc(r.reason||"")+'</span><small>'+esc(r.actorName||"System")+'</small>'+(latestByStudent.get(r.studentId)?.id===r.id&&["Removed","Withdrawn"].includes(r.status)?'<button class="secondary-btn small-btn" style="margin-top:7px" data-phase5-action="reinstate-student" data-section="'+sectionId+'" data-student="'+esc(r.studentId)+'">Reinstate Student</button>':'')+'</div></div>').join("")+'</div>':'<div class="empty-state compact-empty"><div class="empty-symbol">E</div><h3>No enrollment history yet.</h3><p>Withdrawals, removals, reinstatements, and completions will appear here.</p></div>',
     footer:'<button class="primary-btn" data-close-modal>Close</button>'
   });
+}
+
+async function reinstateStudent(sectionId,studentId){
+  const section=currentSection();if(!section||section.id!==sectionId||!canOwnSection(section))return;
+  try{
+    const historySnap=await getDocs(collection(db,"sections",sectionId,"enrollmentHistory"));
+    const history=historySnap.docs.map(d=>({id:d.id,...d.data()}))
+      .filter(x=>x.studentId===studentId)
+      .sort((a,b)=>toMillis(b.createdAt)-toMillis(a.createdAt));
+    const prior=history[0];
+    if(!prior)return toast("No prior enrollment history was found.");
+
+    let accommodations={timeMultiplier:1,breaks:false,calculator:false,largeText:false,reducedDistractions:false,notes:""};
+    try{
+      const access=await getDoc(doc(db,"academicAccess",studentId));
+      if(access.exists())accommodations={...accommodations,...(access.data().accommodations||{})};
+    }catch(_){}
+
+    const batch=writeBatch(db);
+    batch.set(doc(db,"sections",sectionId,"members",studentId),{
+      userId:studentId,
+      displayName:prior.studentName||"Student",
+      email:prior.studentEmail||"",
+      role:"student",
+      status:"enrolled",
+      accommodations,
+      useProfileDefaults:true,
+      reinstatedAt:serverTimestamp(),
+      updatedAt:serverTimestamp()
+    },{merge:true});
+    batch.set(doc(db,"users",studentId,"enrollments",sectionId),{
+      sectionId,courseId:section.courseId,courseCode:section.courseCode,courseTitle:section.courseTitle,
+      sectionName:section.sectionName,term:section.term,joinCode:section.joinCode||"",status:"Enrolled",
+      reinstatedAt:serverTimestamp(),updatedAt:serverTimestamp()
+    },{merge:true});
+    const eventRef=doc(collection(db,"sections",sectionId,"enrollmentHistory"));
+    batch.set(eventRef,{
+      studentId,studentName:prior.studentName||"Student",studentEmail:prior.studentEmail||"",
+      status:"Reinstated",reason:"Reinstated by instructor",actorId:state().user.uid,
+      actorName:state().profile?.displayName||state().user.displayName||"Instructor",createdAt:serverTimestamp()
+    });
+    await batch.commit();
+    await logSectionEvent(sectionId,"enrollment_reinstated","student",studentId,{});
+    closeModal();
+    await core().reloadCurrentSection("students");
+    toast((prior.studentName||"Student")+" was reinstated.");
+  }catch(error){toast(error.message||"Unable to reinstate the student.");}
 }
 
 async function setEnrollmentLifecycle(studentId,status){
@@ -693,6 +742,7 @@ document.addEventListener("click",async e=>{
   if(a==="staff-management"){closeModal();return staffManagementModal(b.dataset.section);}
   if(a==="remove-staff")return removeStaff(b.dataset.section,b.dataset.user);
   if(a==="enrollment-history"){closeModal();return enrollmentHistoryModal(b.dataset.section);}
+  if(a==="reinstate-student"){closeModal();return reinstateStudent(b.dataset.section,b.dataset.student);}
   if(a==="audit-log"){closeModal();return auditLogModal(b.dataset.section);}
   if(a==="lifecycle-menu")return lifecycleMenu(b.dataset.student);
   if(a==="set-lifecycle"){closeModal();return setEnrollmentLifecycle(b.dataset.student,b.dataset.status);}
