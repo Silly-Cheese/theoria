@@ -272,6 +272,12 @@ service cloud.firestore {
         allow read: if isSelf(userId);
         allow create, update, delete: if sectionOwner(sectionId);
       }
+
+      match /entranceAttempts/{sectionId} {
+        allow read: if isSelf(userId) || sectionGrader(sectionId);
+        allow create, update: if isSelf(userId) || sectionGrader(sectionId);
+        allow delete: if isSelf(userId) || sectionAcademicManager(sectionId);
+      }
     }
 
     match /directory/{userId} {
