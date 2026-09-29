@@ -3049,6 +3049,146 @@ async function renderScholarLibrary(){
   search.addEventListener("input",render);type.addEventListener("change",render);section.addEventListener("change",render);render();
 }
 
+
+async function removeStudentFromSection(studentId){
+  const section=state.currentSection;
+  const student=state.sectionData?.members?.find(x=>x.id===studentId);
+  if(state.role!=="instructor"||!section||!student)return;
+  const modal=openModal({
+    eyebrow:"Enrollment Management",
+    title:"Remove Student",
+    body:'<div class="delete-assessment-warning"><div class="delete-warning-icon">!</div><div><strong>Remove '+esc(student.displayName||"this student")+' from this section?</strong><p>The student will immediately lose section access. Existing grades, submissions, assessment attempts, and academic records will be preserved for the instructor.</p></div></div>',
+    footer:'<button class="secondary-btn" data-close-modal>Cancel</button><button class="danger-btn" id="confirmRemoveStudent">Remove Student</button>'
+  });
+  modal.querySelector("#confirmRemoveStudent").onclick=async()=>{
+    const btn=modal.querySelector("#confirmRemoveStudent");btn.disabled=true;btn.textContent="Removing…";
+    try{
+      const batch=writeBatch(db);
+      batch.delete(doc(db,"sections",section.id,"members",studentId));
+      batch.delete(doc(db,"users",studentId,"enrollments",section.id));
+      await batch.commit();
+      closeModal();
+      state.sectionData=await loadSectionData(section);
+      renderSectionDetail("students");
+      showToast((student.displayName||"Student")+" was removed from the section.");
+    }catch(error){
+      btn.disabled=false;btn.textContent="Remove Student";
+      showToast(humanizeFirebaseError(error));
+    }
+  };
+}
+
+async function deleteCollectionDocuments(collectionRef){
+  const snap=await getDocs(collectionRef);
+  for(let offset=0;offset<snap.docs.length;offset+=400){
+    const batch=writeBatch(db);
+    snap.docs.slice(offset,offset+400).forEach(d=>batch.delete(d.ref));
+    await batch.commit();
+  }
+  return snap.docs;
+}
+
+async function deleteAssessmentTree(assessmentId){
+  const submissionSnap=await getDocs(collection(db,"assessments",assessmentId,"submissions"));
+  for(const sub of submissionSnap.docs){
+    await deleteCollectionDocuments(collection(db,"assessments",assessmentId,"submissions",sub.id,"events"));
+  }
+  await deleteCollectionDocuments(collection(db,"assessments",assessmentId,"questions"));
+  await deleteCollectionDocuments(collection(db,"assessments",assessmentId,"keys"));
+  await deleteCollectionDocuments(collection(db,"assessments",assessmentId,"results"));
+  await deleteCollectionDocuments(collection(db,"assessments",assessmentId,"submissions"));
+  await deleteDoc(doc(db,"assessments",assessmentId));
+}
+
+async function deleteSectionCompletely(){
+  const section=state.currentSection;
+  if(state.role!=="instructor"||!section)return;
+  const members=state.sectionData?.members||[];
+  const modal=openModal({
+    eyebrow:"Section Administration",
+    title:"Delete Section",
+    wide:true,
+    body:'<div class="delete-assessment-warning"><div class="delete-warning-icon">!</div><div><strong>This permanently deletes the teaching section.</strong><p>Assignments, resources, section assessments, gradebook rows, academic records, entrance-exam candidates, and enrollment links tied to this section will be removed. This does not delete the master course or its Question Bank.</p></div></div>'+
+      '<div class="delete-impact-grid"><div><span>Section</span><strong>'+esc(section.sectionName||section.courseTitle||"Section")+'</strong></div><div><span>Students</span><strong>'+members.length+'</strong></div><div><span>Assignments</span><strong>'+esc(state.sectionData?.assignments?.length||0)+'</strong></div><div><span>Assessments</span><strong>'+esc(state.sectionData?.assessmentRefs?.length||0)+'</strong></div></div>'+
+      '<div class="field" style="margin-top:16px"><label>Type DELETE to confirm</label><input id="deleteSectionConfirmText" autocomplete="off" placeholder="DELETE"></div>',
+    footer:'<button class="secondary-btn" data-close-modal>Cancel</button><button class="danger-btn" id="confirmDeleteSection" disabled>Delete Section Permanently</button>'
+  });
+  const input=modal.querySelector("#deleteSectionConfirmText"),button=modal.querySelector("#confirmDeleteSection");
+  input.oninput=()=>button.disabled=input.value.trim().toUpperCase()!=="DELETE";
+  button.onclick=async()=>{
+    button.disabled=true;button.textContent="Deleting Section…";
+    try{
+      // Remove each student's personal enrollment pointer while the section
+      // still exists so section-owner authorization remains valid.
+      for(let offset=0;offset<members.length;offset+=350){
+        const batch=writeBatch(db);
+        members.slice(offset,offset+350).forEach(member=>{
+          batch.delete(doc(db,"users",member.id,"enrollments",section.id));
+          batch.delete(doc(db,"sections",section.id,"members",member.id));
+        });
+        await batch.commit();
+      }
+
+      // Assignments have nested student submissions, so clear those first.
+      const assignments=await getDocs(collection(db,"sections",section.id,"assignments"));
+      for(const assignment of assignments.docs){
+        await deleteCollectionDocuments(collection(db,"sections",section.id,"assignments",assignment.id,"submissions"));
+      }
+      await deleteCollectionDocuments(collection(db,"sections",section.id,"assignments"));
+
+      const simpleCollections=[
+        "resources","grades","assessmentRefs","gradingPathways","assessmentGrades",
+        "mastery","academicRecords","portfolios","appeals","recordHistory","entranceCandidates"
+      ];
+      for(const name of simpleCollections)await deleteCollectionDocuments(collection(db,"sections",section.id,name));
+
+      // Remove every assigned assessment owned by this instructor, including
+      // the special entrance examination which is intentionally not published
+      // into the normal section assessmentRefs collection.
+      const assignedAssessments=await getDocs(query(collection(db,"assessments"),where("sectionId","==",section.id)));
+      for(const assessment of assignedAssessments.docs)await deleteAssessmentTree(assessment.id);
+
+      if(section.joinCode){
+        try{await deleteDoc(doc(db,"joinCodes",section.joinCode));}catch(_){}
+      }
+      await deleteDoc(doc(db,"sections",section.id));
+
+      closeModal();
+      state.currentSection=null;state.sectionData=null;
+      await loadWorkspace();
+      setPage("sections");
+      showToast("Section deleted.");
+    }catch(error){
+      console.error("Unable to delete section:",error);
+      button.disabled=false;button.textContent="Delete Section Permanently";
+      showToast(humanizeFirebaseError(error));
+    }
+  };
+}
+
+async function beginEntranceExam(section,joinCode){
+  if(!section?.entranceAssessmentId)return showToast("The instructor has not configured the entrance examination yet.");
+  try{
+    await setDoc(doc(db,"sections",section.id,"entranceCandidates",state.user.uid),{
+      userId:state.user.uid,
+      displayName:state.profile?.displayName||state.user.displayName||"Student",
+      email:state.user.email||"",
+      status:"pending",
+      joinCode,
+      assessmentId:section.entranceAssessmentId,
+      createdAt:serverTimestamp(),
+      updatedAt:serverTimestamp()
+    },{merge:true});
+    closeModal();
+    if(window.TheoriaPhase3?.startEntranceExam){
+      await window.TheoriaPhase3.startEntranceExam(section.entranceAssessmentId);
+    }else{
+      showToast("The entrance examination workspace is still loading. Try again in a moment.");
+    }
+  }catch(error){showToast(humanizeFirebaseError(error));}
+}
+
+
 async function previewJoin(code){
   code=String(code||"").trim().toUpperCase();
   if(!code) return showToast("Enter a join code.");
@@ -3059,13 +3199,82 @@ async function previewJoin(code){
     if(!sectionSnap.exists()) return showToast("The section could not be found.");
     const section={id:sectionSnap.id,...sectionSnap.data()};
     if(section.joinOpen===false) return showToast("Enrollment for this section is closed.");
+
+    const courseSnap=await getDoc(doc(db,"courses",section.courseId));
+    const course=courseSnap.exists()?courseSnap.data():{};
+    const entranceRequired=course.entranceExamRequired===true||section.entranceExamRequired===true;
+
+    if(!entranceRequired){
+      const modal=openModal({
+        eyebrow:"Join a Section",
+        title:section.courseTitle || "Theoria Section",
+        body:'<div class="academic-banner"><div class="kicker">'+esc(section.courseCode||"Course")+'</div><h3>'+esc(section.sectionName||("Section "+section.sectionNumber))+'</h3><p>'+esc(section.term||"")+' • '+esc(section.instructorName||"Instructor")+' • '+esc(section.format||"")+'</p></div><p class="page-subtitle">You are requesting to join this section using <strong>'+esc(code)+'</strong>.</p>',
+        footer:'<button class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" id="confirmJoinBtn">Join Section</button>'
+      });
+      modal.querySelector("#confirmJoinBtn").addEventListener("click",()=>joinSection(section,code));
+      return;
+    }
+
+    const passPercent=Number(section.entrancePassPercent||70);
+    if(!section.entranceAssessmentId){
+      openModal({
+        eyebrow:"Entrance Examination Required",
+        title:section.courseTitle || "Theoria Section",
+        body:'<div class="academic-banner"><div class="kicker">'+esc(section.courseCode||"Course")+'</div><h3>'+esc(section.sectionName||("Section "+section.sectionNumber))+'</h3><p>'+esc(section.term||"")+' • '+esc(section.instructorName||"Instructor")+'</p></div><div class="notice danger-notice"><strong>Enrollment is not available yet.</strong><p>This course requires an entrance examination, but the instructor has not configured the section exam.</p></div>',
+        footer:'<button class="primary-btn" data-close-modal>Close</button>'
+      });
+      return;
+    }
+
+    let submission=null,result=null;
+    try{
+      const subSnap=await getDoc(doc(db,"assessments",section.entranceAssessmentId,"submissions",state.user.uid));
+      if(subSnap.exists())submission=subSnap.data();
+    }catch(_){}
+    try{
+      const resultSnap=await getDoc(doc(db,"assessments",section.entranceAssessmentId,"results",state.user.uid));
+      if(resultSnap.exists())result=resultSnap.data();
+    }catch(_){}
+
+    if(result?.complete===true && Number(result.percent||0)>=passPercent){
+      const modal=openModal({
+        eyebrow:"Entrance Requirement Complete",
+        title:"You may enroll",
+        body:'<div class="academic-banner"><div class="kicker">'+esc(section.courseCode||"Course")+'</div><h3>'+esc(section.sectionName||("Section "+section.sectionNumber))+'</h3><p>'+esc(section.term||"")+' • '+esc(section.instructorName||"Instructor")+'</p></div><div class="notice"><strong>Entrance examination passed: '+esc(result.percent)+'%</strong><p>The required passing score is '+esc(passPercent)+'%. You may now join this section.</p></div>',
+        footer:'<button class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" id="confirmJoinBtn">Enroll in Section</button>'
+      });
+      modal.querySelector("#confirmJoinBtn").addEventListener("click",()=>joinSection(section,code));
+      return;
+    }
+
+    if(result?.complete===true){
+      openModal({
+        eyebrow:"Entrance Examination Result",
+        title:"Enrollment requirement not met",
+        body:'<div class="academic-banner"><div class="kicker">'+esc(section.courseCode||"Course")+'</div><h3>'+esc(section.entranceExamTitle||"Entrance Examination")+'</h3></div><div class="notice danger-notice"><strong>Score: '+esc(result.percent)+'% • Required: '+esc(passPercent)+'%</strong><p>This attempt does not meet the enrollment requirement. Contact the instructor if a retake should be authorized.</p></div>',
+        footer:'<button class="primary-btn" data-close-modal>Close</button>'
+      });
+      return;
+    }
+
+    if(submission?.status==="submitted"||submission?.status==="graded"){
+      openModal({
+        eyebrow:"Entrance Examination",
+        title:"Awaiting evaluation",
+        body:'<div class="academic-banner"><div class="kicker">'+esc(section.courseCode||"Course")+'</div><h3>'+esc(section.entranceExamTitle||"Entrance Examination")+'</h3></div><div class="notice"><strong>Your entrance examination has been submitted.</strong><p>Enrollment will become available after the instructor completes the evaluation and you meet the '+esc(passPercent)+'% passing requirement.</p></div>',
+        footer:'<button class="primary-btn" data-close-modal>Close</button>'
+      });
+      return;
+    }
+
+    const isResume=submission?.status==="in_progress";
     const modal=openModal({
-      eyebrow:"Join a Section",
+      eyebrow:"Entrance Examination Required",
       title:section.courseTitle || "Theoria Section",
-      body:'<div class="academic-banner"><div class="kicker">'+esc(section.courseCode||"Course")+'</div><h3>'+esc(section.sectionName||("Section "+section.sectionNumber))+'</h3><p>'+esc(section.term||"")+' • '+esc(section.instructorName||"Instructor")+' • '+esc(section.format||"")+'</p></div><p class="page-subtitle">You are requesting to join this section using <strong>'+esc(code)+'</strong>.</p>',
-      footer:'<button class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" id="confirmJoinBtn">Join Section</button>'
+      body:'<div class="academic-banner"><div class="kicker">'+esc(section.courseCode||"Course")+'</div><h3>'+esc(section.sectionName||("Section "+section.sectionNumber))+'</h3><p>'+esc(section.term||"")+' • '+esc(section.instructorName||"Instructor")+'</p></div><div class="notice"><strong>'+esc(section.entranceExamTitle||"Entrance Examination")+'</strong><p>You must earn at least '+esc(passPercent)+'% on the instructor-created entrance examination before enrollment is permitted.</p></div>',
+      footer:'<button class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" id="beginEntranceExamBtn">'+(isResume?"Resume Entrance Examination":"Begin Entrance Examination")+'</button>'
     });
-    modal.querySelector("#confirmJoinBtn").addEventListener("click",()=>joinSection(section,code));
+    modal.querySelector("#beginEntranceExamBtn").onclick=()=>beginEntranceExam(section,code);
   }catch(error){showToast(humanizeFirebaseError(error));}
 }
 
@@ -3198,6 +3407,8 @@ window.TheoriaCore = {
   unitFolderGroups,
   canManageCourse,
   isOfficialCatalogCourse,
+  previewJoin,
+  joinSection,
   reloadCurrentSection:async(tab="overview")=>{
     if(!state.currentSection) return;
     state.sectionData=await loadSectionData(state.currentSection);
@@ -3235,6 +3446,8 @@ document.addEventListener("click",async event=>{
     return openTopicModal(btn.dataset.unit,unit?.topics?.find(x=>x.id===btn.dataset.id));
   }
   if(action==="edit-section") return openSectionModal(state.currentSection);
+  if(action==="remove-section-student") return removeStudentFromSection(btn.dataset.student);
+  if(action==="delete-section") return deleteSectionCompletely();
   if(action==="section-tab") return renderSectionDetail(btn.dataset.tab);
   if(action==="create-assignment") return openAssignmentModal();
   if(action==="bulk-import-assignments") return bulkImportAssignmentsModal();
