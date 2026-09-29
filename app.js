@@ -3259,6 +3259,11 @@ async function beginEntranceExam(section,joinCode){
         createdAt:serverTimestamp(),
         updatedAt:serverTimestamp()
       });
+      await setDoc(doc(db,"users",state.user.uid,"entranceAttempts",section.id),{
+        sectionId:section.id,courseId:section.courseId,courseCode:section.courseCode,courseTitle:section.courseTitle,
+        sectionName:section.sectionName,assessmentId:section.entranceAssessmentId,assessmentTitle:section.entranceExamTitle||"Entrance Examination",
+        passPercent:Number(section.entrancePassPercent||70),status:"pending",createdAt:serverTimestamp(),updatedAt:serverTimestamp()
+      },{merge:true});
     }
     closeModal();
     if(window.TheoriaPhase3?.startEntranceExam){
