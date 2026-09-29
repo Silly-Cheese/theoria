@@ -2666,7 +2666,11 @@ function accommodationsModal(studentId){
   const form=modal.querySelector("#accommodationForm");form.timeMultiplier.value=String(a.timeMultiplier||1);
   form.addEventListener("submit",async e=>{
     e.preventDefault();const fd=new FormData(form),accommodations={timeMultiplier:Number(fd.get("timeMultiplier")||1),breaks:form.elements.breaks.checked,calculator:form.elements.calculator.checked,largeText:form.elements.largeText.checked,reducedDistractions:form.elements.reducedDistractions.checked,notes:String(fd.get("notes")||"").trim()};
-    try{await updateDoc(doc(db,"sections",section.id,"members",studentId),{accommodations,updatedAt:serverTimestamp()});core().closeModal();await core().reloadCurrentSection("students");toast("Accommodations saved.");}catch(err){toast(err.message||"Unable to save accommodations.");}
+    try{
+      await updateDoc(doc(db,"sections",section.id,"members",studentId),{accommodations,useProfileDefaults:false,updatedAt:serverTimestamp()});
+      if(window.TheoriaPhase5?.logSectionEvent)await window.TheoriaPhase5.logSectionEvent(section.id,"accommodations_updated","student",studentId,{timeMultiplier:accommodations.timeMultiplier,breaks:accommodations.breaks,calculator:accommodations.calculator,largeText:accommodations.largeText,reducedDistractions:accommodations.reducedDistractions});
+      core().closeModal();await core().reloadCurrentSection("students");toast("Section-specific accommodations saved.");
+    }catch(err){toast(err.message||"Unable to save accommodations.");}
   });
 }
 
@@ -2693,7 +2697,10 @@ async function startExam(id,confirmed=false){
       if(candidateSnap.exists())participantData=candidateSnap.data();
     }
     if(!participantData)return toast(a.entranceExam?"Your entrance-exam access has not been initialized. Re-enter the section join code.":"You are not enrolled in the section assigned to this assessment.");
-    const acc=participantData.accommodations||{};
+    const profileDefaults=s.profile?.defaultAccommodations||{};
+    const acc=(participantData.useProfileDefaults===true||a.entranceExam===true)
+      ? {...profileDefaults,...(participantData.useProfileDefaults===true?{}:(participantData.accommodations||{}))}
+      : (participantData.accommodations||profileDefaults||{});
     if(!sub&&!confirmed){
       const minutes=Math.round(Number(a.durationMinutes||0)*Number(acc.timeMultiplier||1));
       const modal=core().openModal({
