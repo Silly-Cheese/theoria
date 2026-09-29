@@ -1531,7 +1531,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .compact-policy{min-height:76px}
 .progression-competency-row{grid-template-columns:34px minmax(120px,.7fr) minmax(150px,1fr) 105px 34px!important}
 
-.student-profile-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:16px 0}
+.student-profile-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px;margin:16px 0}
 .student-profile-summary>div{padding:14px;border:1px solid var(--line);border-radius:8px;background:#faf8f3}
 .student-profile-summary span{display:block;font-size:7px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
 .student-profile-summary strong{display:block;margin-top:4px;font-family:"Libre Baskerville",serif;font-size:22px;font-weight:400;color:var(--burgundy)}
@@ -1586,4 +1586,19 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .progression-competency-row{grid-template-columns:30px 1fr!important}
   .progression-competency-row .req-course,.progression-competency-row .req-code,.progression-competency-row .input-with-suffix{grid-column:2}
   .approval-course-row,.staff-role-row{align-items:flex-start;flex-direction:column}
+}
+
+.gradebook-period-toolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:12px 0;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:#faf8f3}
+.gradebook-period-toolbar span{display:block;font-size:7px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.gradebook-period-toolbar strong{display:block;margin-top:2px;font-size:10px;color:var(--ink)}
+.gradebook-period-toolbar select{min-width:190px;max-width:320px}
+.status-success{color:#38604a!important}
+.status-danger{color:#7b3039!important}
+.archived-section-view{position:relative}
+.archived-readonly-banner{margin:0 0 16px}
+.analytics-domain-grid{margin:18px 0}
+.analytics-domain-grid .blueprint-row small{display:block;margin-top:2px;font-size:6px;font-weight:400;color:var(--muted)}
+@media(max-width:700px){
+  .gradebook-period-toolbar{align-items:stretch;flex-direction:column}
+  .gradebook-period-toolbar select{max-width:none;width:100%}
 }
