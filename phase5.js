@@ -264,10 +264,14 @@ async function renderAcademicProfile(){
   }
 
   const evidence=await loadOwnAcademicEvidence();
-  let persistentAccess={};
+  let persistentAccess={},entranceAttempts=[];
   try{
     const accessSnap=await getDoc(doc(db,"academicAccess",s.user.uid));
     if(accessSnap.exists())persistentAccess=accessSnap.data();
+  }catch(_){}
+  try{
+    const entranceSnap=await getDocs(collection(db,"users",s.user.uid,"entranceAttempts"));
+    entranceAttempts=entranceSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>toMillis(b.updatedAt||b.createdAt)-toMillis(a.updatedAt||a.createdAt));
   }catch(_){}
   const defaults=persistentAccess.accommodations||profile.defaultAccommodations||{};
   const completed=evidence.records.filter(r=>r.status==="Certified");
@@ -279,9 +283,10 @@ async function renderAcademicProfile(){
   }));
 
   el.innerHTML='<div class="academic-banner"><div class="kicker">Student Academic Profile</div><h3>'+esc(profile.displayName||s.user.displayName||"Student")+'</h3><p>Completed courses, competency evidence, current enrollment, entrance examinations, and default assessment-access preferences in one academic profile.</p></div>'+
-    '<div class="student-profile-summary"><div><span>Current Sections</span><strong>'+esc((s.sections||[]).filter(x=>x.status!=="Archived").length)+'</strong></div><div><span>Certified Courses</span><strong>'+completed.length+'</strong></div><div><span>Competencies Evidenced</span><strong>'+comps.size+'</strong></div></div>'+
+    '<div class="student-profile-summary"><div><span>Current Sections</span><strong>'+esc((s.sections||[]).filter(x=>x.status!=="Archived").length)+'</strong></div><div><span>Certified Courses</span><strong>'+completed.length+'</strong></div><div><span>Competencies Evidenced</span><strong>'+comps.size+'</strong></div><div><span>Entrance Exams</span><strong>'+entranceAttempts.length+'</strong></div></div>'+
     '<div class="grid-2"><div class="panel"><div class="panel-head"><div class="panel-title">Completed Courses</div></div><div class="panel-body">'+(completed.length?completed.map(r=>'<div class="profile-record-row"><div><strong>'+esc(r.courseCode+" — "+r.courseTitle)+'</strong><span>'+esc(r.term||"")+'</span></div><b>'+esc(r.letterGrade||"—")+' • '+esc(r.finalPercent??"—")+'%</b></div>').join(""):'<div class="empty-mini">No certified course records yet.</div>')+'</div></div>'+
     '<div class="panel"><div class="panel-head"><div class="panel-title">Strongest Competency Evidence</div></div><div class="panel-body">'+([...comps.values()].length?[...comps.values()].sort((a,b)=>Number(b.percent||0)-Number(a.percent||0)).slice(0,8).map(c=>'<div class="profile-record-row"><div><strong>'+esc(c.code||"Competency")+'</strong><span>'+esc(c.name||"")+'</span></div><b>'+esc(c.percent??"—")+'%</b></div>').join(""):'<div class="empty-mini">No competency evidence yet.</div>')+'</div></div></div>'+
+    '<div class="panel" style="margin-top:18px"><div class="panel-head"><div class="panel-title">Entrance Examination History</div></div><div class="panel-body">'+(entranceAttempts.length?entranceAttempts.map(x=>'<div class="profile-record-row"><div><strong>'+esc((x.courseCode||"Course")+' — '+(x.assessmentTitle||"Entrance Examination"))+'</strong><span>'+esc(x.sectionName||"")+' • Required '+esc(x.passPercent||70)+'%</span></div><b class="'+(x.status==="passed"?'status-success':x.status==="failed"?'status-danger':'')+'">'+esc(String(x.status||"pending").replace(/_/g," "))+(x.percent!==null&&x.percent!==undefined?' • '+esc(x.percent)+'%':'')+'</b></div>').join(""):'<div class="empty-mini">No entrance examination attempts recorded.</div>')+'</div></div>'+
     '<div class="panel" style="margin-top:18px"><div class="panel-head"><div><div class="panel-title">Persistent Assessment Access</div><div class="panel-subtitle">Institutional access settings follow you into new sections. Instructors can still authorize a section-specific override.</div></div><span class="badge '+(persistentAccess.accommodations?'live':'')+'">'+(persistentAccess.accommodations?'Profile Active':'Standard Access')+'</span></div><div class="panel-body"><div class="detail-list"><div><span>Time Multiplier</span><strong>'+esc(defaults.timeMultiplier||1)+'×</strong></div><div><span>Breaks</span><strong>'+(defaults.breaks?'Permitted':'Standard policy')+'</strong></div><div><span>Calculator</span><strong>'+(defaults.calculator?'Permitted':'Standard policy')+'</strong></div><div><span>Large Text</span><strong>'+(defaults.largeText?'Enabled':'Standard')+'</strong></div><div><span>Reduced Distractions</span><strong>'+(defaults.reducedDistractions?'Enabled':'Standard')+'</strong></div></div>'+(persistentAccess.notes?'<div class="notice" style="margin-top:12px">'+esc(persistentAccess.notes)+'</div>':'')+'<div class="fineprint" style="margin-top:12px">Persistent access settings are managed by authorized instructors rather than self-assigned by students.</div></div></div>';
 }
 
