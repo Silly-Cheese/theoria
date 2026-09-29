@@ -1882,6 +1882,40 @@ function renderStudents(){
   return '<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Student</th><th>Email</th><th>Joined</th><th>Status</th><th>Assessment Access</th><th>Actions</th></tr></thead><tbody>'+members.map(m=>'<tr><td><strong>'+esc(m.displayName||"Student")+'</strong></td><td>'+esc(m.email||"—")+'</td><td>'+esc(formatDate(m.joinedAt))+'</td><td><span class="badge live">Enrolled</span></td><td><button class="text-btn" data-phase3-action="accommodations" data-student="'+m.id+'">Accommodations</button></td><td><button class="danger-btn small-btn" data-action="remove-section-student" data-student="'+m.id+'">Remove</button></td></tr>').join("")+'</tbody></table></div>';
 }
 
+function gradebookCourseworkPolicyAverage(assignments,gradeMap,studentId,policy){
+  const rules=policy?.courseworkRules||{},latePenalty=Math.max(0,Math.min(100,Number(rules.latePenaltyPercent||0)));
+  const entries=[];
+  for(const assignment of assignments){
+    const grade=gradeMap.get(assignment.id+"_"+studentId),status=String(grade?.gradeStatus||"Normal");
+    if(status==="Excused")continue;
+    const max=Number(assignment.points||0);
+    if(grade&&grade.score!==null&&grade.score!==undefined){
+      let score=Number(grade.score||0);
+      if(status==="Late"&&latePenalty)score*=1-latePenalty/100;
+      entries.push({assignment,score,max,percent:max?score/max*100:0});
+    }else if(rules.missingAsZero===true){
+      entries.push({assignment,score:0,max,percent:0});
+    }
+  }
+  const drop=Math.max(0,Math.min(entries.length,Math.floor(Number(rules.dropLowest||0))));
+  const dropped=new Set([...entries].sort((a,b)=>a.percent-b.percent).slice(0,drop).map(x=>x.assignment.id));
+  const kept=entries.filter(x=>!dropped.has(x.assignment.id));
+  const weights=rules.categoryWeights&&typeof rules.categoryWeights==="object"?rules.categoryWeights:{};
+  const weightTotal=Object.values(weights).reduce((n,x)=>n+Number(x||0),0);
+  if(weightTotal===100){
+    const groups=new Map();kept.forEach(x=>{const k=x.assignment.type||"Assignment";if(!groups.has(k))groups.set(k,[]);groups.get(k).push(x);});
+    let total=0,used=0;
+    for(const [k,wRaw] of Object.entries(weights)){
+      const w=Number(wRaw||0),rows=groups.get(k)||[];if(!w||!rows.length)continue;
+      const possible=rows.reduce((n,x)=>n+x.max,0),earned=rows.reduce((n,x)=>n+x.score,0);
+      if(possible){total+=(earned/possible*100)*w;used+=w;}
+    }
+    return used?Math.round(total/used*10)/10:null;
+  }
+  const possible=kept.reduce((n,x)=>n+x.max,0),earned=kept.reduce((n,x)=>n+x.score,0);
+  return possible?Math.round((earned/possible)*1000)/10:null;
+}
+
 function renderGradebook(){
   const students=state.sectionData.members;
   const framework=state.sectionData.framework||{units:[]};
@@ -1949,7 +1983,7 @@ function renderGradebook(){
       }
       const pct=hasGrade&&Number(a.points||0)>0?Math.round((Number(g.score)/Number(a.points))*1000)/10:null;
       return '<td class="score-cell coursework-score-cell '+(hasGrade?'has-grade':'no-grade')+'" data-action="set-grade" data-assignment="'+a.id+'" data-student="'+student.id+'">'+
-        (hasGrade?'<span class="grade-main">'+esc(g.score)+'</span><span class="grade-sub">/ '+esc(a.points)+'</span><span class="grade-cell-percent">'+pct+'%</span>':'<span class="grade-empty">—<small>No grade</small></span>')+
+        (hasGrade?'<span class="grade-main">'+esc(g.score)+'</span><span class="grade-sub">/ '+esc(a.points)+'</span><span class="grade-cell-percent">'+pct+'%</span>'+(g.gradeStatus&&g.gradeStatus!=="Normal"?'<small class="grade-status-note">'+esc(g.gradeStatus)+'</small>':''):'<span class="grade-empty">—<small>No grade</small></span>')+
       '</td>';
     }).join("");
 
@@ -1966,7 +2000,7 @@ function renderGradebook(){
       '</td>';
     }).join("");
 
-    const courseworkAvg=courseworkPossible?Math.round((courseworkEarned/courseworkPossible)*1000)/10:null;
+    const courseworkAvg=gradebookCourseworkPolicyAverage(assignments,gradeMap,student.id,state.currentSection?.gradingPolicy||{});
     const assessmentAvg=assessmentPercents.length?Math.round((assessmentPercents.reduce((a,b)=>a+b,0)/assessmentPercents.length)*10)/10:null;
     if(courseworkAvg!==null)studentCourseworkAverages.push(courseworkAvg);
     if(assessmentAvg!==null)studentAssessmentAverages.push(assessmentAvg);
