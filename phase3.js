@@ -1622,7 +1622,10 @@ function candidatesView(){
     let action="—";
     if(!sub&&(a.mode==="oral"))action='<button class="secondary-btn small-btn" data-phase3-action="create-evaluation" data-student="'+m.id+'">Begin Evaluation</button>';
     else if(sub)action='<button class="secondary-btn small-btn" data-phase3-action="grade-candidate" data-student="'+m.id+'">Grade</button>';
-    const visibility=res?(res.complete===false?'<span class="badge gold">Private while grading</span>':'<span class="badge live">Visible to student</span>'):"—";
+    if(a.entranceExam&&(sub||res))action='<div class="inline-actions">'+(sub?'<button class="secondary-btn small-btn" data-phase3-action="grade-candidate" data-student="'+m.id+'">Grade</button>':'')+'<button class="text-btn danger-text" data-phase3-action="reset-entrance-attempt" data-student="'+m.id+'">Reset Attempt</button></div>';
+    const visibility=a.entranceExam
+      ? (res?.complete?'<span class="badge '+(Number(res.percent||0)>=Number(a.entrancePassPercent||70)?'live':'gold')+'">'+(Number(res.percent||0)>=Number(a.entrancePassPercent||70)?'Passed':'Not Passed')+'</span>':sub?'<span class="badge gold">'+esc(sub.status||"In progress")+'</span>':'<span class="badge">Waiting</span>')
+      : (res?(res.complete===false?'<span class="badge gold">Private while grading</span>':'<span class="badge live">Visible to student</span>'):"—");
     return '<tr><td><strong>'+esc(name)+'</strong></td><td><span class="badge">'+esc(sub?.status||"Not started")+'</span></td><td>'+(res?'<strong>'+esc(res.percent)+'%</strong>':'—')+'</td><td>'+visibility+'</td><td>'+action+'</td></tr>';
   }).join("")+'</tbody></table></div>';
 }
@@ -2696,6 +2699,37 @@ function calculator(){
 
 /* -------------------- GRADING -------------------- */
 
+
+async function resetEntranceAttempt(studentId){
+  const a=P3.current;
+  if(!a?.entranceExam||!a.sectionId)return;
+  const candidate=P3.detail?.members?.find(x=>x.id===studentId);
+  if(!confirm("Reset the entrance examination attempt for "+(candidate?.displayName||"this candidate")+"? Their submitted responses and graded result for this entrance exam will be deleted."))return;
+  try{
+    const events=await getDocs(collection(db,"assessments",a.id,"submissions",studentId,"events"));
+    for(let offset=0;offset<events.docs.length;offset+=400){
+      const batch=writeBatch(db);
+      events.docs.slice(offset,offset+400).forEach(d=>batch.delete(d.ref));
+      await batch.commit();
+    }
+    const batch=writeBatch(db);
+    batch.delete(doc(db,"assessments",a.id,"submissions",studentId));
+    batch.delete(doc(db,"assessments",a.id,"results",studentId));
+    batch.set(doc(db,"sections",a.sectionId,"entranceCandidates",studentId),{
+      status:"pending",
+      assessmentId:a.id,
+      percent:null,
+      score:null,
+      maxScore:null,
+      updatedAt:serverTimestamp()
+    },{merge:true});
+    await batch.commit();
+    await openAssessment(a.id,"candidates");
+    toast("Entrance attempt reset. The candidate may use the join code to try again.");
+  }catch(error){toast(error.message||"Unable to reset the entrance attempt.");}
+}
+
+
 async function createEvaluation(studentId){
   const a=P3.current;
   try{await setDoc(doc(db,"assessments",a.id,"submissions",studentId),{studentId,candidateNumber:newCandidateNumber(),status:"submitted",startedAt:serverTimestamp(),acknowledgedAt:serverTimestamp(),submittedAt:serverTimestamp(),updatedAt:serverTimestamp(),answers:{},marked:[],currentIndex:0,elapsedSeconds:0,questionOrder:a.questionIds||[],accommodationsApplied:{}},{merge:true});await openAssessment(a.id,"candidates");toast("Evaluation record created.");}catch(err){toast(err.message||"Unable to create evaluation.");}
@@ -2865,6 +2899,7 @@ document.addEventListener("click",async e=>{
   if(a==="accommodations")return accommodationsModal(b.dataset.student);
   if(a==="create-evaluation")return createEvaluation(b.dataset.student);
   if(a==="grade-candidate")return gradeCandidate(b.dataset.student);
+  if(a==="reset-entrance-attempt")return resetEntranceAttempt(b.dataset.student);
   if(a==="auto-score")return autoScore();
   if(a==="horizontal-grade")return horizontalGrade(b.dataset.question);
   if(a==="exam-jump"){if(P3.exam&&(P3.exam.assessment.backtracking!==false||Number(b.dataset.index)>P3.exam.index)){P3.exam.index=Number(b.dataset.index);scheduleSave();renderExam();}return;}
