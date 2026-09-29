@@ -2661,15 +2661,24 @@ function accommodationsModal(studentId){
       '<label class="checkbox-line"><input name="largeText" type="checkbox" '+(a.largeText?'checked':'')+'> Large-text interface</label>'+
       '<label class="checkbox-line"><input name="reducedDistractions" type="checkbox" '+(a.reducedDistractions?'checked':'')+'> Reduced-distraction setting</label>'+
       '<div class="field" style="margin-top:16px"><label>Accommodation Notes (visible to student)</label><textarea name="notes">'+esc(a.notes||"")+'</textarea></div>'+
+      '<label class="policy-card" style="margin-top:14px"><input type="checkbox" name="persistentProfile"><div><strong>Save as Persistent Access Profile</strong><span>Use these authorized settings as the student’s default in future sections unless another instructor sets a section-specific override.</span></div></label>'+
       '<div class="modal-foot" style="margin:24px -24px -24px"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Accommodations</button></div></form>'
   });
   const form=modal.querySelector("#accommodationForm");form.timeMultiplier.value=String(a.timeMultiplier||1);
   form.addEventListener("submit",async e=>{
     e.preventDefault();const fd=new FormData(form),accommodations={timeMultiplier:Number(fd.get("timeMultiplier")||1),breaks:form.elements.breaks.checked,calculator:form.elements.calculator.checked,largeText:form.elements.largeText.checked,reducedDistractions:form.elements.reducedDistractions.checked,notes:String(fd.get("notes")||"").trim()};
     try{
-      await updateDoc(doc(db,"sections",section.id,"members",studentId),{accommodations,useProfileDefaults:false,updatedAt:serverTimestamp()});
-      if(window.TheoriaPhase5?.logSectionEvent)await window.TheoriaPhase5.logSectionEvent(section.id,"accommodations_updated","student",studentId,{timeMultiplier:accommodations.timeMultiplier,breaks:accommodations.breaks,calculator:accommodations.calculator,largeText:accommodations.largeText,reducedDistractions:accommodations.reducedDistractions});
-      core().closeModal();await core().reloadCurrentSection("students");toast("Section-specific accommodations saved.");
+      const usePersistent=form.elements.persistentProfile.checked;
+      if(usePersistent){
+        await setDoc(doc(db,"academicAccess",studentId),{
+          studentId,accommodations,notes:accommodations.notes||"",
+          updatedBy:s.user.uid,updatedByName:s.profile?.displayName||s.user.displayName||"Instructor",
+          updatedAt:serverTimestamp()
+        },{merge:true});
+      }
+      await updateDoc(doc(db,"sections",section.id,"members",studentId),{accommodations,useProfileDefaults:usePersistent,updatedAt:serverTimestamp()});
+      if(window.TheoriaPhase5?.logSectionEvent)await window.TheoriaPhase5.logSectionEvent(section.id,"accommodations_updated","student",studentId,{persistentProfile:usePersistent,timeMultiplier:accommodations.timeMultiplier,breaks:accommodations.breaks,calculator:accommodations.calculator,largeText:accommodations.largeText,reducedDistractions:accommodations.reducedDistractions});
+      core().closeModal();await core().reloadCurrentSection("students");toast(usePersistent?"Persistent access profile and section accommodations saved.":"Section-specific accommodations saved.");
     }catch(err){toast(err.message||"Unable to save accommodations.");}
   });
 }
@@ -2697,10 +2706,14 @@ async function startExam(id,confirmed=false){
       if(candidateSnap.exists())participantData=candidateSnap.data();
     }
     if(!participantData)return toast(a.entranceExam?"Your entrance-exam access has not been initialized. Re-enter the section join code.":"You are not enrolled in the section assigned to this assessment.");
-    const profileDefaults=s.profile?.defaultAccommodations||{};
+    let persistentDefaults=s.profile?.defaultAccommodations||{};
+    try{
+      const accessSnap=await getDoc(doc(db,"academicAccess",s.user.uid));
+      if(accessSnap.exists())persistentDefaults=accessSnap.data().accommodations||persistentDefaults;
+    }catch(_){}
     const acc=(participantData.useProfileDefaults===true||a.entranceExam===true)
-      ? {...profileDefaults,...(participantData.useProfileDefaults===true?{}:(participantData.accommodations||{}))}
-      : (participantData.accommodations||profileDefaults||{});
+      ? {...persistentDefaults,...(participantData.useProfileDefaults===true?{}:(participantData.accommodations||{}))}
+      : (participantData.accommodations||persistentDefaults||{});
     if(!sub&&!confirmed){
       const minutes=Math.round(Number(a.durationMinutes||0)*Number(acc.timeMultiplier||1));
       const modal=core().openModal({
