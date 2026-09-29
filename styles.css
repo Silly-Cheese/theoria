@@ -1448,3 +1448,22 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 
 /* Bulk AI course creator */
 .bulk-course-framework-line{margin-top:6px;font-size:8px;font-weight:600;color:var(--slate);line-height:1.45}
+
+/* Assessment Question Bank unit picker */
+.assessment-bank-controls{display:grid;grid-template-columns:minmax(180px,.75fr) minmax(190px,.8fr) minmax(260px,1.45fr);gap:12px;align-items:end}
+.assessment-bank-selection-bar{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:12px;padding:11px 13px;border:1px solid var(--line);border-radius:8px;background:#faf8f3}
+.assessment-bank-selection-bar strong{display:block;font-size:10px;color:var(--ink)}
+.assessment-bank-selection-bar span{display:block;margin-top:2px;font-size:8px;color:var(--muted)}
+.assessment-bank-unit-stack{max-height:56vh;overflow:auto;padding-right:3px}
+.assessment-bank-unit .unit-folder-body{padding:10px}
+.assessment-unit-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 2px 8px;border-bottom:1px solid var(--line);margin-bottom:8px}
+.assessment-unit-actions span{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.assessment-unit-question-list{max-height:none;overflow:visible}
+.assessment-bank-item.hidden{display:none!important}
+@media(max-width:760px){
+  .assessment-bank-controls{grid-template-columns:1fr}
+  .assessment-bank-selection-bar{align-items:flex-start;flex-direction:column}
+  .assessment-bank-selection-bar .inline-actions{width:100%}
+  .assessment-bank-selection-bar .inline-actions .secondary-btn{flex:1}
+  .assessment-bank-unit-stack{max-height:none;overflow:visible}
+}
