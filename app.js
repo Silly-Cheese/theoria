@@ -818,7 +818,7 @@ function openSectionModal(existing,preferredCourseId=""){
           format:String(fd.get("format")),
           joinCode:code,
           joinOpen,
-          entranceExamRequired:course.entranceExamRequired===true,
+          entranceExamRequired:false,
           entranceAssessmentId:"",
           entranceExamTitle:"",
           entrancePassPercent:70,
