@@ -421,14 +421,22 @@ service cloud.firestore {
 
       match /members/{userId} {
         allow read: if sectionOwner(sectionId) || sectionStaff(sectionId) || isSelf(userId);
-        allow create: if isSelf(userId)
-          && request.resource.data.userId == uid()
-          && request.resource.data.role == 'student'
-          && get(/databases/$(database)/documents/sections/$(sectionId)).data.joinOpen == true
-          && (
-            !sectionRequiresEntranceExam(sectionId)
-            || entranceCandidatePassed(sectionId)
-          );
+        allow create: if (
+            (
+              isSelf(userId)
+              && request.resource.data.userId == uid()
+              && get(/databases/$(database)/documents/sections/$(sectionId)).data.joinOpen == true
+              && (
+                !sectionRequiresEntranceExam(sectionId)
+                || entranceCandidatePassed(sectionId)
+              )
+            )
+            || (
+              sectionOwner(sectionId)
+              && request.resource.data.userId == userId
+            )
+          )
+          && request.resource.data.role == 'student';
         allow update: if sectionAcademicManager(sectionId);
         allow delete: if sectionAcademicManager(sectionId) || isSelf(userId);
       }
