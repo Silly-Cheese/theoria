@@ -2915,7 +2915,13 @@ async function resetEntranceAttempt(studentId){
       maxScore:null,
       updatedAt:serverTimestamp()
     },{merge:true});
+    batch.set(doc(db,"users",studentId,"entranceAttempts",a.sectionId),{
+      sectionId:a.sectionId,courseId:a.courseId,courseCode:a.courseCode||"",courseTitle:a.courseTitle||"",
+      sectionName:a.sectionName||"",assessmentId:a.id,assessmentTitle:a.title||"Entrance Examination",
+      status:"pending",percent:null,score:null,maxScore:null,passPercent:Number(a.entrancePassPercent||70),updatedAt:serverTimestamp()
+    },{merge:true});
     await batch.commit();
+    if(window.TheoriaPhase5?.logSectionEvent)await window.TheoriaPhase5.logSectionEvent(a.sectionId,"entrance_attempt_reset","student",studentId,{assessmentId:a.id});
     await openAssessment(a.id,"candidates");
     toast("Entrance attempt reset. The candidate may use the join code to try again.");
   }catch(error){toast(error.message||"Unable to reset the entrance attempt.");}
@@ -2963,11 +2969,20 @@ async function persistResult(sub,grading,existing,overallComment=existing?.overa
         gradedAt:serverTimestamp(),
         updatedAt:serverTimestamp()
       },{merge:true});
+      batch.set(doc(db,"users",sub.studentId,"entranceAttempts",a.sectionId),{
+        sectionId:a.sectionId,courseId:a.courseId,courseCode:a.courseCode||"",courseTitle:a.courseTitle||"",
+        sectionName:a.sectionName||"",assessmentId:a.id,assessmentTitle:a.title||"Entrance Examination",
+        status:m.percent>=passPercent?"passed":"failed",score:m.total,maxScore:m.max,percent:m.percent,passPercent,
+        gradedAt:serverTimestamp(),updatedAt:serverTimestamp()
+      },{merge:true});
     }else{
       batch.set(doc(db,"sections",a.sectionId,"assessmentGrades",a.id+"_"+sub.studentId),{assessmentId:a.id,assessmentTitle:a.title,assessmentType:a.type,studentId:sub.studentId,score:m.total,maxScore:m.max,percent:m.percent,partScores:m.partScores,released,updatedAt:serverTimestamp()},{merge:true});
     }
   }
   await batch.commit();
+  if(a.sectionId&&window.TheoriaPhase5?.logSectionEvent){
+    await window.TheoriaPhase5.logSectionEvent(a.sectionId,"assessment_result_updated","student",sub.studentId,{assessmentId:a.id,assessmentTitle:a.title||"",percent:m.percent,complete:m.complete,entranceExam:a.entranceExam===true});
+  }
 }
 
 function gradeCandidate(studentId){
