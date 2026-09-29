@@ -3388,6 +3388,11 @@ async function previewJoin(code){
 
 async function joinSection(section,code){
   try{
+    let persistentAccess=state.profile?.defaultAccommodations||{};
+    try{
+      const accessSnap=await getDoc(doc(db,"academicAccess",state.user.uid));
+      if(accessSnap.exists())persistentAccess=accessSnap.data().accommodations||persistentAccess;
+    }catch(_){}
     const batch=writeBatch(db);
     batch.set(doc(db,"sections",section.id,"members",state.user.uid),{
       userId:state.user.uid,
@@ -3398,12 +3403,12 @@ async function joinSection(section,code){
       status:"enrolled",
       useProfileDefaults:true,
       accommodations:{
-        timeMultiplier:Number(state.profile?.defaultAccommodations?.timeMultiplier||1),
-        breaks:!!state.profile?.defaultAccommodations?.breaks,
-        calculator:!!state.profile?.defaultAccommodations?.calculator,
-        largeText:!!state.profile?.defaultAccommodations?.largeText,
-        reducedDistractions:!!state.profile?.defaultAccommodations?.reducedDistractions,
-        notes:String(state.profile?.defaultAccommodations?.notes||"")
+        timeMultiplier:Number(persistentAccess.timeMultiplier||1),
+        breaks:!!persistentAccess.breaks,
+        calculator:!!persistentAccess.calculator,
+        largeText:!!persistentAccess.largeText,
+        reducedDistractions:!!persistentAccess.reducedDistractions,
+        notes:String(persistentAccess.notes||"")
       }
     });
     batch.set(doc(db,"users",state.user.uid,"enrollments",section.id),{
