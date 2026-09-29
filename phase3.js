@@ -1454,6 +1454,32 @@ async function openAssessment(id,tab="overview"){
   try{
     P3.detail=await loadAssessment(id);
     P3.current=P3.detail.assessment;
+
+    // One-time migration for assessments created before competency blueprints
+    // became question-driven. New and edited assessments stay synced through
+    // the assessment builder actions below.
+    if(state()?.role==="instructor"&&P3.detail.questions.length&&P3.current.competencyBlueprintAuto!==true){
+      try{
+        const competencyDerivation=await calculateAssessmentCompetencyBlueprint(P3.current,P3.detail.questions);
+        await updateDoc(doc(db,"assessments",id),{
+          competencyBlueprint:competencyDerivation.rows,
+          competencyBlueprintAuto:true,
+          competencyBlueprintMappedPoints:competencyDerivation.taggedExpectedPoints,
+          competencyBlueprintUnmappedPoints:competencyDerivation.untaggedExpectedPoints,
+          updatedAt:serverTimestamp()
+        });
+        P3.current={...P3.current,
+          competencyBlueprint:competencyDerivation.rows,
+          competencyBlueprintAuto:true,
+          competencyBlueprintMappedPoints:competencyDerivation.taggedExpectedPoints,
+          competencyBlueprintUnmappedPoints:competencyDerivation.untaggedExpectedPoints
+        };
+        P3.detail.assessment=P3.current;
+      }catch(error){
+        console.warn("Unable to migrate competency blueprint for assessment:",id,error);
+      }
+    }
+
     renderAssessment(tab);
     core().setPage("assessment-detail",P3.current.courseCode+" / "+P3.current.title);
   }catch(err){toast(err.message||"Unable to open assessment.");}
