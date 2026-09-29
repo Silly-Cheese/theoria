@@ -2020,7 +2020,7 @@ async function configureEntranceExam(sectionId){
       }
 
       await updateDoc(doc(db,"sections",section.id),{
-        entranceExamRequired:true,
+        entranceExamRequired:false,
         entranceAssessmentId:ref.id,
         entranceTemplateSourceId:template.id,
         entranceExamTitle:template.title,
@@ -2030,7 +2030,7 @@ async function configureEntranceExam(sectionId){
       });
 
       Object.assign(section,{
-        entranceExamRequired:true,
+        entranceExamRequired:false,
         entranceAssessmentId:ref.id,
         entranceTemplateSourceId:template.id,
         entranceExamTitle:template.title,
