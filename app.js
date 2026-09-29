@@ -244,7 +244,7 @@ function courseCard(course){
     '<div class="card-kicker">'+esc(course.code || "THEO")+' • '+esc(course.level || "Advanced")+'</div>'+
     '<div class="catalog-course-title-row"><h3>'+esc(course.title || "Untitled Course")+'</h3>'+(official?'<span class="badge '+(course.catalogPublished?'live':'gold')+'">'+(course.catalogPublished?'Official Catalog':'Catalog Draft')+'</span>':'<span class="badge">Custom</span>')+'</div>'+
     '<p>'+esc(course.description || "No course description has been added yet.")+'</p>'+
-    '<div class="card-meta"><span>'+esc(course.discipline || "Theology")+'</span><span>'+esc(course.status || "Active")+'</span>'+(official?'<span>Master framework + Question Bank</span>':'')+'</div>'+
+    '<div class="card-meta"><span>'+esc(course.discipline || "Theology")+'</span><span>'+esc(course.status || "Active")+'</span>'+(official?'<span>Master framework + Question Bank</span>':'')+(course.entranceExamRequired?'<span class="badge gold">Entrance Exam Required</span>':'')+'</div>'+
     '<div class="card-actions"><button class="secondary-btn small-btn" data-action="open-course" data-id="'+course.id+'">'+(manager?'Manage Course':'View Course')+'</button>'+
       (state.role==="instructor"&&(course.catalogPublished!==false||manager)?'<button class="primary-btn small-btn" data-action="create-section-course" data-id="'+course.id+'">Create Section</button>':'')+
     '</div>'+
@@ -708,6 +708,7 @@ function openCourseModal(existing){
       '<div class="field"><label>Status</label><select name="status"><option>Active</option><option>Draft</option><option>Archived</option></select></div>'+
       (state.isSystemOwner?'<div class="field"><label>Catalog Visibility</label><select name="catalogPublished"><option value="false">Catalog Draft — Owner Only</option><option value="true">Published to Instructors</option></select></div>':'')+
       '<div class="field span-2"><label>Description</label><textarea name="description" placeholder="Describe the scope and academic purpose of this course.">'+esc(existing?.description||"")+'</textarea></div>'+
+      (state.isSystemOwner?'<div class="field span-2"><label class="policy-card"><input type="checkbox" name="entranceExamRequired" '+(existing?.entranceExamRequired?'checked':'')+'><div><strong>Require an Entrance Examination</strong><span>Every section of this course must use an instructor-configured entrance assessment before a student can enroll.</span></div></label></div>':'')+
     '</div><div class="modal-foot" style="margin:24px -24px -24px"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">'+(editing?"Save Changes":"Create Course")+'</button></div></form>'
   });
   const form=modal.querySelector("#courseForm");
@@ -732,6 +733,7 @@ function openCourseModal(existing){
         catalogCourse:true,
         catalogManaged:true,
         catalogPublished:String(fd.get("catalogPublished"))==="true",
+        entranceExamRequired:form.elements.entranceExamRequired?.checked===true,
         catalogUpdatedAt:serverTimestamp()
       }:{}),
       updatedAt:serverTimestamp()
@@ -811,6 +813,10 @@ function openSectionModal(existing,preferredCourseId=""){
           format:String(fd.get("format")),
           joinCode:code,
           joinOpen,
+          entranceExamRequired:course.entranceExamRequired===true,
+          entranceAssessmentId:"",
+          entranceExamTitle:"",
+          entrancePassPercent:70,
           startDate:String(fd.get("startDate")||""),
           endDate:String(fd.get("endDate")||""),
           createdAt:serverTimestamp(),
@@ -1849,7 +1855,7 @@ async function autoSortResourcesModal(){
 function renderStudents(){
   const members=state.sectionData.members;
   if(!members.length) return '<div class="empty-state"><div class="empty-symbol">S</div><h3>No students enrolled.</h3><p>Display the section join code and have students enroll.</p></div>';
-  return '<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Student</th><th>Email</th><th>Joined</th><th>Status</th><th>Assessment Access</th></tr></thead><tbody>'+members.map(m=>'<tr><td><strong>'+esc(m.displayName||"Student")+'</strong></td><td>'+esc(m.email||"—")+'</td><td>'+esc(formatDate(m.joinedAt))+'</td><td><span class="badge live">Enrolled</span></td><td><button class="text-btn" data-phase3-action="accommodations" data-student="'+m.id+'">Accommodations</button></td></tr>').join("")+'</tbody></table></div>';
+  return '<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Student</th><th>Email</th><th>Joined</th><th>Status</th><th>Assessment Access</th><th>Actions</th></tr></thead><tbody>'+members.map(m=>'<tr><td><strong>'+esc(m.displayName||"Student")+'</strong></td><td>'+esc(m.email||"—")+'</td><td>'+esc(formatDate(m.joinedAt))+'</td><td><span class="badge live">Enrolled</span></td><td><button class="text-btn" data-phase3-action="accommodations" data-student="'+m.id+'">Accommodations</button></td><td><button class="danger-btn small-btn" data-action="remove-section-student" data-student="'+m.id+'">Remove</button></td></tr>').join("")+'</tbody></table></div>';
 }
 
 function renderGradebook(){
@@ -2024,7 +2030,10 @@ function renderSectionDetail(tab="overview"){
   const instructor=state.role==="instructor";
   let body="";
   if(tab==="overview"){
-    body=(instructor?'<div class="join-display"><div><div class="eyebrow">Section Enrollment</div><div class="join-code">'+esc(s.joinCode||"No Code")+'</div><p>'+esc(s.joinOpen!==false?"Accepting students":"Enrollment is currently closed")+'</p><div class="card-actions"><button class="secondary-btn small-btn" data-action="copy-code" data-code="'+esc(s.joinCode||"")+'">Copy Code</button><button class="secondary-btn small-btn" data-action="show-code">Display Full Screen</button><button class="secondary-btn small-btn" data-action="regenerate-code">Regenerate</button><button class="secondary-btn small-btn" data-action="toggle-enrollment">'+(s.joinOpen!==false?"Close Enrollment":"Open Enrollment")+'</button></div></div><div class="qr-box"><img alt="Join QR code" src="https://quickchart.io/qr?size=180&text='+encodeURIComponent(location.origin+location.pathname+"?join="+s.joinCode)+'"></div></div>':'')+
+    const entranceRequired=d.course?.entranceExamRequired===true||s.entranceExamRequired===true;
+    const entranceConfigured=!!s.entranceAssessmentId;
+    body=(instructor?'<div class="join-display"><div><div class="eyebrow">Section Enrollment</div><div class="join-code">'+esc(s.joinCode||"No Code")+'</div><p>'+esc(s.joinOpen!==false?(entranceRequired?(entranceConfigured?"Entrance examination required before enrollment":"Enrollment waiting for entrance-exam setup"):"Accepting students"):"Enrollment is currently closed")+'</p><div class="card-actions"><button class="secondary-btn small-btn" data-action="copy-code" data-code="'+esc(s.joinCode||"")+'">Copy Code</button><button class="secondary-btn small-btn" data-action="show-code">Display Full Screen</button><button class="secondary-btn small-btn" data-action="regenerate-code">Regenerate</button><button class="secondary-btn small-btn" data-action="toggle-enrollment">'+(s.joinOpen!==false?"Close Enrollment":"Open Enrollment")+'</button></div></div><div class="qr-box"><img alt="Join QR code" src="https://quickchart.io/qr?size=180&text='+encodeURIComponent(location.origin+location.pathname+"?join="+s.joinCode)+'"></div></div>':'')+
+      (entranceRequired?'<div class="panel entrance-exam-panel" style="margin-bottom:18px"><div class="panel-head"><div><div class="panel-title">Entrance Examination</div><div class="panel-subtitle">'+(entranceConfigured?'Students must pass this assessment before enrollment.':'This course mandates an entrance exam. Configure one before students can enroll.')+'</div></div><span class="badge '+(entranceConfigured?'live':'gold')+'">'+(entranceConfigured?'Configured':'Required')+'</span></div><div class="panel-body">'+(entranceConfigured?'<div class="detail-list"><div><span>Assessment</span><strong>'+esc(s.entranceExamTitle||"Entrance Examination")+'</strong></div><div><span>Passing Score</span><strong>'+esc(s.entrancePassPercent||70)+'%</strong></div></div><div class="card-actions"><button class="secondary-btn small-btn" data-phase3-action="open-assessment" data-id="'+esc(s.entranceAssessmentId)+'">Open Entrance Exam</button><button class="secondary-btn small-btn" data-phase3-action="configure-entrance-exam" data-section="'+esc(s.id)+'">Change Exam</button></div>':'<div class="empty-mini">Create an assessment template from the Question Bank, then choose it as this section’s entrance examination.</div><div class="card-actions"><button class="primary-btn small-btn" data-phase3-action="configure-entrance-exam" data-section="'+esc(s.id)+'">Configure Entrance Exam</button></div>')+'</div></div>':'')+
       '<div class="section-summary"><div class="summary-block"><div class="summary-label">Course</div><div class="summary-value">'+esc(s.courseCode||"—")+'</div></div><div class="summary-block"><div class="summary-label">Term</div><div class="summary-value">'+esc(s.term||"—")+'</div></div><div class="summary-block"><div class="summary-label">'+(instructor?"Students":"Instructor")+'</div><div class="summary-value">'+esc(instructor?d.members.length:(s.instructorName||"—"))+'</div></div><div class="summary-block"><div class="summary-label">Format</div><div class="summary-value">'+esc(s.format||"—")+'</div></div></div>'+
       '<div class="grid-2"><div class="panel"><div class="panel-head"><div class="panel-title">Current Course Framework</div></div><div class="panel-body"><strong style="font-family:Libre Baskerville,serif;font-size:18px;font-weight:400">'+esc(s.courseTitle||"Course")+'</strong><p class="page-subtitle" style="margin-top:7px">'+esc(d.course?.description||"Open the Course Guide to review units and topics.")+'</p><div class="card-actions"><button class="secondary-btn small-btn" data-action="section-tab" data-tab="framework">Open Course Guide</button></div></div></div><div class="panel"><div class="panel-head"><div class="panel-title">Academic Work</div></div><div class="panel-body"><div class="attention-list"><div class="attention-item"><div class="attention-number">'+d.assignments.filter(a=>a.status!=="Draft").length+'</div><div class="attention-copy"><strong>Published assignments</strong><span>Coursework currently visible to students.</span></div></div><div class="attention-item"><div class="attention-number">'+d.resources.length+'</div><div class="attention-copy"><strong>Resources</strong><span>Readings and scholarly materials.</span></div></div></div></div></div></div>';
   }else if(tab==="framework") body=renderFrameworkReadOnly();
@@ -2038,7 +2047,7 @@ function renderSectionDetail(tab="overview"){
 
   $("#sectionDetail").innerHTML =
     '<button class="text-btn" data-action="back-sections">← Sections</button>'+
-    '<div class="detail-hero"><div class="detail-top"><div><div class="eyebrow">'+esc(s.courseCode||"Section")+' • '+esc(s.term||"")+'</div><h1 class="detail-title">'+esc(s.courseTitle||s.sectionName||"Section")+'</h1><div class="detail-meta"><span>'+esc(s.sectionName||("Section "+(s.sectionNumber||"")))+'</span><span>'+esc(s.instructorName||"")+'</span><span>'+esc(s.startDate?formatDate(s.startDate)+" – "+formatDate(s.endDate):s.format||"")+'</span></div></div>'+(instructor?'<button class="secondary-btn small-btn" data-action="edit-section">Edit Section</button>':'')+'</div></div>'+
+    '<div class="detail-hero"><div class="detail-top"><div><div class="eyebrow">'+esc(s.courseCode||"Section")+' • '+esc(s.term||"")+'</div><h1 class="detail-title">'+esc(s.courseTitle||s.sectionName||"Section")+'</h1><div class="detail-meta"><span>'+esc(s.sectionName||("Section "+(s.sectionNumber||"")))+'</span><span>'+esc(s.instructorName||"")+'</span><span>'+esc(s.startDate?formatDate(s.startDate)+" – "+formatDate(s.endDate):s.format||"")+'</span></div></div>'+(instructor?'<div class="inline-actions"><button class="secondary-btn small-btn" data-action="edit-section">Edit Section</button><button class="danger-btn small-btn" data-action="delete-section">Delete Section</button></div>':'')+'</div></div>'+
     sectionTabs(tab)+'<div id="sectionTabBody">'+body+'</div>';
   if(["examinations","grading","pathway"].includes(tab) && window.TheoriaPhase3?.renderSectionTab){
     window.TheoriaPhase3.renderSectionTab(tab);
