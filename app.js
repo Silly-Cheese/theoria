@@ -15,7 +15,8 @@ const state = {
   courseFramework: null,
   currentSection: null,
   sectionData: null,
-  isSystemOwner: false
+  isSystemOwner: false,
+  gradebookPeriodFilter: "All"
 };
 
 const $ = s => document.querySelector(s);
@@ -1537,6 +1538,7 @@ async function openSection(sectionId,tab="overview"){
     section={id:snap.id,...snap.data()};
   }
   state.currentSection=section;
+  state.gradebookPeriodFilter="All";
   state.sectionData=await loadSectionData(section);
   renderSectionDetail(tab);
   setPage("section-detail",section.courseCode || "Section");
@@ -1923,7 +1925,11 @@ function gradebookCourseworkPolicyAverage(assignments,gradeMap,studentId,policy)
 function renderGradebook(){
   const students=state.sectionData.members;
   const framework=state.sectionData.framework||{units:[]};
-  const rawAssignments=state.sectionData.assignments.filter(a=>a.status!=="Draft");
+  const allAssignments=state.sectionData.assignments.filter(a=>a.status!=="Draft");
+  const configuredPeriods=state.currentSection?.gradingPolicy?.gradingPeriods?.length?state.currentSection.gradingPolicy.gradingPeriods:["Overall"];
+  const periodOptions=["All",...configuredPeriods];
+  const selectedPeriod=periodOptions.includes(state.gradebookPeriodFilter)?state.gradebookPeriodFilter:"All";
+  const rawAssignments=selectedPeriod==="All"?allAssignments:allAssignments.filter(a=>(a.gradingPeriod||"Overall")===selectedPeriod);
   const assessments=(state.sectionData.assessmentRefs||[]).filter(a=>a.status!=="Draft");
   if(!students.length || (!rawAssignments.length&&!assessments.length)) return '<div class="empty-state"><div class="empty-symbol">G</div><h3>Gradebook waiting for data.</h3><p>Enroll at least one student and publish an assignment or assessment.</p></div>';
 
@@ -2051,8 +2057,10 @@ function renderGradebook(){
     (assessments.length?'<button class="gradebook-jump assessment-jump" data-action="gradebook-jump" data-target="assessments"><span>✓</span>Assessments<small>'+assessments.length+'</small></button>':'')+
     '</div><div class="gradebook-help">Student names and averages stay pinned while you scroll.</div></div>';
 
+  const periodToolbar='<div class="gradebook-period-toolbar"><div><span>Grading Period</span><strong>'+esc(selectedPeriod)+'</strong></div><select id="gradebookPeriodFilter">'+periodOptions.map(period=>'<option value="'+esc(period)+'" '+(period===selectedPeriod?'selected':'')+'>'+esc(period)+(period==="All"?"":' ('+allAssignments.filter(a=>(a.gradingPeriod||"Overall")===period).length+')')+'</option>').join("")+'</select></div>';
   return summary+
-    '<div class="notice gradebook-notice">Coursework and formal assessments share this gradebook, but their averages remain separate because the certified final grade follows each student’s grading pathway.</div>'+
+    periodToolbar+
+    '<div class="notice gradebook-notice">Coursework and formal assessments share this gradebook, but their averages remain separate because the certified final grade follows each student’s grading pathway.'+(selectedPeriod!=="All"?' Coursework columns are filtered to '+esc(selectedPeriod)+'.':'')+'</div>'+
     nav+
     '<div class="gradebook-legend"><span><i class="legend-dot coursework-dot"></i> Click coursework cells to grade</span><span><i class="legend-dot assessment-dot"></i> Assessment cells open formal grading</span><span><i class="legend-dot empty-dot"></i> No grade recorded</span></div>'+
     '<div class="data-table-wrap gradebook-wrap"><table class="data-table gradebook-table">'+header+'<tbody>'+body+'</tbody>'+footer+'</table></div>';
@@ -3520,6 +3528,12 @@ $("#homeCreateSection").addEventListener("click",()=>openSectionModal());
 $("#joinCodeBtn").addEventListener("click",()=>previewJoin($("#joinCodeInput").value));
 $("#joinCodeInput").addEventListener("input",e=>{e.target.value=e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g,"");});
 $("#joinCodeInput").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();previewJoin(e.target.value);}});
+document.addEventListener("change",e=>{
+  if(e.target?.id==="gradebookPeriodFilter"){
+    state.gradebookPeriodFilter=String(e.target.value||"All");
+    if(state.currentSection&&state.sectionData)renderSectionDetail("gradebook");
+  }
+});
 
 window.TheoriaCore = {
   getState:()=>state,
