@@ -230,7 +230,7 @@ async function loadWorkspace(){
       const enrollment=enrollDoc.data();
       if(["Removed","Withdrawn"].includes(String(enrollment.status||"")))continue;
       const s = await getDoc(doc(db,"sections",enrollDoc.id));
-      if(s.exists()) sections.push({id:s.id,...s.data()});
+      if(s.exists()) sections.push({id:s.id,...s.data(),enrollmentStatus:String(enrollment.status||"Enrolled")});
     }
     state.sections = sections;
     const uniqueCourseIds = [...new Set(sections.map(s => s.courseId).filter(Boolean))];
@@ -262,7 +262,7 @@ function sectionCard(section){
     '<div class="card-kicker">'+esc(section.courseCode || "THEO")+' • '+esc(section.term || "Academic Term")+'</div>'+
     '<h3>'+esc(section.courseTitle || section.sectionName || "Untitled Section")+'</h3>'+
     '<p>'+esc(section.sectionName || ("Section "+(section.sectionNumber||"001")))+'</p>'+
-    '<div class="card-meta"><span>'+esc(section.format || "Course")+'</span><span>'+esc(section.sectionNumber ? "Section "+section.sectionNumber : "Section")+'</span>'+(section.status==="Archived"?'<span class="badge">Archived</span>':state.role==="instructor"?'<span class="badge '+(live?'live':'closed')+'">'+(live?'Enrollment Open':'Enrollment Closed')+'</span>':'')+(entranceRequired?'<span class="badge gold">Entrance Exam</span>':'')+(section.staffRole&&section.staffRole!=="owner"?'<span class="badge">'+esc(String(section.staffRole).replace(/_/g," "))+'</span>':'')+'</div>'+
+    '<div class="card-meta"><span>'+esc(section.format || "Course")+'</span><span>'+esc(section.sectionNumber ? "Section "+section.sectionNumber : "Section")+'</span>'+(section.status==="Archived"?'<span class="badge">Archived</span>':state.role==="instructor"?'<span class="badge '+(live?'live':'closed')+'">'+(live?'Enrollment Open':'Enrollment Closed')+'</span>':section.enrollmentStatus==="Completed"?'<span class="badge gold">Completed</span>':'<span class="badge live">Enrolled</span>')+(entranceRequired?'<span class="badge gold">Entrance Exam</span>':'')+(section.staffRole&&section.staffRole!=="owner"?'<span class="badge">'+esc(String(section.staffRole).replace(/_/g," "))+'</span>':'')+'</div>'+
     '<div class="card-actions"><button class="secondary-btn small-btn" data-action="open-section" data-id="'+section.id+'">Open Section</button>'+(state.role==="instructor"?'<button class="text-btn" data-action="copy-code" data-code="'+esc(section.joinCode||"")+'">'+esc(section.joinCode||"No Code")+'</button>':'')+'</div>'+
   '</article>';
 }
@@ -282,7 +282,7 @@ function courseCard(course){
 }
 
 function renderHome(){
-  const activeSections=state.sections.filter(s=>s.status!=="Archived");
+  const activeSections=state.sections.filter(s=>s.status!=="Archived"&&(state.role==="instructor"||s.enrollmentStatus!=="Completed"));
   const sectionCount=activeSections.length;
   const courseCount=state.courses.length;
   const openEnrollmentCount=activeSections.filter(s=>s.joinOpen!==false).length;
@@ -338,9 +338,11 @@ function renderSections(){
     el.innerHTML = '<div class="empty-state"><div class="empty-symbol">S</div><h3>No '+(state.role==="instructor"?"teaching":"enrolled")+' sections yet.</h3><p>'+(state.role==="instructor"?"Create a section from one of your course frameworks. Theoria will issue a join code automatically.":"Use the join code above to enter a section.")+'</p>'+(state.role==="instructor"?'<button class="primary-btn" data-action="create-section">Create Section</button>':'')+'</div>';
     return;
   }
-  const active=state.sections.filter(s=>s.status!=="Archived");
-  const archived=state.sections.filter(s=>s.status==="Archived");
+  const completed=state.role==="student"?state.sections.filter(s=>s.enrollmentStatus==="Completed"):[];
+  const active=state.sections.filter(s=>s.status!=="Archived"&&(state.role==="instructor"||s.enrollmentStatus!=="Completed"));
+  const archived=state.sections.filter(s=>s.status==="Archived"&&(state.role==="instructor"||s.enrollmentStatus!=="Completed"));
   el.innerHTML=(active.length?'<section class="section-status-group"><div class="page-head compact-head"><div><div class="panel-title">Active Sections</div><p class="page-subtitle">'+active.length+' current teaching space'+(active.length===1?"":"s")+'.</p></div></div><div class="card-grid">'+active.map(sectionCard).join("")+'</div></section>':'')+
+    (completed.length?'<section class="section-status-group completed-section-group"><div class="page-head compact-head"><div><div class="panel-title">Completed Courses</div><p class="page-subtitle">Completed enrollment with preserved grades, records, and academic evidence.</p></div></div><div class="card-grid">'+completed.map(sectionCard).join("")+'</div></section>':'')+
     (archived.length?'<section class="section-status-group archived-section-group"><div class="page-head compact-head"><div><div class="panel-title">Archived Sections</div><p class="page-subtitle">Read-only historical teaching spaces with preserved records.</p></div></div><div class="card-grid">'+archived.map(sectionCard).join("")+'</div></section>':'');
 }
 
