@@ -963,6 +963,126 @@ async function renderAssessments(){
   el.innerHTML='<div class="assessment-grid">'+cards.join("")+'</div>';
 }
 
+
+function deriveCompetencyBlueprint(questions,competencies=[],options={}){
+  const list=Array.isArray(questions)?questions:[];
+  const byId=new Map(),byCode=new Map();
+  for(const comp of competencies||[]){
+    if(comp?.id)byId.set(String(comp.id),comp);
+    if(comp?.code)byCode.set(String(comp.code).trim().toUpperCase(),comp);
+  }
+
+  const randomDrawEnabled=!!options.randomDrawEnabled;
+  const planByType=new Map((options.randomDrawPlan||[]).map(row=>[String(row?.type||""),row]));
+  const typeCounts=new Map();
+  for(const q of list){
+    const type=String(q?.type||"Question");
+    typeCounts.set(type,(typeCounts.get(type)||0)+1);
+  }
+
+  const totals=new Map();
+  let taggedExpectedPoints=0,untaggedExpectedPoints=0,taggedQuestions=0;
+
+  for(const q of list){
+    const points=Math.max(0,Number(q?.points??q?.pointsDefault??1)||0);
+    if(!points)continue;
+
+    let factor=1;
+    if(randomDrawEnabled){
+      const row=planByType.get(String(q?.type||"Question"));
+      const count=Math.max(0,Number(row?.count||0));
+      if(!row||count<=0)continue;
+      const available=Math.max(1,typeCounts.get(String(q?.type||"Question"))||Number(row?.available||0)||1);
+      factor=Math.min(1,count/available);
+    }
+
+    const expectedPoints=points*factor;
+    if(expectedPoints<=0)continue;
+
+    const attached=[];
+    const seen=new Set();
+
+    for(const rawId of q?.competencyIds||[]){
+      const id=String(rawId||"").trim();if(!id)continue;
+      const comp=byId.get(id);
+      const key=comp?.id?String(comp.id):"id:"+id;
+      if(seen.has(key))continue;seen.add(key);
+      attached.push({
+        key,
+        id:comp?.id||id,
+        code:comp?.code||"",
+        label:comp?((comp.code?comp.code+" — ":"")+(comp.name||comp.code||id)):id,
+        order:Number(comp?.order||9999)
+      });
+    }
+
+    for(const rawCode of q?.competencyCodes||[]){
+      const code=String(rawCode||"").trim().toUpperCase();if(!code)continue;
+      const comp=byCode.get(code);
+      const key=comp?.id?String(comp.id):"code:"+code;
+      if(seen.has(key))continue;seen.add(key);
+      attached.push({
+        key,
+        id:comp?.id||("code:"+code),
+        code:comp?.code||code,
+        label:comp?((comp.code?comp.code+" — ":"")+(comp.name||comp.code||code)):code,
+        order:Number(comp?.order||9999)
+      });
+    }
+
+    if(!attached.length){
+      untaggedExpectedPoints+=expectedPoints;
+      continue;
+    }
+
+    taggedQuestions++;
+    taggedExpectedPoints+=expectedPoints;
+    const share=expectedPoints/attached.length;
+    for(const comp of attached){
+      const current=totals.get(comp.key)||{...comp,points:0};
+      current.points+=share;
+      totals.set(comp.key,current);
+    }
+  }
+
+  if(taggedExpectedPoints<=0){
+    return {rows:[],taggedExpectedPoints:0,untaggedExpectedPoints,taggedQuestions,totalQuestions:list.length};
+  }
+
+  const entries=[...totals.values()].sort((a,b)=>a.order-b.order||String(a.label).localeCompare(String(b.label)));
+  const rows=entries.map(entry=>({
+    id:entry.id,
+    code:entry.code,
+    label:entry.label,
+    weight:Math.round((entry.points/taggedExpectedPoints*100)*10)/10,
+    evidencePoints:Math.round(entry.points*100)/100
+  }));
+
+  const roundedTotal=Math.round(rows.reduce((n,row)=>n+Number(row.weight||0),0)*10)/10;
+  const correction=Math.round((100-roundedTotal)*10)/10;
+  if(rows.length&&Math.abs(correction)>=0.1){
+    const largest=rows.reduce((best,row,index)=>Number(row.weight||0)>Number(rows[best].weight||0)?index:best,0);
+    rows[largest].weight=Math.round((Number(rows[largest].weight||0)+correction)*10)/10;
+  }
+
+  return {
+    rows,
+    taggedExpectedPoints:Math.round(taggedExpectedPoints*100)/100,
+    untaggedExpectedPoints:Math.round(untaggedExpectedPoints*100)/100,
+    taggedQuestions,
+    totalQuestions:list.length
+  };
+}
+
+async function calculateAssessmentCompetencyBlueprint(assessment,questions,fwOverride=null,optionsOverride=null){
+  const fw=fwOverride||await framework(assessment.courseId);
+  const options=optionsOverride||{
+    randomDrawEnabled:!!assessment.randomDrawEnabled,
+    randomDrawPlan:assessment.randomDrawPlan||[]
+  };
+  return deriveCompetencyBlueprint(questions,fw.competencies||[],options);
+}
+
 async function assessmentModal(existing){
   const s=state();if(!s?.courses?.length)return toast("Create a course before creating an assessment.");
   const types=["Academic Exercise","Unit Evaluation","Semester I Examination","Comprehensive Final Examination","Oral Examination","Disputation"];
