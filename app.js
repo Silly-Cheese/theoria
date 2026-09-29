@@ -228,11 +228,13 @@ async function loadWorkspace(){
 
 function sectionCard(section){
   const live = section.joinOpen !== false;
+  const course=state.courses.find(c=>c.id===section.courseId);
+  const entranceRequired=section.entranceExamRequired===true||course?.entranceExamRequired===true;
   return '<article class="academic-card">'+
     '<div class="card-kicker">'+esc(section.courseCode || "THEO")+' • '+esc(section.term || "Academic Term")+'</div>'+
     '<h3>'+esc(section.courseTitle || section.sectionName || "Untitled Section")+'</h3>'+
     '<p>'+esc(section.sectionName || ("Section "+(section.sectionNumber||"001")))+'</p>'+
-    '<div class="card-meta"><span>'+esc(section.format || "Course")+'</span><span>'+esc(section.sectionNumber ? "Section "+section.sectionNumber : "Section")+'</span>'+(state.role==="instructor"?'<span class="badge '+(live?'live':'closed')+'">'+(live?'Enrollment Open':'Enrollment Closed')+'</span>':'')+(section.entranceExamRequired?'<span class="badge gold">Entrance Exam</span>':'')+'</div>'+
+    '<div class="card-meta"><span>'+esc(section.format || "Course")+'</span><span>'+esc(section.sectionNumber ? "Section "+section.sectionNumber : "Section")+'</span>'+(state.role==="instructor"?'<span class="badge '+(live?'live':'closed')+'">'+(live?'Enrollment Open':'Enrollment Closed')+'</span>':'')+(entranceRequired?'<span class="badge gold">Entrance Exam</span>':'')+'</div>'+
     '<div class="card-actions"><button class="secondary-btn small-btn" data-action="open-section" data-id="'+section.id+'">Open Section</button>'+(state.role==="instructor"?'<button class="text-btn" data-action="copy-code" data-code="'+esc(section.joinCode||"")+'">'+esc(section.joinCode||"No Code")+'</button>':'')+'</div>'+
   '</article>';
 }
@@ -3234,7 +3236,11 @@ async function previewJoin(code){
       return;
     }
 
-    let submission=null,result=null;
+    let submission=null,result=null,candidate=null;
+    try{
+      const candidateSnap=await getDoc(doc(db,"sections",section.id,"entranceCandidates",state.user.uid));
+      if(candidateSnap.exists())candidate=candidateSnap.data();
+    }catch(_){}
     try{
       const subSnap=await getDoc(doc(db,"assessments",section.entranceAssessmentId,"submissions",state.user.uid));
       if(subSnap.exists())submission=subSnap.data();
@@ -3244,7 +3250,7 @@ async function previewJoin(code){
       if(resultSnap.exists())result=resultSnap.data();
     }catch(_){}
 
-    if(result?.complete===true && Number(result.percent||0)>=passPercent){
+    if(result?.complete===true && Number(result.percent||0)>=passPercent && candidate?.status==="passed" && candidate?.assessmentId===section.entranceAssessmentId){
       const modal=openModal({
         eyebrow:"Entrance Requirement Complete",
         title:"You may enroll",
@@ -3252,6 +3258,16 @@ async function previewJoin(code){
         footer:'<button class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" id="confirmJoinBtn">Enroll in Section</button>'
       });
       modal.querySelector("#confirmJoinBtn").addEventListener("click",()=>joinSection(section,code));
+      return;
+    }
+
+    if(result?.complete===true && Number(result.percent||0)>=passPercent){
+      openModal({
+        eyebrow:"Entrance Examination",
+        title:"Instructor authorization required",
+        body:'<div class="academic-banner"><div class="kicker">'+esc(section.courseCode||"Course")+'</div><h3>'+esc(section.entranceExamTitle||"Entrance Examination")+'</h3></div><div class="notice"><strong>Your previous entrance score met the passing threshold.</strong><p>Your current enrollment authorization is no longer active. Contact the instructor if you should be permitted to re-enter this section.</p></div>',
+        footer:'<button class="primary-btn" data-close-modal>Close</button>'
+      });
       return;
     }
 
