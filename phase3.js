@@ -2654,11 +2654,11 @@ async function renderSectionAssessments(){
 async function renderGradingPolicy(){
   const s=state(),section=s.currentSection,el=$("#phase3SectionTab");if(!section||!el)return;
   const secSnap=await getDoc(doc(db,"sections",section.id)),sec=secSnap.exists()?secSnap.data():section;
-  const policy=sec.gradingPolicy||{selectionOpen:true,selectionDeadline:null,examination:{semester:35,comprehensive:65},composite:{coursework:60,semester:15,comprehensive:25},courseworkRules:{dropLowest:0,missingAsZero:false,latePenaltyPercent:0,categoryWeights:{}}};
+  const policy=sec.gradingPolicy||{selectionOpen:true,selectionDeadline:null,gradingPeriods:["Overall"],examination:{semester:35,comprehensive:65},composite:{coursework:60,semester:15,comprehensive:25},courseworkRules:{dropLowest:0,missingAsZero:false,latePenaltyPercent:0,categoryWeights:{}}};
   const pathSnap=await getDocs(collection(db,"sections",section.id,"gradingPathways"));
   const selections=pathSnap.docs.map(d=>({id:d.id,...d.data()}));
   el.innerHTML='<div class="grid-2"><div class="panel"><div class="panel-head"><div class="panel-title">Grading Pathway Policy</div></div><div class="panel-body"><form id="gradingPolicyForm">'+
-    '<div class="field"><label>Selection Deadline</label><input name="deadline" type="datetime-local" value="'+esc(localDateTime(policy.selectionDeadline))+'"></div>'+
+    '<div class="compact-field-grid"><div class="field"><label>Selection Deadline</label><input name="deadline" type="datetime-local" value="'+esc(localDateTime(policy.selectionDeadline))+'"></div><div class="field"><label>Grading Periods</label><input name="gradingPeriods" value="'+esc((policy.gradingPeriods?.length?policy.gradingPeriods:["Overall"]).join(", "))+'" placeholder="Quarter 1, Quarter 2, Final"></div></div>'+
     '<label class="checkbox-line" style="margin-bottom:16px"><input type="checkbox" name="selectionOpen" '+(policy.selectionOpen!==false?'checked':'')+'> Students may select/change pathways</label>'+
     '<div class="path-policy"><h4>Examination Pathway</h4><div class="form-grid"><div class="field"><label>Semester I Exam %</label><input name="examSemester" type="number" value="'+esc(policy.examination?.semester??35)+'"></div><div class="field"><label>Comprehensive Final %</label><input name="examFinal" type="number" value="'+esc(policy.examination?.comprehensive??65)+'"></div></div></div>'+
     '<div class="path-policy"><h4>Composite Pathway</h4><div class="form-grid"><div class="field"><label>Coursework %</label><input name="compCoursework" type="number" value="'+esc(policy.composite?.coursework??60)+'"></div><div class="field"><label>Semester I Exam %</label><input name="compSemester" type="number" value="'+esc(policy.composite?.semester??15)+'"></div><div class="field"><label>Comprehensive Final %</label><input name="compFinal" type="number" value="'+esc(policy.composite?.comprehensive??25)+'"></div></div></div>'+
@@ -2681,7 +2681,9 @@ async function renderGradingPolicy(){
       latePenaltyPercent:Math.max(0,Math.min(100,Number(fd.get("latePenaltyPercent")||0))),
       categoryWeights
     };
-    const gradingPolicy={selectionOpen:e.currentTarget.elements.selectionOpen.checked,selectionDeadline:timestampFrom(fd.get("deadline")),examination,composite,courseworkRules,updatedAt:serverTimestamp()};
+    const gradingPeriods=[...new Set(String(fd.get("gradingPeriods")||"Overall").split(",").map(x=>x.trim()).filter(Boolean))];
+    if(!gradingPeriods.length)gradingPeriods.push("Overall");
+    const gradingPolicy={selectionOpen:e.currentTarget.elements.selectionOpen.checked,selectionDeadline:timestampFrom(fd.get("deadline")),gradingPeriods,examination,composite,courseworkRules,updatedAt:serverTimestamp()};
     try{
       await updateDoc(doc(db,"sections",section.id),{gradingPolicy,updatedAt:serverTimestamp()});
       section.gradingPolicy=gradingPolicy;
