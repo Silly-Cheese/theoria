@@ -3217,13 +3217,29 @@ async function deleteSectionCompletely(){
   button.onclick=async()=>{
     button.disabled=true;button.textContent="Deleting Section…";
     try{
-      // Remove each student's personal enrollment pointer while the section
-      // still exists so section-owner authorization remains valid.
-      for(let offset=0;offset<members.length;offset+=350){
+      // Remove every known student's personal enrollment pointer while the
+      // section still exists so section-owner authorization remains valid.
+      const enrollmentHistorySnap=await getDocs(collection(db,"sections",section.id,"enrollmentHistory"));
+      const knownStudentIds=new Set(members.map(member=>member.id));
+      enrollmentHistorySnap.docs.forEach(row=>{const id=row.data().studentId;if(id)knownStudentIds.add(id);});
+      const knownStudents=[...knownStudentIds];
+      for(let offset=0;offset<knownStudents.length;offset+=300){
         const batch=writeBatch(db);
-        members.slice(offset,offset+350).forEach(member=>{
-          batch.delete(doc(db,"users",member.id,"enrollments",section.id));
-          batch.delete(doc(db,"sections",section.id,"members",member.id));
+        knownStudents.slice(offset,offset+300).forEach(studentId=>{
+          batch.delete(doc(db,"users",studentId,"enrollments",section.id));
+          batch.delete(doc(db,"users",studentId,"entranceAttempts",section.id));
+          batch.delete(doc(db,"sections",section.id,"members",studentId));
+        });
+        await batch.commit();
+      }
+
+      // Remove delegated staff pointers before deleting staff records.
+      const staffSnap=await getDocs(collection(db,"sections",section.id,"staff"));
+      for(let offset=0;offset<staffSnap.docs.length;offset+=300){
+        const batch=writeBatch(db);
+        staffSnap.docs.slice(offset,offset+300).forEach(staffDoc=>{
+          batch.delete(doc(db,"users",staffDoc.id,"staffSections",section.id));
+          batch.delete(staffDoc.ref);
         });
         await batch.commit();
       }
@@ -3237,7 +3253,8 @@ async function deleteSectionCompletely(){
 
       const simpleCollections=[
         "resources","grades","assessmentRefs","gradingPathways","assessmentGrades",
-        "mastery","academicRecords","portfolios","appeals","recordHistory","entranceCandidates"
+        "mastery","academicRecords","portfolios","appeals","recordHistory","entranceCandidates",
+        "enrollmentHistory","auditLog"
       ];
       for(const name of simpleCollections)await deleteCollectionDocuments(collection(db,"sections",section.id,name));
 
