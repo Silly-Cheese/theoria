@@ -215,6 +215,8 @@ async function loadWorkspace(){
     const enrollmentSnap = await getDocs(collection(db,"users",state.user.uid,"enrollments"));
     const sections = [];
     for(const enrollDoc of enrollmentSnap.docs){
+      const enrollment=enrollDoc.data();
+      if(["Removed","Withdrawn"].includes(String(enrollment.status||"")))continue;
       const s = await getDoc(doc(db,"sections",enrollDoc.id));
       if(s.exists()) sections.push({id:s.id,...s.data()});
     }
@@ -3129,9 +3131,19 @@ async function removeStudentFromSection(studentId){
     try{
       const batch=writeBatch(db);
       batch.delete(doc(db,"sections",section.id,"members",studentId));
-      batch.delete(doc(db,"users",studentId,"enrollments",section.id));
+      batch.set(doc(db,"users",studentId,"enrollments",section.id),{
+        sectionId:section.id,courseId:section.courseId,courseCode:section.courseCode,courseTitle:section.courseTitle,
+        sectionName:section.sectionName,term:section.term,status:"Removed",endedAt:serverTimestamp(),updatedAt:serverTimestamp()
+      },{merge:true});
       batch.delete(doc(db,"sections",section.id,"entranceCandidates",studentId));
+      const historyRef=doc(collection(db,"sections",section.id,"enrollmentHistory"));
+      batch.set(historyRef,{
+        studentId,studentName:student.displayName||"Student",studentEmail:student.email||"",
+        status:"Removed",reason:"Removed by instructor",actorId:state.user.uid,
+        actorName:state.profile?.displayName||state.user.displayName||"Instructor",createdAt:serverTimestamp()
+      });
       await batch.commit();
+      if(window.TheoriaPhase5?.logSectionEvent)await window.TheoriaPhase5.logSectionEvent(section.id,"enrollment_removed","student",studentId,{reason:"Removed by instructor"});
       closeModal();
       state.sectionData=await loadSectionData(section);
       renderSectionDetail("students");
@@ -3273,6 +3285,19 @@ async function previewJoin(code){
     const course=courseSnap.exists()?courseSnap.data():{};
     const entranceRequired=course.entranceExamRequired===true||section.entranceExamRequired===true;
 
+    if(window.TheoriaPhase5?.evaluateEnrollmentEligibility){
+      const eligibility=await window.TheoriaPhase5.evaluateEnrollmentEligibility(section,{id:section.courseId,...course});
+      if(eligibility?.hasRequirements&&!eligibility.ready){
+        openModal({
+          eyebrow:"Course Prerequisites",
+          title:"Enrollment requirements are not yet complete",
+          body:'<div class="academic-banner"><div class="kicker">'+esc(section.courseCode||"Course")+'</div><h3>'+esc(section.courseTitle||"Theoria Course")+'</h3><p>This course has progression requirements in addition to any section entrance examination.</p></div><div class="readiness-checks">'+(eligibility.checks||[]).map(x=>'<div class="'+(x.ok===true?'ok':x.ok===false?'missing':'pending')+'"><span>'+(x.ok===true?'✓':x.ok===false?'!':'•')+'</span><div><strong>'+esc(x.label)+'</strong><small>'+esc(x.detail)+' • '+esc(x.value)+'</small></div></div>').join("")+'</div><div class="notice" style="margin-top:12px">Open <strong>Progression</strong> to review your full readiness map.</div>',
+          footer:'<button class="secondary-btn" data-go="progression" data-close-modal>View Progression</button><button class="primary-btn" data-close-modal>Close</button>'
+        });
+        return;
+      }
+    }
+
     if(!entranceRequired){
       const modal=openModal({
         eyebrow:"Join a Section",
@@ -3371,6 +3396,7 @@ async function joinSection(section,code){
       role:"student",
       joinedAt:serverTimestamp(),
       status:"enrolled",
+      useProfileDefaults:true,
       accommodations:{
         timeMultiplier:Number(state.profile?.defaultAccommodations?.timeMultiplier||1),
         breaks:!!state.profile?.defaultAccommodations?.breaks,
@@ -3382,8 +3408,8 @@ async function joinSection(section,code){
     });
     batch.set(doc(db,"users",state.user.uid,"enrollments",section.id),{
       sectionId:section.id,courseId:section.courseId,courseCode:section.courseCode,courseTitle:section.courseTitle,
-      sectionName:section.sectionName,term:section.term,joinCode:code,joinedAt:serverTimestamp()
-    });
+      sectionName:section.sectionName,term:section.term,joinCode:code,status:"Enrolled",joinedAt:serverTimestamp(),updatedAt:serverTimestamp()
+    },{merge:true});
     await batch.commit();
     closeModal();await loadWorkspace();showToast("You joined "+section.courseTitle+".");await openSection(section.id);
   }catch(error){showToast(humanizeFirebaseError(error));}
