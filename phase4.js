@@ -468,6 +468,7 @@ async function certifyRecord(sectionId,studentId,reason=""){
     snapshot,createdAt:serverTimestamp(),createdBy:state().user.uid
   });
   await batch.commit();
+  if(window.TheoriaPhase5?.logSectionEvent)await window.TheoriaPhase5.logSectionEvent(sectionId,action==="Amendment"?"academic_record_amended":"academic_record_certified","student",studentId,{reason:reason||"",version:Number(prior?.version||0)+1,finalPercent:snapshot.finalPercent,letterGrade:snapshot.letterGrade});
   invalidate(sectionId);
   toast(action==="Amendment"?"Academic record amended and recertified.":"Final grade certified.");
   if(state().currentSection?.id===sectionId)renderRecords(sectionId);
@@ -486,13 +487,39 @@ function amendmentModal(sectionId,studentId){
   });
 }
 
+async function markIncompleteRecord(sectionId,studentId){
+  const bundle=await loadSectionBundle(sectionId),member=bundle.members.find(x=>x.id===studentId);
+  if(!member)return toast("Student not found.");
+  const prior=recordFor(bundle,studentId);
+  const reason=prompt("Reason for the Incomplete status?")?.trim();
+  if(!reason)return;
+  const version=Number(prior?.version||0)+1;
+  const snapshot={
+    studentId,studentName:member.displayName||"Student",studentEmail:member.email||"",
+    sectionId,courseId:bundle.section.courseId,courseCode:bundle.section.courseCode||"",courseTitle:bundle.section.courseTitle||"",
+    sectionName:bundle.section.sectionName||"",term:bundle.section.term||"",
+    status:"Incomplete",incompleteReason:reason,recordId:prior?.recordId||idStamp(),version
+  };
+  const batch=writeBatch(db);
+  batch.set(doc(db,"sections",sectionId,"academicRecords",studentId),{
+    ...snapshot,updatedAt:serverTimestamp(),updatedBy:state().user.uid
+  },{merge:true});
+  batch.set(doc(collection(db,"sections",sectionId,"recordHistory")),{
+    studentId,action:"Incomplete",reason,version,snapshot,createdAt:serverTimestamp(),createdBy:state().user.uid
+  });
+  await batch.commit();
+  if(window.TheoriaPhase5?.logSectionEvent)await window.TheoriaPhase5.logSectionEvent(sectionId,"academic_record_incomplete","student",studentId,{reason,version});
+  invalidate(sectionId);toast("Academic record marked Incomplete.");
+  await refreshRecordContext(sectionId);
+}
+
 function recordStatusCard(bundle,member){
   const calc=finalCalculation(bundle,member.id),record=recordFor(bundle,member.id),mastery=bundle.mastery.find(x=>x.id===member.id);
   return '<tr><td><strong>'+esc(member.displayName||"Student")+'</strong><span class="grade-sub">'+esc(calc.pathway==="examination"?"Examination Pathway":calc.pathway==="composite"?"Composite Pathway":"No pathway selected")+'</span></td>'+
     '<td>'+(calc.coursework.percent===null?"—":calc.coursework.percent+"%")+'</td><td>'+(calc.semester.percent===null?"—":calc.semester.percent+"%")+'</td><td>'+(calc.comprehensive.percent===null?"—":calc.comprehensive.percent+"%")+'</td>'+
     '<td><strong>'+(calc.final===null?(calc.projection===null?"—":calc.projection+"%*"):calc.final+"%")+'</strong></td><td>'+(mastery?.overallPercent===null||mastery?.overallPercent===undefined?"—":mastery.overallPercent+"%")+'</td>'+
     '<td><span class="badge '+(record?.status==="Certified"?'live':calc.ready?'gold':'')+'">'+esc(record?.status|| (calc.ready?"Ready":"Incomplete"))+'</span></td>'+
-    '<td><div class="inline-actions"><button class="text-btn" data-phase4-action="record-audit" data-section="'+bundle.section.id+'" data-student="'+member.id+'">Audit</button>'+(calc.ready?'<button class="primary-btn small-btn" data-phase4-action="certify-record" data-section="'+bundle.section.id+'" data-student="'+member.id+'">'+(record?.status==="Certified"?"Recalculate / Amend":"Certify")+'</button>':'')+'<button class="text-btn" data-phase4-action="portfolio" data-section="'+bundle.section.id+'" data-student="'+member.id+'">Portfolio</button></div></td></tr>';
+    '<td><div class="inline-actions"><button class="text-btn" data-phase4-action="record-audit" data-section="'+bundle.section.id+'" data-student="'+member.id+'">Audit</button>'+(calc.ready?'<button class="primary-btn small-btn" data-phase4-action="certify-record" data-section="'+bundle.section.id+'" data-student="'+member.id+'">'+(record?.status==="Certified"?"Recalculate / Amend":"Certify")+'</button>':record?.status!=="Certified"?'<button class="secondary-btn small-btn" data-phase4-action="mark-incomplete" data-section="'+bundle.section.id+'" data-student="'+member.id+'">Mark Incomplete</button>':'')+'<button class="text-btn" data-phase4-action="portfolio" data-section="'+bundle.section.id+'" data-student="'+member.id+'">Portfolio</button></div></td></tr>';
 }
 
 async function renderRecords(sectionId,targetSelector="#phase4SectionTab"){
@@ -533,7 +560,7 @@ async function portfolioModal(sectionId,studentId){
   modal.querySelector("#portfolioForm").addEventListener("submit",async e=>{
     e.preventDefault();const fd=new FormData(e.currentTarget);
     const works=fd.getAll("work").map(v=>{const [type,id,title,percent]=String(v).split("|");return {type,id,title,percent:Number(percent)};});
-    try{await setDoc(doc(db,"sections",sectionId,"portfolios",studentId),{studentId,studentName:member?.displayName||"Student",featuredWorks:works,instructorComment:String(fd.get("comment")||"").trim(),updatedAt:serverTimestamp(),updatedBy:state().user.uid},{merge:true});core().closeModal();invalidate(sectionId);toast("Academic portfolio saved.");}catch(err){toast(err.message||"Unable to save portfolio.");}
+    try{await setDoc(doc(db,"sections",sectionId,"portfolios",studentId),{studentId,studentName:member?.displayName||"Student",featuredWorks:works,instructorComment:String(fd.get("comment")||"").trim(),updatedAt:serverTimestamp(),updatedBy:state().user.uid},{merge:true});if(window.TheoriaPhase5?.logSectionEvent)await window.TheoriaPhase5.logSectionEvent(sectionId,"academic_portfolio_updated","student",studentId,{featuredWorkCount:works.length});core().closeModal();invalidate(sectionId);toast("Academic portfolio saved.");}catch(err){toast(err.message||"Unable to save portfolio.");}
   });
 }
 
@@ -553,7 +580,7 @@ async function renderStudentRecord(sectionId,targetSelector="#phase4SectionTab")
   const bundle=await loadSectionBundle(sectionId),uid=state().user.uid,calc=finalCalculation(bundle,uid),record=recordFor(bundle,uid),portfolio=portfolioFor(bundle,uid),mastery=bundle.mastery.find(x=>x.id===uid);
   const appeals=bundle.appeals.sort((a,b)=>(b.createdAt?.toMillis?.()||0)-(a.createdAt?.toMillis?.()||0));
   el.innerHTML='<div class="record-calculation"><div><span>Coursework</span><strong>'+(calc.coursework.percent===null?"—":calc.coursework.percent+"%")+'</strong></div><div><span>Semester I Exam</span><strong>'+(calc.semester.percent===null?"—":calc.semester.percent+"%")+'</strong></div><div><span>Comprehensive Final</span><strong>'+(calc.comprehensive.percent===null?"—":calc.comprehensive.percent+"%")+'</strong></div><div><span>Current Projection</span><strong>'+(calc.projection===null?"—":calc.projection+"%")+'</strong></div></div>'+
-    (record?formalRecordHtml(record,portfolio,mastery,true):'<div class="academic-banner"><div class="kicker">Academic Record</div><h3>Your final grade has not been certified.</h3><p>Your current grades and pathway remain visible while required components are completed.</p></div>'+componentHtml(calc))+
+    (record?.status==="Incomplete"?'<div class="academic-banner"><div class="kicker">Academic Record</div><h3>Incomplete</h3><p>'+esc(record.incompleteReason||"Additional academic work or evaluation is required before a final grade can be certified.")+'</p></div>'+componentHtml(calc):record?formalRecordHtml(record,portfolio,mastery,true):'<div class="academic-banner"><div class="kicker">Academic Record</div><h3>Your final grade has not been certified.</h3><p>Your current grades and pathway remain visible while required components are completed.</p></div>'+componentHtml(calc))+
     '<div class="grid-2" style="margin-top:18px"><div class="panel"><div class="panel-head"><div class="panel-title">Academic Portfolio</div></div><div class="panel-body">'+portfolioHtml(portfolio)+'</div></div><div class="panel"><div class="panel-head"><div class="panel-title">Grade Appeals</div><button class="panel-link" data-phase4-action="new-appeal" data-section="'+sectionId+'">New Appeal</button></div><div class="panel-body">'+(appeals.length?appeals.map(a=>'<div class="appeal-mini"><strong>'+esc(a.title||"Grade Appeal")+'</strong><span>'+esc(a.status||"Pending")+' • '+esc(dateText(a.createdAt))+'</span><p>'+esc(a.reason||"")+'</p>'+(a.decision?'<small>Decision: '+esc(a.decision)+'</small>':'')+'</div>').join(""):'<div class="empty-mini">No grade appeals submitted.</div>')+'</div></div></div>';
 }
 
@@ -590,7 +617,7 @@ function newAppealModal(sectionId){
     });
     modal.querySelector("#appealForm").addEventListener("submit",async e=>{
       e.preventDefault();const fd=new FormData(e.currentTarget),[targetType,targetId,title]=String(fd.get("target")).split("|");
-      try{await addDoc(collection(db,"sections",sectionId,"appeals"),{studentId:uid,studentName:state().profile.displayName||state().user.displayName||"Student",targetType,targetId,title,reason:String(fd.get("reason")||"").trim(),status:"Pending",createdAt:serverTimestamp(),updatedAt:serverTimestamp()});core().closeModal();toast("Grade appeal submitted.");await refreshRecordContext(sectionId);}catch(err){toast(err.message||"Unable to submit appeal.");}
+      try{await addDoc(collection(db,"sections",sectionId,"appeals"),{studentId:uid,studentName:state().profile.displayName||state().user.displayName||"Student",targetType,targetId,title,reason:String(fd.get("reason")||"").trim(),status:"Pending",createdAt:serverTimestamp(),updatedAt:serverTimestamp()});if(window.TheoriaPhase5?.logSectionEvent)await window.TheoriaPhase5.logSectionEvent(sectionId,"grade_appeal_submitted",targetType,targetId,{studentId:uid,title});core().closeModal();toast("Grade appeal submitted.");await refreshRecordContext(sectionId);}catch(err){toast(err.message||"Unable to submit appeal.");}
     });
   });
 }
@@ -604,7 +631,7 @@ async function reviewAppealModal(sectionId,appealId){
   });
   modal.querySelector("#appealReviewForm").addEventListener("submit",async e=>{
     e.preventDefault();const fd=new FormData(e.currentTarget);
-    try{await updateDoc(doc(db,"sections",sectionId,"appeals",appealId),{status:String(fd.get("status")),decision:String(fd.get("decision")).trim(),decidedAt:serverTimestamp(),decidedBy:state().user.uid,updatedAt:serverTimestamp()});core().closeModal();toast("Appeal decision saved.");await refreshRecordContext(sectionId);}catch(err){toast(err.message||"Unable to save decision.");}
+    try{await updateDoc(doc(db,"sections",sectionId,"appeals",appealId),{status:String(fd.get("status")),decision:String(fd.get("decision")).trim(),decidedAt:serverTimestamp(),decidedBy:state().user.uid,updatedAt:serverTimestamp()});if(window.TheoriaPhase5?.logSectionEvent)await window.TheoriaPhase5.logSectionEvent(sectionId,"grade_appeal_decided",appeal.targetType||"appeal",appeal.targetId||appealId,{studentId:appeal.studentId,status:String(fd.get("status")),decision:String(fd.get("decision")).trim()});core().closeModal();toast("Appeal decision saved.");await refreshRecordContext(sectionId);}catch(err){toast(err.message||"Unable to save decision.");}
   });
 }
 
@@ -676,6 +703,7 @@ document.addEventListener("click",async e=>{
   if(a==="reports-back"){P4.reportsSectionId=null;return renderReportsPage();}
   if(a==="record-audit")return auditModal(b.dataset.section||P4.reportsSectionId||state().currentSection?.id,b.dataset.student);
   if(a==="certify-record")return certifyRecord(b.dataset.section||P4.reportsSectionId||state().currentSection?.id,b.dataset.student);
+  if(a==="mark-incomplete")return markIncompleteRecord(b.dataset.section||P4.reportsSectionId||state().currentSection?.id,b.dataset.student);
   if(a==="portfolio")return portfolioModal(b.dataset.section||P4.reportsSectionId||state().currentSection?.id,b.dataset.student);
   if(a==="record-history")return recordHistoryModal(b.dataset.section||P4.reportsSectionId||state().currentSection?.id,b.dataset.student);
   if(a==="new-appeal")return newAppealModal(b.dataset.section||P4.reportsSectionId||state().currentSection?.id);
