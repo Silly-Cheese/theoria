@@ -264,7 +264,12 @@ async function renderAcademicProfile(){
   }
 
   const evidence=await loadOwnAcademicEvidence();
-  const defaults=profile.defaultAccommodations||{};
+  let persistentAccess={};
+  try{
+    const accessSnap=await getDoc(doc(db,"academicAccess",s.user.uid));
+    if(accessSnap.exists())persistentAccess=accessSnap.data();
+  }catch(_){}
+  const defaults=persistentAccess.accommodations||profile.defaultAccommodations||{};
   const completed=evidence.records.filter(r=>r.status==="Certified");
   const comps=new Map();
   evidence.mastery.forEach(m=>safeArray(m.competencies).forEach(c=>{
@@ -277,27 +282,7 @@ async function renderAcademicProfile(){
     '<div class="student-profile-summary"><div><span>Current Sections</span><strong>'+esc((s.sections||[]).filter(x=>x.status!=="Archived").length)+'</strong></div><div><span>Certified Courses</span><strong>'+completed.length+'</strong></div><div><span>Competencies Evidenced</span><strong>'+comps.size+'</strong></div></div>'+
     '<div class="grid-2"><div class="panel"><div class="panel-head"><div class="panel-title">Completed Courses</div></div><div class="panel-body">'+(completed.length?completed.map(r=>'<div class="profile-record-row"><div><strong>'+esc(r.courseCode+" — "+r.courseTitle)+'</strong><span>'+esc(r.term||"")+'</span></div><b>'+esc(r.letterGrade||"—")+' • '+esc(r.finalPercent??"—")+'%</b></div>').join(""):'<div class="empty-mini">No certified course records yet.</div>')+'</div></div>'+
     '<div class="panel"><div class="panel-head"><div class="panel-title">Strongest Competency Evidence</div></div><div class="panel-body">'+([...comps.values()].length?[...comps.values()].sort((a,b)=>Number(b.percent||0)-Number(a.percent||0)).slice(0,8).map(c=>'<div class="profile-record-row"><div><strong>'+esc(c.code||"Competency")+'</strong><span>'+esc(c.name||"")+'</span></div><b>'+esc(c.percent??"—")+'%</b></div>').join(""):'<div class="empty-mini">No competency evidence yet.</div>')+'</div></div></div>'+
-    '<div class="panel" style="margin-top:18px"><div class="panel-head"><div><div class="panel-title">Default Assessment Access</div><div class="panel-subtitle">These preferences are copied into new section enrollments. Section instructors can still authorize section-specific changes.</div></div></div><div class="panel-body"><form id="profileAccessForm"><div class="compact-field-grid"><div class="field"><label>Default Time Multiplier</label><select name="timeMultiplier"><option value="1">1× standard time</option><option value="1.25">1.25× time</option><option value="1.5">1.5× time</option><option value="2">2× time</option></select></div></div><div class="policy-grid"><label class="policy-card"><input type="checkbox" name="breaks" '+(defaults.breaks?'checked':'')+'><div><strong>Breaks permitted</strong><span>Carry this preference into new sections.</span></div></label><label class="policy-card"><input type="checkbox" name="calculator" '+(defaults.calculator?'checked':'')+'><div><strong>Calculator permitted</strong><span>Request calculator access by default.</span></div></label><label class="policy-card"><input type="checkbox" name="largeText" '+(defaults.largeText?'checked':'')+'><div><strong>Large text</strong><span>Use the large-text exam presentation.</span></div></label><label class="policy-card"><input type="checkbox" name="reducedDistractions" '+(defaults.reducedDistractions?'checked':'')+'><div><strong>Reduced distractions</strong><span>Record this default access preference.</span></div></label></div><button class="primary-btn" type="submit">Save Default Access</button></form></div></div>';
-  const form=$("#profileAccessForm");
-  if(form){
-    form.elements.timeMultiplier.value=String(defaults.timeMultiplier||1);
-    form.onsubmit=async e=>{
-      e.preventDefault();
-      const fd=new FormData(form),defaultAccommodations={
-        timeMultiplier:Number(fd.get("timeMultiplier")||1),
-        breaks:form.elements.breaks.checked,
-        calculator:form.elements.calculator.checked,
-        largeText:form.elements.largeText.checked,
-        reducedDistractions:form.elements.reducedDistractions.checked,
-        notes:String(defaults.notes||"")
-      };
-      try{
-        await updateDoc(doc(db,"users",s.user.uid),{defaultAccommodations,updatedAt:serverTimestamp()});
-        s.profile.defaultAccommodations=defaultAccommodations;
-        toast("Default assessment access saved.");
-      }catch(error){toast(error.message||"Unable to save your default access settings.");}
-    };
-  }
+    '<div class="panel" style="margin-top:18px"><div class="panel-head"><div><div class="panel-title">Persistent Assessment Access</div><div class="panel-subtitle">Institutional access settings follow you into new sections. Instructors can still authorize a section-specific override.</div></div><span class="badge '+(persistentAccess.accommodations?'live':'')+'">'+(persistentAccess.accommodations?'Profile Active':'Standard Access')+'</span></div><div class="panel-body"><div class="detail-list"><div><span>Time Multiplier</span><strong>'+esc(defaults.timeMultiplier||1)+'×</strong></div><div><span>Breaks</span><strong>'+(defaults.breaks?'Permitted':'Standard policy')+'</strong></div><div><span>Calculator</span><strong>'+(defaults.calculator?'Permitted':'Standard policy')+'</strong></div><div><span>Large Text</span><strong>'+(defaults.largeText?'Enabled':'Standard')+'</strong></div><div><span>Reduced Distractions</span><strong>'+(defaults.reducedDistractions?'Enabled':'Standard')+'</strong></div></div>'+(persistentAccess.notes?'<div class="notice" style="margin-top:12px">'+esc(persistentAccess.notes)+'</div>':'')+'<div class="fineprint" style="margin-top:12px">Persistent access settings are managed by authorized instructors rather than self-assigned by students.</div></div></div>';
 }
 
 /* -------------------- SECTION OPERATIONS / LIFECYCLE -------------------- */
