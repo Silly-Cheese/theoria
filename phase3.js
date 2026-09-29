@@ -1119,7 +1119,7 @@ async function assessmentModal(existing){
       '<section class="form-section"><div class="form-section-head"><div><span>04</span><h3>Content Blueprint</h3><p>Choose course units and assign their intended share of the assessment.</p></div><div class="inline-actions"><button type="button" class="secondary-btn small-btn" id="balanceContentBlueprint">Balance</button><button type="button" class="secondary-btn small-btn" id="addContentBlueprint">+ Add Target</button></div></div><div id="contentBlueprintRows" class="blueprint-builder"></div><div class="builder-total"><span>Total</span><strong id="contentBlueprintTotal">0%</strong></div></section>'+
       '<section class="form-section"><div class="form-section-head"><div><span>05</span><h3>Competency Blueprint</h3><p>Automatically calculated from the questions in this assessment and the competencies attached to those questions.</p></div><span class="badge live">Auto</span></div><div id="competencyBlueprintRows" class="blueprint-builder auto-blueprint-builder"></div><div id="competencyBlueprintAutoNote" class="auto-blueprint-note">Select competency-tagged questions to build the blueprint.</div><div class="builder-total"><span>Mapped competency weight</span><strong id="competencyBlueprintTotal">0%</strong></div></section>'+
       (!existing?'<section class="form-section question-bank-builder"><div class="form-section-head"><div><span>06</span><h3>Question Pool</h3><p>Select every question that may appear on this assessment. You can then use all selected questions or draw a random number from each question type.</p></div><div class="question-selection-summary"><strong id="selectedQuestionCount">0</strong><span>in pool</span><b id="selectedQuestionPoints">0 pts total</b></div></div>'+
-        '<div class="question-bank-toolbar"><div class="field"><label>Search Question Bank</label><input id="assessmentQuestionSearch" placeholder="Search prompt, topic, competency, or tag"></div><div class="field"><label>Question Type</label><select id="assessmentQuestionType"><option value="">All question types</option></select></div><button type="button" class="secondary-btn small-btn question-select-filtered" id="selectFilteredQuestions">Select Filtered</button></div>'+
+        '<div class="question-bank-toolbar"><div class="field"><label>Search Question Bank</label><input id="assessmentQuestionSearch" placeholder="Search prompt, unit, topic, competency, or tag"></div><div class="field"><label>Unit</label><select id="assessmentQuestionUnit"><option value="">All units</option></select></div><div class="field"><label>Question Type</label><select id="assessmentQuestionType"><option value="">All question types</option></select></div><button type="button" class="secondary-btn small-btn question-select-filtered" id="selectFilteredQuestions">Select Filtered</button></div>'+
         '<div class="random-draw-panel"><label class="policy-card random-draw-toggle"><input type="checkbox" id="randomDrawEnabled"><div><strong>Random Draw by Question Type</strong><span>Each student receives a locked random subset from this pool. Their version does not change on refresh or resume.</span></div></label><div id="randomDrawPlan" class="random-draw-plan hidden"></div></div>'+
         '<div id="assessmentQuestionChoices" class="assessment-question-picker"></div></section>':'')+
       '<div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">'+(existing?"Save Assessment":"Create Template")+'</button></div></form>'
@@ -1132,6 +1132,7 @@ async function assessmentModal(existing){
   let selectedQuestionIds=new Set();
   const questionBox=modal.querySelector("#assessmentQuestionChoices");
   const questionSearch=modal.querySelector("#assessmentQuestionSearch");
+  const questionUnit=modal.querySelector("#assessmentQuestionUnit");
   const questionType=modal.querySelector("#assessmentQuestionType");
   const randomDrawToggle=modal.querySelector("#randomDrawEnabled");
   const randomDrawPlanBox=modal.querySelector("#randomDrawPlan");
@@ -1197,20 +1198,37 @@ async function assessmentModal(existing){
   };
 
   const filteredQuestions=()=>{
-    const q=String(questionSearch?.value||"").trim().toLowerCase(),type=String(questionType?.value||"");
-    return bankQuestions.filter(item=>(!type||item.type===type)&&(!q||[item.prompt,item.topicTitle,item.topicNumber,(item.competencyCodes||[]).join(" "),(item.tags||[]).join(" ")].join(" ").toLowerCase().includes(q)));
+    const q=String(questionSearch?.value||"").trim().toLowerCase(),type=String(questionType?.value||""),unitId=String(questionUnit?.value||"");
+    return bankQuestions.filter(item=>{
+      const placement=core().resolveFrameworkPlacement?core().resolveFrameworkPlacement(item,fw):null;
+      const itemUnitId=placement?.unit?.id||item.unitId||"unsorted";
+      const unitMatches=!unitId||itemUnitId===unitId;
+      const typeMatches=!type||item.type===type;
+      const searchMatches=!q||[item.prompt,item.unitTitle,placement?.unit?.title,item.topicTitle,item.topicNumber,(item.competencyCodes||[]).join(" "),(item.tags||[]).join(" ")].join(" ").toLowerCase().includes(q);
+      return unitMatches&&typeMatches&&searchMatches;
+    });
   };
 
   const renderBankQuestions=()=>{
     if(existing||!questionBox)return;
     const filtered=filteredQuestions();
-    questionBox.innerHTML=filtered.length?filtered.map(item=>
+    const groups=core().unitFolderGroups?core().unitFolderGroups(filtered,fw):[];
+    const choice=item=>
       '<label class="assessment-question-choice '+(selectedQuestionIds.has(item.id)?'selected':'')+'">'+
         '<input type="checkbox" value="'+item.id+'" '+(selectedQuestionIds.has(item.id)?'checked':'')+'>'+
         '<div class="question-choice-copy"><div class="question-choice-meta"><span>'+esc(item.type||"Question")+'</span><span>'+esc(item.topicNumber||"No topic")+'</span><span>'+esc(item.pointsDefault||1)+' pts</span></div><strong>'+esc(item.prompt||"Untitled question")+'</strong>'+
-        ((item.competencyCodes||[]).length?'<div class="item-tags">'+item.competencyCodes.map(c=>'<span>'+esc(c)+'</span>').join("")+'</div>':'')+
-        '</div><div class="question-select-mark">✓</div></label>'
-    ).join(""):'<div class="empty-state compact-empty"><div class="empty-symbol">Q</div><h3>No matching questions.</h3><p>'+(bankQuestions.length?"Adjust the search or filter.":"Create questions in the Question Bank for this course first.")+'</p></div>';
+        ((item.competencyCodes||[]).length?'<div class="item-tags">'+item.competencyCodes.map(code=>'<span>'+esc(code)+'</span>').join("")+'</div>':'')+
+        '</div><div class="question-select-mark">✓</div></label>';
+
+    questionBox.innerHTML=filtered.length
+      ? '<div class="unit-folder-stack assessment-create-unit-stack">'+groups.map((group,index)=>
+          '<details class="unit-folder '+(group.id==="unsorted"?'unsorted-folder':'')+'" '+(index===0||String(questionUnit?.value||"")===group.id?'open':'')+'>'+
+            '<summary><div class="unit-folder-icon">'+(group.id==="unsorted"?'?':esc(group.unit?.order||"U"))+'</div><div><strong>'+esc(group.label)+'</strong><span>'+group.items.length+' matching question'+(group.items.length===1?"":"s")+'</span></div><div class="unit-folder-chevron">⌄</div></summary>'+
+            '<div class="unit-folder-body"><div class="assessment-question-picker unit-question-picker">'+group.items.map(choice).join("")+'</div></div>'+
+          '</details>'
+        ).join("")+'</div>'
+      : '<div class="empty-state compact-empty"><div class="empty-symbol">Q</div><h3>No matching questions.</h3><p>'+(bankQuestions.length?"Adjust the search or filter.":"Create questions in the Question Bank for this course first.")+'</p></div>';
+
     questionBox.querySelectorAll('input[type="checkbox"]').forEach(input=>input.onchange=()=>{
       if(input.checked)selectedQuestionIds.add(input.value);else selectedQuestionIds.delete(input.value);
       input.closest(".assessment-question-choice").classList.toggle("selected",input.checked);
@@ -1218,15 +1236,25 @@ async function assessmentModal(existing){
     });
   };
 
-  const populateQuestionTypes=()=>{
-    if(existing||!questionType)return;
+  const populateQuestionFilters=()=>{
+    if(existing||!questionType||!questionUnit)return;
     const types=[...new Set(bankQuestions.map(x=>x.type).filter(Boolean))].sort();
     questionType.innerHTML='<option value="">All question types</option>'+types.map(t=>'<option value="'+esc(t)+'">'+esc(t)+'</option>').join("");
+    const unitCounts=new Map();
+    for(const item of bankQuestions){
+      const placement=core().resolveFrameworkPlacement?core().resolveFrameworkPlacement(item,fw):null;
+      const id=placement?.unit?.id||item.unitId||"unsorted";
+      unitCounts.set(id,(unitCounts.get(id)||0)+1);
+    }
+    questionUnit.innerHTML='<option value="">All units ('+bankQuestions.length+')</option>'+
+      (fw.units||[]).filter(unit=>unitCounts.get(unit.id)).map(unit=>'<option value="'+unit.id+'">Unit '+esc(unit.order||"")+' — '+esc(unit.title)+' ('+unitCounts.get(unit.id)+')</option>').join("")+
+      (unitCounts.get("unsorted")?'<option value="unsorted">Unsorted ('+unitCounts.get("unsorted")+')</option>':'');
   };
 
   if(!existing){
-    populateQuestionTypes();renderBankQuestions();updateQuestionSummary();
+    populateQuestionFilters();renderBankQuestions();updateQuestionSummary();
     questionSearch.addEventListener("input",renderBankQuestions);
+    questionUnit.addEventListener("change",renderBankQuestions);
     questionType.addEventListener("change",renderBankQuestions);
     randomDrawToggle.addEventListener("change",()=>{
       if(randomDrawToggle.checked)form.elements.randomizeQuestions.checked=true;
@@ -1322,7 +1350,7 @@ async function assessmentModal(existing){
     targetOptions("content").slice(0,Math.min(4,targetOptions("content").length)).forEach(x=>addBlueprintRow("content",{...x,weight:0}));
     selectedQuestionIds.clear();drawCounts.clear();
     await loadBankQuestions(selectedCourse);
-    populateQuestionTypes();renderBankQuestions();updateQuestionSummary();
+    populateQuestionFilters();renderBankQuestions();updateQuestionSummary();
   };
 
   const readBlueprint=kind=>{
