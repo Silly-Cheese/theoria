@@ -788,14 +788,14 @@ document.addEventListener("click",e=>{
   if(role==="grader"){
     const allowed=new Set([
       ...safeActions,"grade-candidate","auto-score","horizontal-grade","open-gradebook-assessment","set-grade",
-      "record-audit","portfolio","open-section-resource"
+      "record-audit","open-section-resource"
     ]);
     if(!allowed.has(action)){
       e.preventDefault();e.stopImmediatePropagation();toast("Your Grader role does not include this section-administration action.");return;
     }
   }
   if(role==="teaching_assistant"){
-    const blocked=new Set(["edit-section","delete-section","archive-section","staff-management","manage-prerequisites","certify-record","review-appeal"]);
+    const blocked=new Set(["edit-section","delete-section","archive-section","staff-management","manage-prerequisites","certify-record","mark-incomplete","review-appeal","portfolio"]);
     if(blocked.has(action)){
       e.preventDefault();e.stopImmediatePropagation();toast("Your Teaching Assistant role does not include this administrative action.");return;
     }
