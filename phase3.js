@@ -2024,6 +2024,17 @@ async function configureEntranceExam(sectionId){
         updatedAt:serverTimestamp()
       });
 
+      Object.assign(section,{
+        entranceExamRequired:true,
+        entranceAssessmentId:ref.id,
+        entranceTemplateSourceId:template.id,
+        entranceExamTitle:template.title,
+        entrancePassPercent:passPercent
+      });
+      const sectionIndex=s.sections.findIndex(x=>x.id===section.id);
+      if(sectionIndex>=0)s.sections[sectionIndex]={...s.sections[sectionIndex],...section};
+      if(s.currentSection?.id===section.id)Object.assign(s.currentSection,section);
+
       if(oldAssessmentId&&oldAssessmentId!==ref.id){
         try{await deleteEntranceAssessmentTree(oldAssessmentId);}catch(error){console.warn("Old entrance examination cleanup failed:",error);}
       }
