@@ -80,6 +80,7 @@ service cloud.firestore {
 
     function canManageCourse(courseId) {
       return isSystemOwner()
+        || courseCoordinator(courseId)
         || (
           courseOwner(courseId)
           && (
@@ -105,6 +106,12 @@ service cloud.firestore {
     function courseOwner(courseId) {
       return signedIn()
         && get(/databases/$(database)/documents/courses/$(courseId)).data.ownerId == uid();
+    }
+
+    function courseCoordinator(courseId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/courses/$(courseId)/staff/$(uid()))
+        && get(/databases/$(database)/documents/courses/$(courseId)/staff/$(uid())).data.role == 'coordinator';
     }
 
     function sectionOwner(sectionId) {
@@ -336,6 +343,21 @@ service cloud.firestore {
         );
       allow update: if isSystemOwner()
         || (
+          courseCoordinator(courseId)
+          && request.resource.data.ownerId == resource.data.ownerId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'code',
+            'title',
+            'level',
+            'discipline',
+            'status',
+            'description',
+            'prerequisitePolicy',
+            'entranceExamRequired',
+            'updatedAt'
+          ])
+        )
+        || (
           courseOwner(courseId)
           && (
             !('catalogCourse' in resource.data)
@@ -398,6 +420,11 @@ service cloud.firestore {
           allow create: if canManageCourse(courseId);
           allow update, delete: if false;
         }
+      }
+
+      match /staff/{userId} {
+        allow read: if isInstructor();
+        allow create, update, delete: if isSystemOwner() || courseOwner(courseId);
       }
 
       match /approvals/{userId} {
