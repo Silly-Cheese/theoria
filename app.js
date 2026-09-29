@@ -750,13 +750,15 @@ function openCourseModal(existing){
       (state.isSystemOwner?'<div class="field span-2"><label class="policy-card"><input type="checkbox" name="entranceExamRequired" '+(existing?.entranceExamRequired?'checked':'')+'><div><strong>Require an Entrance Examination</strong><span>Every section of this course must use an instructor-configured entrance assessment before a student can enroll.</span></div></label></div>':'')+
     '</div><div class="modal-foot" style="margin:24px -24px -24px"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">'+(editing?"Save Changes":"Create Course")+'</button></div></form>'
   });
-  const form=modal.querySelector("#courseForm");
+  const form=modal?.querySelector("#courseForm");
+  if(!form){closeModal();return showToast("The course editor could not be initialized. Refresh Theoria and try again.");}
   if(existing){
     form.level.value=existing.level||"Advanced";
     form.status.value=existing.status||"Active";
-    if(form.elements.catalogPublished)form.elements.catalogPublished.value=String(existing.catalogPublished===true);
-  }else if(form.elements.catalogPublished){
-    form.elements.catalogPublished.value="false";
+    const catalogPublished=form.querySelector('[name="catalogPublished"]');
+    if(catalogPublished)catalogPublished.value=String(existing.catalogPublished===true);
+  }else if(form.querySelector('[name="catalogPublished"]')){
+    form.querySelector('[name="catalogPublished"]').value="false";
   }
   form.addEventListener("submit",async e=>{
     e.preventDefault();
@@ -772,7 +774,7 @@ function openCourseModal(existing){
         catalogCourse:true,
         catalogManaged:true,
         catalogPublished:String(fd.get("catalogPublished"))==="true",
-        entranceExamRequired:form.elements.entranceExamRequired?.checked===true,
+        entranceExamRequired:form.querySelector('[name="entranceExamRequired"]')?.checked===true,
         catalogUpdatedAt:serverTimestamp()
       }:{}),
       updatedAt:serverTimestamp()
@@ -2471,9 +2473,10 @@ function openAssignmentModal(existing){
       '<div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Assignment</button></div></form>'
   });
 
-  const form=modal.querySelector("#assignmentForm");
-  form.status.value=existing?.status||"Published";
-  form.submissionMode.value=existing?.submissionMode||"Text + Link";
+  const form=modal?.querySelector("#assignmentForm");
+  if(!form){closeModal();return showToast("The assignment editor could not be initialized. Refresh Theoria and try again.");}
+  form.querySelector('[name="status"]').value=existing?.status||"Published";
+  form.querySelector('[name="submissionMode"]').value=existing?.submissionMode||"Text + Link";
   const gradingPeriods=(state.currentSection?.gradingPolicy?.gradingPeriods?.length?state.currentSection.gradingPolicy.gradingPeriods:["Overall"]);
   form.querySelector("#assignmentGradingPeriod").innerHTML=gradingPeriods.map(period=>'<option value="'+esc(period)+'">'+esc(period)+'</option>').join("");
   form.querySelector("#assignmentGradingPeriod").value=gradingPeriods.includes(existing?.gradingPeriod)?existing.gradingPeriod:gradingPeriods[0];
@@ -2524,7 +2527,7 @@ function openAssignmentModal(existing){
       instructionSteps,
       requirements,
       submissionMode:String(fd.get("submissionMode")||"Text + Link"),
-      allowResubmission:form.elements.allowResubmission.checked,
+      allowResubmission:form.querySelector('[name="allowResubmission"]')?.checked===true,
       unitId:selectedUnit?.id||"",
       unitTitle:selectedUnit?.title||"",
       unitNumber:Number(selectedUnit?.order||0),
@@ -2661,7 +2664,7 @@ async function openStudentAssignmentModal(assignmentId){
       if(showText&&!responseText&&mode==="Text Response")return showToast("Enter your written response before submitting.");
       if(showLink&&!responseUrl&&mode==="Link / Document")return showToast("Add the document or research link before submitting.");
       if(mode==="Text + Link"&&!responseText&&!responseUrl)return showToast("Enter a response or provide a document link before submitting.");
-      if(completion&&!form.elements.completionAck.checked)return showToast("Confirm that you completed the assignment.");
+      if(completion&&!form.querySelector('[name="completionAck"]')?.checked)return showToast("Confirm that you completed the assignment.");
       if(!confirm("Submit this assignment?"+(assignment.allowResubmission?" You may revise it later.":" You will not be able to revise it afterward.")))return;
     }
     const ref=doc(db,"sections",state.currentSection.id,"assignments",assignmentId,"submissions",state.user.uid);
@@ -3058,15 +3061,19 @@ function openGradeModal(assignmentId,studentId){
     title:(s?.displayName||"Student")+" — "+(a?.title||"Assignment"),
     body:'<form id="gradeForm"><div class="notice">Possible points: <strong>'+esc(a?.points||0)+'</strong></div><div class="compact-field-grid"><div class="field"><label>Score</label><input type="number" min="0" step="0.1" name="score" value="'+esc(existing?.score??"")+'" required></div><div class="field"><label>Grade Status</label><select name="gradeStatus"><option>Normal</option><option>Late</option><option>Missing</option><option>Excused</option></select></div></div><div class="field"><label>Instructor Comment</label><textarea class="editor-compact" rows="2" name="comment" placeholder="Optional concise feedback">'+esc(existing?.comment||"")+'</textarea></div>'+(existing?'<div class="field"><label>Reason for Grade Change</label><textarea class="editor-compact" rows="2" name="overrideReason" required placeholder="Required because this changes an existing grade."></textarea></div>':'')+'<div class="modal-foot" style="margin:24px -24px -24px"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Grade</button></div></form>'
   });
-  const gradeForm=modal.querySelector("#gradeForm");
-  gradeForm.elements.gradeStatus.value=existing?.gradeStatus||"Normal";
+  const gradeForm=modal?.querySelector("#gradeForm");
+  if(!gradeForm){closeModal();return showToast("The grade editor could not be initialized. Refresh Theoria and try again.");}
+  const gradeStatusInput=gradeForm.querySelector('[name="gradeStatus"]');
+  const scoreInput=gradeForm.querySelector('[name="score"]');
+  if(!gradeStatusInput||!scoreInput){closeModal();return showToast("The grade editor is missing required fields. Refresh Theoria and try again.");}
+  gradeStatusInput.value=existing?.gradeStatus||"Normal";
   const syncGradeStatus=()=>{
-    const status=gradeForm.elements.gradeStatus.value,scoreInput=gradeForm.elements.score;
+    const status=gradeStatusInput.value;
     if(status==="Missing"){scoreInput.value="0";scoreInput.readOnly=true;}
     else if(status==="Excused"){scoreInput.required=false;scoreInput.readOnly=true;scoreInput.value=existing?.score??"0";}
     else{scoreInput.required=true;scoreInput.readOnly=false;}
   };
-  gradeForm.elements.gradeStatus.addEventListener("change",syncGradeStatus);syncGradeStatus();
+  gradeStatusInput.addEventListener("change",syncGradeStatus);syncGradeStatus();
   gradeForm.addEventListener("submit",async e=>{
     e.preventDefault();const fd=new FormData(e.currentTarget),gradeStatus=String(fd.get("gradeStatus")||"Normal");const score=gradeStatus==="Missing"?0:Number(fd.get("score")||0);
     try{
