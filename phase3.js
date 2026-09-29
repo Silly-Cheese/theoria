@@ -2595,8 +2595,45 @@ async function renderSectionAssessments(){
   try{
     let list=[];
     if(s.role==="instructor"){
-      const snap=await getDocs(query(collection(db,"assessments"),where("sectionId","==",section.id)));
-      list=snap.docs.map(d=>({id:d.id,...d.data()}));
+      try{
+        // Preferred path for owners and delegated academic staff.
+        const snap=await getDocs(query(collection(db,"assessments"),where("sectionId","==",section.id)));
+        list=snap.docs.map(d=>({id:d.id,...d.data()}));
+      }catch(primaryError){
+        console.warn("Section assessment query unavailable; using compatibility fallback.",primaryError);
+        const byId=new Map();
+
+        // A section owner can always recover every assigned copy, including
+        // Draft assessments, through the existing ownerId rule. This keeps the
+        // section workspace usable even before newly published rules deploy.
+        if(section.ownerId===s.user.uid){
+          const owned=await getDocs(query(collection(db,"assessments"),where("ownerId","==",s.user.uid)));
+          owned.docs
+            .map(d=>({id:d.id,...d.data()}))
+            .filter(a=>a.sectionId===section.id)
+            .forEach(a=>byId.set(a.id,a));
+        }else{
+          // Delegated staff can at minimum recover published section refs when
+          // the section-scoped query is unavailable.
+          const refs=await getDocs(collection(db,"sections",section.id,"assessmentRefs"));
+          for(const r of refs.docs){
+            try{
+              const a=await getDoc(doc(db,"assessments",r.id));
+              if(a.exists())byId.set(a.id,{id:a.id,...a.data()});
+            }catch(error){console.warn("Unable to load assessment ref",r.id,error);}
+          }
+        }
+
+        // Entrance examinations are intentionally not placed in assessmentRefs.
+        if(section.entranceAssessmentId&&!byId.has(section.entranceAssessmentId)){
+          try{
+            const entrance=await getDoc(doc(db,"assessments",section.entranceAssessmentId));
+            if(entrance.exists())byId.set(entrance.id,{id:entrance.id,...entrance.data()});
+          }catch(error){console.warn("Unable to load entrance assessment",error);}
+        }
+
+        list=[...byId.values()];
+      }
     }else{
       const refs=await getDocs(collection(db,"sections",section.id,"assessmentRefs"));
       for(const r of refs.docs){
@@ -2650,7 +2687,8 @@ async function renderSectionAssessments(){
     el.innerHTML=header+'<div class="assessment-grid">'+cards.join("")+'</div>';
   }catch(error){
     console.error("Unable to load section assessments:",error);
-    el.innerHTML='<div class="empty-state"><div class="empty-symbol">!</div><h3>Assessments could not be loaded.</h3><p>Refresh after deploying the latest Firestore rules. If the problem continues, open the main Assessments workspace.</p></div>';
+    const permission=String(error?.code||"").includes("permission-denied");
+    el.innerHTML='<div class="empty-state"><div class="empty-symbol">!</div><h3>Assessments could not be loaded.</h3><p>'+(permission?'The currently deployed Firestore rules are blocking this section assessment view. Deploy the current repository rules, then refresh.':'The assessment workspace encountered an unexpected data error. Refresh once; if it continues, check the browser console for the exact Firebase error.')+'</p></div>';
   }
 }
 
