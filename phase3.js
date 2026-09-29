@@ -184,9 +184,9 @@ function itemCard(item){
     '<div class="item-card-head"><div><div class="card-kicker">'+esc(item.courseCode||"COURSE")+' • '+esc(item.type||"Question")+'</div>'+
     '<h3>'+esc((item.prompt||"Untitled question").slice(0,150))+(String(item.prompt||"").length>150?"…":"")+'</h3></div>'+
     '<span class="badge">'+esc(item.difficulty||"Moderate")+'</span></div>'+
-    '<div class="item-tags"><span>'+esc(item.topicNumber||"No topic")+'</span><span>'+esc(item.cognitiveLevel||"Application")+'</span><span>'+esc(item.pointsDefault||1)+' pts</span>'+
+    '<div class="item-tags"><span>v'+esc(item.version||1)+'</span><span>'+esc(item.topicNumber||"No topic")+'</span><span>'+esc(item.cognitiveLevel||"Application")+'</span><span>'+esc(item.pointsDefault||1)+' pts</span>'+
     (item.competencyCodes||[]).map(x=>'<span>'+esc(x)+'</span>').join("")+'</div>'+
-    '<div class="card-actions">'+(manager?'<button class="secondary-btn small-btn" data-phase3-action="edit-item" data-course="'+item.courseId+'" data-id="'+item.id+'">Edit</button><button class="danger-btn small-btn" data-phase3-action="delete-bank-question" data-course="'+item.courseId+'" data-id="'+item.id+'">Delete</button>':'<span class="badge">Official Question Bank</span>')+'</div></article>';
+    '<div class="card-actions">'+(manager?'<button class="secondary-btn small-btn" data-phase3-action="item-history" data-course="'+item.courseId+'" data-id="'+item.id+'">History</button><button class="secondary-btn small-btn" data-phase3-action="edit-item" data-course="'+item.courseId+'" data-id="'+item.id+'">Edit</button><button class="danger-btn small-btn" data-phase3-action="delete-bank-question" data-course="'+item.courseId+'" data-id="'+item.id+'">Delete</button>':'<span class="badge">Official Question Bank • v'+esc(item.version||1)+'</span>')+'</div></article>';
 }
 
 async function renderItemBank(){
@@ -753,11 +753,46 @@ async function itemModal(existing){
       explanation:String(fd.get("explanation")||"").trim(),rubric,updatedAt:serverTimestamp()
     };
     try{
-      if(existing)await updateDoc(doc(db,"courses",cid,"items",existing.id),data);
-      else await addDoc(collection(db,"courses",cid,"items"),{...data,createdAt:serverTimestamp()});
-      core().closeModal();await renderItemBank();toast(existing?"Question updated.":"Question created.");
+      if(existing){
+        const currentVersion=Math.max(1,Number(existing.version||1));
+        const batch=writeBatch(db);
+        batch.set(doc(db,"courses",cid,"items",existing.id,"versions","v"+currentVersion),{
+          ...Object.fromEntries(Object.entries(existing).filter(([key])=>key!=="id")),
+          version:currentVersion,
+          archivedAt:serverTimestamp(),
+          archivedBy:s.user.uid
+        });
+        batch.update(doc(db,"courses",cid,"items",existing.id),{
+          ...data,
+          version:currentVersion+1,
+          versionedAt:serverTimestamp()
+        });
+        await batch.commit();
+        if(window.TheoriaPhase5?.logCourseEvent)await window.TheoriaPhase5.logCourseEvent(cid,"question_version_created","question",existing.id,{fromVersion:currentVersion,toVersion:currentVersion+1});
+      }else{
+        await addDoc(collection(db,"courses",cid,"items"),{...data,version:1,createdAt:serverTimestamp()});
+      }
+      core().closeModal();await renderItemBank();toast(existing?"Question updated as a new version.":"Question created.");
     }catch(err){toast(err.message||"Unable to save item.");}
   });
+}
+
+async function itemHistoryModal(courseId,itemId){
+  const item=P3.items.find(x=>x.courseId===courseId&&x.id===itemId);
+  if(!item)return toast("Question not found.");
+  try{
+    const snap=await getDocs(collection(db,"courses",courseId,"items",itemId,"versions"));
+    const versions=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>Number(b.version||0)-Number(a.version||0));
+    core().openModal({
+      eyebrow:"Question Bank Version History",
+      title:"Question v"+(item.version||1),
+      wide:true,
+      body:'<div class="academic-banner"><div class="kicker">'+esc(item.courseCode||"Question Bank")+'</div><h3>'+esc((item.prompt||"Question").slice(0,180))+'</h3><p>Assessment copies remain immutable. Editing the master Question Bank creates a new version instead of rewriting prior assessment history.</p></div>'+
+        '<div class="version-history-list"><div class="version-history-row current"><div><strong>v'+esc(item.version||1)+' — Current</strong><span>'+esc(item.type||"Question")+' • '+esc(item.topicNumber||"No topic")+'</span></div><p>'+esc(item.prompt||"")+'</p></div>'+
+        versions.map(v=>'<div class="version-history-row"><div><strong>v'+esc(v.version||v.id)+'</strong><span>'+esc(v.type||"Question")+' • '+esc(v.topicNumber||"No topic")+'</span></div><p>'+esc(v.prompt||"")+'</p></div>').join("")+'</div>',
+      footer:'<button class="primary-btn" data-close-modal>Close</button>'
+    });
+  }catch(error){toast(error.message||"Unable to load question history.");}
 }
 
 /* -------------------- ASSESSMENTS -------------------- */
@@ -1518,7 +1553,7 @@ async function openAssessment(id,tab="overview"){
 }
 
 function assessmentTabs(active){
-  const tabs=P3.current?.sectionId?[["overview","Overview"],["items","Questions"],["candidates","Candidates"],["grading","Grading"]]:[["overview","Overview"],["items","Questions"]];
+  const tabs=P3.current?.sectionId?[["overview","Overview"],["items","Questions"],["candidates","Candidates"],["grading","Grading"],["analytics","Analytics"]]:[["overview","Overview"],["items","Questions"]];
   return '<div class="tabs">'+tabs.map(([id,label])=>'<button class="tab-btn '+(active===id?'active':'')+'" data-phase3-action="assessment-tab" data-tab="'+id+'">'+label+'</button>').join("")+'</div>';
 }
 
@@ -1644,7 +1679,7 @@ function renderAssessment(tab="overview"){
   const a=P3.current;if(!a)return;
   const template=!a.sectionId;
   if(template&&(tab==="candidates"||tab==="grading"))tab="overview";
-  const body=tab==="items"?itemsView():tab==="candidates"?candidatesView():tab==="grading"?gradingView():overviewView();
+  const body=tab==="items"?itemsView():tab==="candidates"?candidatesView():tab==="grading"?gradingView():tab==="analytics"?'<div id="phase5AssessmentAnalytics"><div class="empty-mini">Calculating assessment analytics…</div></div>':overviewView();
   let statusButton="";
   if(a.entranceExam===true)statusButton='';
   else if(template)statusButton='<button class="primary-btn small-btn" data-phase3-action="assign-assessment" data-id="'+a.id+'">Assign to Section</button>';
@@ -1655,6 +1690,7 @@ function renderAssessment(tab="overview"){
     '<div class="detail-hero"><div class="detail-top"><div><div class="eyebrow">'+esc(a.courseCode)+' • '+esc(a.type)+(a.entranceExam?' • ENTRANCE EXAM':'')+'</div><h1 class="detail-title">'+esc(a.title)+'</h1><div class="detail-meta"><span>'+(template?'Reusable Template':esc(a.sectionName||"Assigned Section"))+'</span><span>'+esc(a.entranceExam?'Enrollment Gate':template?"Template":a.status)+'</span>'+(template||a.entranceExam?'':'<span>'+esc(dateText(a.opensAt))+'</span>')+'</div></div><div class="inline-actions">'+(a.entranceExam?'<button class="secondary-btn small-btn" data-phase3-action="open-entrance-section" data-section="'+esc(a.sectionId)+'">Manage Section</button>':(!template?'<button class="secondary-btn small-btn" data-phase3-action="edit-assignment" data-id="'+a.id+'">Edit Assignment</button>':''))+(a.entranceExam?'':'<button class="secondary-btn small-btn" data-phase3-action="edit-assessment">Edit Content</button>')+statusButton+(a.entranceExam?'':'<button class="danger-btn small-btn" data-phase3-action="delete-assessment" data-id="'+a.id+'">Delete Assessment</button>')+'</div></div>'+(a.instructions?'<p class="page-subtitle" style="margin-top:16px">'+esc(a.instructions)+'</p>':'')+'</div>'+
     (template?'<div class="workflow-strip"><div class="done"><span>1</span><strong>Template</strong></div><div class="'+(a.questionCount?"done":"current")+'"><span>2</span><strong>Question Bank</strong></div><div class="'+(a.questionCount?"current":"")+'"><span>3</span><strong>Assign</strong></div><div><span>4</span><strong>Publish</strong></div></div>':'')+
     assessmentTabs(tab)+'<div>'+body+'</div>';
+  if(tab==="analytics")window.TheoriaPhase5?.renderAssessmentAnalytics?.(P3.detail);
 }
 
 async function addItemsModal(){
@@ -2557,7 +2593,7 @@ async function renderSectionAssessments(){
 async function renderGradingPolicy(){
   const s=state(),section=s.currentSection,el=$("#phase3SectionTab");if(!section||!el)return;
   const secSnap=await getDoc(doc(db,"sections",section.id)),sec=secSnap.exists()?secSnap.data():section;
-  const policy=sec.gradingPolicy||{selectionOpen:true,selectionDeadline:null,examination:{semester:35,comprehensive:65},composite:{coursework:60,semester:15,comprehensive:25}};
+  const policy=sec.gradingPolicy||{selectionOpen:true,selectionDeadline:null,examination:{semester:35,comprehensive:65},composite:{coursework:60,semester:15,comprehensive:25},courseworkRules:{dropLowest:0,missingAsZero:false,latePenaltyPercent:0,categoryWeights:{}}};
   const pathSnap=await getDocs(collection(db,"sections",section.id,"gradingPathways"));
   const selections=pathSnap.docs.map(d=>({id:d.id,...d.data()}));
   el.innerHTML='<div class="grid-2"><div class="panel"><div class="panel-head"><div class="panel-title">Grading Pathway Policy</div></div><div class="panel-body"><form id="gradingPolicyForm">'+
@@ -2565,6 +2601,7 @@ async function renderGradingPolicy(){
     '<label class="checkbox-line" style="margin-bottom:16px"><input type="checkbox" name="selectionOpen" '+(policy.selectionOpen!==false?'checked':'')+'> Students may select/change pathways</label>'+
     '<div class="path-policy"><h4>Examination Pathway</h4><div class="form-grid"><div class="field"><label>Semester I Exam %</label><input name="examSemester" type="number" value="'+esc(policy.examination?.semester??35)+'"></div><div class="field"><label>Comprehensive Final %</label><input name="examFinal" type="number" value="'+esc(policy.examination?.comprehensive??65)+'"></div></div></div>'+
     '<div class="path-policy"><h4>Composite Pathway</h4><div class="form-grid"><div class="field"><label>Coursework %</label><input name="compCoursework" type="number" value="'+esc(policy.composite?.coursework??60)+'"></div><div class="field"><label>Semester I Exam %</label><input name="compSemester" type="number" value="'+esc(policy.composite?.semester??15)+'"></div><div class="field"><label>Comprehensive Final %</label><input name="compFinal" type="number" value="'+esc(policy.composite?.comprehensive??25)+'"></div></div></div>'+
+    '<div class="path-policy"><h4>Coursework Rules</h4><div class="compact-field-grid"><div class="field"><label>Drop Lowest</label><input name="dropLowest" type="number" min="0" max="20" value="'+esc(policy.courseworkRules?.dropLowest??0)+'"></div><div class="field"><label>Late Penalty</label><div class="input-with-suffix"><input name="latePenaltyPercent" type="number" min="0" max="100" value="'+esc(policy.courseworkRules?.latePenaltyPercent??0)+'"><span>%</span></div></div></div><label class="checkbox-line"><input type="checkbox" name="missingAsZero" '+(policy.courseworkRules?.missingAsZero?'checked':'')+'> Treat ungraded Missing items as zero in coursework calculations</label><div class="panel-subtitle" style="margin:12px 0 7px">Optional category weights. Leave all values at 0 for normal points-based grading.</div><div class="compact-field-grid">'+[...new Set((s.sectionData?.assignments||[]).map(a=>a.type||"Assignment"))].map(type=>'<div class="field"><label>'+esc(type)+' %</label><input class="category-weight-input" data-category="'+esc(type)+'" type="number" min="0" max="100" value="'+esc(policy.courseworkRules?.categoryWeights?.[type]??0)+'"></div>').join("")+'</div></div>'+
     '<button class="primary-btn" type="submit">Save Grading Policy</button></form></div></div>'+
     '<div class="panel"><div class="panel-head"><div class="panel-title">Student Selections</div></div><div class="panel-body">'+(selections.length?selections.map(x=>'<div class="selection-row"><div><strong>'+esc(x.studentName||x.studentId)+'</strong><span>'+esc(x.pathway==="examination"?"Examination Pathway":"Composite Pathway")+'</span></div><span class="badge '+(x.pathway==="examination"?'gold':'live')+'">'+esc(x.pathway)+'</span></div>').join(""):'<div class="empty-mini">No selections yet.</div>')+'</div></div></div>';
   $("#gradingPolicyForm").addEventListener("submit",async e=>{
@@ -2573,8 +2610,23 @@ async function renderGradingPolicy(){
     const composite={coursework:Number(fd.get("compCoursework")),semester:Number(fd.get("compSemester")),comprehensive:Number(fd.get("compFinal"))};
     if(examination.semester+examination.comprehensive!==100)return toast("Examination Pathway must total 100%.");
     if(composite.coursework+composite.semester+composite.comprehensive!==100)return toast("Composite Pathway must total 100%.");
-    const gradingPolicy={selectionOpen:e.currentTarget.elements.selectionOpen.checked,selectionDeadline:timestampFrom(fd.get("deadline")),examination,composite,updatedAt:serverTimestamp()};
-    try{await updateDoc(doc(db,"sections",section.id),{gradingPolicy,updatedAt:serverTimestamp()});section.gradingPolicy=gradingPolicy;toast("Grading policy saved.");await renderGradingPolicy();}catch(err){toast(err.message||"Unable to save grading policy.");}
+    const categoryWeights={};
+    [...e.currentTarget.querySelectorAll(".category-weight-input")].forEach(input=>{categoryWeights[input.dataset.category]=Number(input.value||0);});
+    const categoryTotal=Object.values(categoryWeights).reduce((n,x)=>n+Number(x||0),0);
+    if(categoryTotal!==0&&categoryTotal!==100)return toast("Coursework category weights must total 100%, or all remain 0 for points-based grading.");
+    const courseworkRules={
+      dropLowest:Math.max(0,Math.floor(Number(fd.get("dropLowest")||0))),
+      missingAsZero:e.currentTarget.elements.missingAsZero.checked,
+      latePenaltyPercent:Math.max(0,Math.min(100,Number(fd.get("latePenaltyPercent")||0))),
+      categoryWeights
+    };
+    const gradingPolicy={selectionOpen:e.currentTarget.elements.selectionOpen.checked,selectionDeadline:timestampFrom(fd.get("deadline")),examination,composite,courseworkRules,updatedAt:serverTimestamp()};
+    try{
+      await updateDoc(doc(db,"sections",section.id),{gradingPolicy,updatedAt:serverTimestamp()});
+      section.gradingPolicy=gradingPolicy;
+      if(window.TheoriaPhase5?.logSectionEvent)await window.TheoriaPhase5.logSectionEvent(section.id,"grading_policy_updated","section",section.id,{courseworkRules});
+      toast("Grading policy saved.");await renderGradingPolicy();
+    }catch(err){toast(err.message||"Unable to save grading policy.");}
   });
 }
 
@@ -2999,6 +3051,7 @@ document.addEventListener("click",async e=>{
   if(a==="bulk-import-questions")return bulkImportQuestionsModal();
   if(a==="auto-sort-question-bank")return autoSortQuestionBankModal(b.dataset.course);
   if(a==="delete-bank-question")return deleteBankQuestion(b.dataset.course,b.dataset.id);
+  if(a==="item-history")return itemHistoryModal(b.dataset.course,b.dataset.id);
   if(a==="edit-item")return itemModal(P3.items.find(x=>x.id===b.dataset.id&&x.courseId===b.dataset.course));
   if(a==="open-assessment")return openAssessment(b.dataset.id);
   if(a==="back-assessments"){clearInterval(P3.timer);P3.exam=null;core().setPage("assessments");return renderAssessments();}
@@ -3033,6 +3086,6 @@ document.addEventListener("click",async e=>{
   if(a==="calculator")return calculator();
 });
 
-window.TheoriaPhase3={renderSectionTab,renderAssessments,renderItemBank,openAssessment,configureEntranceExam,startEntranceExam:(id)=>startExam(id)};
+window.TheoriaPhase3={renderSectionTab,renderAssessments,renderItemBank,openAssessment,configureEntranceExam,startEntranceExam:(id)=>startExam(id),getCurrent:()=>P3.current,getDetail:()=>P3.detail};
 
 if(window.TheoriaCore)onReady();
