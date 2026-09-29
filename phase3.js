@@ -1423,17 +1423,133 @@ function renderAssessment(tab="overview"){
 
 async function addItemsModal(){
   await loadItems();
-  const a=P3.current,available=P3.items.filter(x=>x.courseId===a.courseId&&!P3.detail.questions.some(q=>q.itemId===x.id));
+  const a=P3.current;
+  const available=P3.items.filter(x=>x.courseId===a.courseId&&!P3.detail.questions.some(q=>q.itemId===x.id));
   if(!available.length)return toast("No unused Question Bank questions are available for this course.");
+
+  let fw={units:[],competencies:[]};
+  try{fw=await framework(a.courseId);}catch(error){console.warn("Unable to load course framework for assessment Question Bank:",error);}
+
+  const topicSortValue=value=>String(value||"").split(".").map(part=>String(Number(part)||0).padStart(4,"0")).join(".");
+  const groups=(core().unitFolderGroups?core().unitFolderGroups(available,fw):[])
+    .map(group=>({...group,items:[...group.items].sort((x,y)=>
+      topicSortValue(x.topicNumber).localeCompare(topicSortValue(y.topicNumber))
+      ||String(x.type||"").localeCompare(String(y.type||""))
+      ||String(x.prompt||"").localeCompare(String(y.prompt||""))
+    )}));
+  if(!groups.length)groups.push({id:"unsorted",unit:null,label:"Unsorted",items:[...available]});
+
+  const unitOptions='<option value="all">All Units ('+available.length+')</option>'+
+    groups.map(group=>'<option value="'+esc(group.id)+'">'+esc(group.label)+' ('+group.items.length+')</option>').join("");
+
+  const groupHtml=groups.map((group,index)=>{
+    const rows=group.items.map(x=>{
+      const searchText=[
+        x.prompt,x.type,x.topicNumber,x.topicTitle,x.unitTitle,x.difficulty,
+        ...(x.competencyCodes||[]),...(x.tags||[])
+      ].filter(Boolean).join(" ").toLowerCase();
+      return '<label class="item-select-row assessment-bank-item" data-unit="'+esc(group.id)+'" data-search="'+esc(searchText)+'">'+
+        '<input type="checkbox" name="item" value="'+x.id+'">'+
+        '<div><strong>'+esc(x.type)+' • '+esc(x.topicNumber||"No topic")+'</strong>'+
+        '<p>'+esc(x.prompt)+'</p>'+
+        '<span>'+esc(x.pointsDefault||1)+' pts • '+esc(x.difficulty||"Moderate")+(x.topicTitle?' • '+esc(x.topicTitle):'')+'</span></div></label>';
+    }).join("");
+    return '<details class="unit-folder assessment-bank-unit '+(group.id==="unsorted"?'unsorted-folder':'')+'" data-unit-group="'+esc(group.id)+'" '+(index===0?'open':'')+'>'+
+      '<summary><div class="unit-folder-icon">'+(group.id==="unsorted"?'?':esc(group.unit?.order||"U"))+'</div>'+
+      '<div><strong>'+esc(group.label)+'</strong><span>'+group.items.length+' available question'+(group.items.length===1?"":"s")+'</span></div>'+
+      '<div class="unit-folder-chevron">⌄</div></summary>'+
+      '<div class="unit-folder-body"><div class="assessment-unit-actions"><span>Choose questions from this unit</span><button type="button" class="text-btn" data-select-assessment-unit="'+esc(group.id)+'">Select Unit</button></div>'+
+      '<div class="item-select-list assessment-unit-question-list">'+rows+'</div></div>'+
+      '</details>';
+  }).join("");
+
   const modal=core().openModal({
     eyebrow:"Assessment Assembly",
     title:"Add Questions from Question Bank",
     wide:true,
-    body:'<form id="addItemsForm"><div class="field"><label>Examination Part</label><select name="partId">'+(a.parts||[]).map(p=>'<option value="'+p.id+'">'+esc(p.title)+'</option>').join("")+'</select></div>'+
-      '<div class="item-select-list">'+available.map(x=>'<label class="item-select-row"><input type="checkbox" name="item" value="'+x.id+'"><div><strong>'+esc(x.type)+' • '+esc(x.topicNumber||"No topic")+'</strong><p>'+esc(x.prompt)+'</p><span>'+esc(x.pointsDefault||1)+' pts • '+esc(x.difficulty||"Moderate")+'</span></div></label>').join("")+'</div>'+
-      '<div class="modal-foot" style="margin:24px -24px -24px"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Add Selected Items</button></div></form>'
+    body:'<form id="addItemsForm" class="academic-form">'+
+      '<section class="form-section assessment-bank-picker">'+
+        '<div class="form-section-head"><div><span>01</span><h3>Assessment Placement</h3><p>Choose the examination part, then browse the Question Bank by course unit.</p></div></div>'+
+        '<div class="assessment-bank-controls">'+
+          '<div class="field"><label>Examination Part</label><select name="partId">'+(a.parts||[]).map(p=>'<option value="'+p.id+'">'+esc(p.title)+'</option>').join("")+'</select></div>'+
+          '<div class="field"><label>Unit</label><select id="assessmentBankUnitFilter">'+unitOptions+'</select></div>'+
+          '<div class="field assessment-bank-search"><label>Search Questions</label><input id="assessmentBankSearch" type="search" placeholder="Prompt, topic, type, competency, tag…"></div>'+
+        '</div>'+
+      '</section>'+
+      '<section class="form-section">'+
+        '<div class="assessment-bank-selection-bar"><div><strong id="assessmentSelectedCount">0 selected</strong><span>'+available.length+' unused Question Bank question'+(available.length===1?"":"s")+' available</span></div>'+
+        '<div class="inline-actions"><button type="button" class="secondary-btn small-btn" id="selectVisibleAssessmentItems">Select Visible</button><button type="button" class="text-btn" id="clearAssessmentItems">Clear</button></div></div>'+
+        '<div id="assessmentBankUnitGroups" class="unit-folder-stack assessment-bank-unit-stack">'+groupHtml+'</div>'+
+        '<div id="assessmentBankNoMatch" class="empty-mini hidden">No questions match the current unit and search filters.</div>'+
+      '</section>'+
+      '<div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit" id="addSelectedAssessmentItems">Add Selected Questions</button></div>'+
+    '</form>'
   });
-  modal.querySelector("#addItemsForm").addEventListener("submit",async e=>{
+
+  const form=modal.querySelector("#addItemsForm");
+  const unitFilter=modal.querySelector("#assessmentBankUnitFilter");
+  const search=modal.querySelector("#assessmentBankSearch");
+  const selectedCount=modal.querySelector("#assessmentSelectedCount");
+  const submitButton=modal.querySelector("#addSelectedAssessmentItems");
+  const noMatch=modal.querySelector("#assessmentBankNoMatch");
+
+  const allChecks=()=>[...form.querySelectorAll('input[name="item"]')];
+  const updateSelectedCount=()=>{
+    const count=allChecks().filter(input=>input.checked).length;
+    selectedCount.textContent=count+" selected";
+    submitButton.textContent=count?"Add "+count+" Selected Question"+(count===1?"":"s"):"Add Selected Questions";
+  };
+
+  const updateFilters=()=>{
+    const selectedUnit=unitFilter.value;
+    const term=String(search.value||"").trim().toLowerCase();
+    let visibleTotal=0;
+
+    modal.querySelectorAll("[data-unit-group]").forEach(group=>{
+      const groupId=group.dataset.unitGroup;
+      const unitMatches=selectedUnit==="all"||selectedUnit===groupId;
+      let visibleInGroup=0;
+      group.querySelectorAll(".assessment-bank-item").forEach(row=>{
+        const searchMatches=!term||String(row.dataset.search||"").includes(term);
+        const visible=unitMatches&&searchMatches;
+        row.classList.toggle("hidden",!visible);
+        if(visible){visibleInGroup++;visibleTotal++;}
+      });
+      group.classList.toggle("hidden",visibleInGroup===0);
+      if((term||selectedUnit!=="all")&&visibleInGroup)group.open=true;
+    });
+
+    noMatch.classList.toggle("hidden",visibleTotal!==0);
+  };
+
+  form.addEventListener("change",e=>{
+    if(e.target.matches('input[name="item"]'))updateSelectedCount();
+  });
+  unitFilter.addEventListener("change",updateFilters);
+  search.addEventListener("input",updateFilters);
+
+  modal.querySelectorAll("[data-select-assessment-unit]").forEach(button=>{
+    button.addEventListener("click",()=>{
+      const group=modal.querySelector('[data-unit-group="'+CSS.escape(button.dataset.selectAssessmentUnit)+'"]');
+      if(!group)return;
+      group.querySelectorAll('input[name="item"]').forEach(input=>input.checked=true);
+      updateSelectedCount();
+    });
+  });
+
+  modal.querySelector("#selectVisibleAssessmentItems").addEventListener("click",()=>{
+    modal.querySelectorAll(".assessment-bank-item:not(.hidden) input[name='item']").forEach(input=>input.checked=true);
+    updateSelectedCount();
+  });
+  modal.querySelector("#clearAssessmentItems").addEventListener("click",()=>{
+    allChecks().forEach(input=>input.checked=false);
+    updateSelectedCount();
+  });
+
+  updateSelectedCount();
+  updateFilters();
+
+  form.addEventListener("submit",async e=>{
     e.preventDefault();
     const fd=new FormData(e.currentTarget),ids=fd.getAll("item");if(!ids.length)return toast("Select at least one item.");
     const batch=writeBatch(db),questionIds=P3.detail.questions.map(q=>q.id);
@@ -1445,7 +1561,13 @@ async function addItemsModal(){
       const points=Number(item.pointsDefault||1);
       if(!a.randomDrawEnabled)total+=points;
       questionPool.push({id:ref.id,itemId:item.id,type:item.type,points});
-      batch.set(ref,{itemId:item.id,order,partId:String(fd.get("partId")),type:item.type,prompt:item.prompt,stimulus:item.stimulus||"",sourceTitle:item.sourceTitle||"",options:item.options||[],points,topicId:item.topicId||"",topicTitle:item.topicTitle||"",topicNumber:item.topicNumber||"",competencyIds:item.competencyIds||[],competencyCodes:item.competencyCodes||[],createdAt:serverTimestamp()});
+      batch.set(ref,{
+        itemId:item.id,order,partId:String(fd.get("partId")),type:item.type,prompt:item.prompt,
+        stimulus:item.stimulus||"",sourceTitle:item.sourceTitle||"",options:item.options||[],points,
+        unitId:item.unitId||"",unitTitle:item.unitTitle||"",unitNumber:Number(item.unitNumber||0),
+        topicId:item.topicId||"",topicTitle:item.topicTitle||"",topicNumber:item.topicNumber||"",
+        competencyIds:item.competencyIds||[],competencyCodes:item.competencyCodes||[],createdAt:serverTimestamp()
+      });
       batch.set(doc(db,"assessments",a.id,"keys",ref.id),{itemId:item.id,correctAnswer:item.correctAnswer??"",explanation:item.explanation||"",rubric:item.rubric||[],createdAt:serverTimestamp()});
     }
     batch.update(doc(db,"assessments",a.id),{
@@ -1454,7 +1576,7 @@ async function addItemsModal(){
       totalPoints:a.randomDrawEnabled?Number(a.totalPoints||0):total,
       updatedAt:serverTimestamp()
     });
-    try{await batch.commit();core().closeModal();await openAssessment(a.id,"items");toast("questions added.");}catch(err){toast(err.message||"Unable to add questions.");}
+    try{await batch.commit();core().closeModal();await openAssessment(a.id,"items");toast(ids.length+" question"+(ids.length===1?"":"s")+" added.");}catch(err){toast(err.message||"Unable to add questions.");}
   });
 }
 
