@@ -2074,8 +2074,8 @@ async function configureEntranceExam(sectionId){
         status:"Published",
         opensAt:null,
         closesAt:null,
-        randomDrawEnabled:false,
-        randomDrawPlan:[],
+        randomDrawEnabled:!!template.randomDrawEnabled,
+        randomDrawPlan:(template.randomDrawPlan||[]).map(row=>({...row})),
         randomizeQuestions:!!template.randomizeQuestions,
         questionIds,
         questionPool:source.questions.map((q,index)=>({
@@ -2085,8 +2085,8 @@ async function configureEntranceExam(sectionId){
           points:Number(q.points||0)
         })),
         poolQuestionCount:source.questions.length,
-        questionCount:source.questions.length,
-        totalPoints:source.questions.reduce((n,q)=>n+Number(q.points||0),0),
+        questionCount:template.randomDrawEnabled?Number(template.questionCount||source.questions.length):source.questions.length,
+        totalPoints:template.randomDrawEnabled?Number(template.totalPoints||0):source.questions.reduce((n,q)=>n+Number(q.points||0),0),
         createdAt:serverTimestamp(),
         updatedAt:serverTimestamp()
       };
