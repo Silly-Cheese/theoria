@@ -134,6 +134,7 @@ function renderUser(user,profile){
 function canManageCourse(course){
   if(!course||state.role!=="instructor"||!state.user)return false;
   if(state.isSystemOwner)return true;
+  if(course.courseStaffRole==="coordinator")return true;
   return course.catalogCourse!==true && course.ownerId===state.user.uid;
 }
 
@@ -197,6 +198,16 @@ async function loadWorkspace(){
       catalogSnap.docs.forEach(d=>byId.set(d.id,{id:d.id,...d.data()}));
       ownedSnap.docs.forEach(d=>byId.set(d.id,{id:d.id,...d.data()}));
       courses=[...byId.values()];
+    }
+    // Resolve course-level academic roles. Course Coordinators can maintain
+    // frameworks and Question Banks without receiving System Owner powers.
+    if(!state.isSystemOwner){
+      for(const course of courses){
+        try{
+          const roleSnap=await getDoc(doc(db,"courses",course.id,"staff",state.user.uid));
+          if(roleSnap.exists())course.courseStaffRole=roleSnap.data().role||"coordinator";
+        }catch(_){}
+      }
     }
     state.courses=courses;
 
@@ -263,7 +274,7 @@ function courseCard(course){
     '<div class="card-kicker">'+esc(course.code || "THEO")+' • '+esc(course.level || "Advanced")+'</div>'+
     '<div class="catalog-course-title-row"><h3>'+esc(course.title || "Untitled Course")+'</h3>'+(official?'<span class="badge '+(course.catalogPublished?'live':'gold')+'">'+(course.catalogPublished?'Official Catalog':'Catalog Draft')+'</span>':'<span class="badge">Custom</span>')+'</div>'+
     '<p>'+esc(course.description || "No course description has been added yet.")+'</p>'+
-    '<div class="card-meta"><span>'+esc(course.discipline || "Theology")+'</span><span>'+esc(course.status || "Active")+'</span>'+(official?'<span>Master framework + Question Bank</span>':'')+(course.entranceExamRequired?'<span class="badge gold">Entrance Exam Required</span>':'')+'</div>'+
+    '<div class="card-meta"><span>'+esc(course.discipline || "Theology")+'</span><span>'+esc(course.status || "Active")+'</span>'+(official?'<span>Master framework + Question Bank</span>':'')+(course.entranceExamRequired?'<span class="badge gold">Entrance Exam Required</span>':'')+(course.courseStaffRole==="coordinator"?'<span class="badge live">Course Coordinator</span>':'')+'</div>'+
     '<div class="card-actions"><button class="secondary-btn small-btn" data-action="open-course" data-id="'+course.id+'">'+(manager?'Manage Course':'View Course')+'</button>'+
       (state.role==="instructor"&&(course.catalogPublished!==false||manager)?'<button class="primary-btn small-btn" data-action="create-section-course" data-id="'+course.id+'">Create Section</button>':'')+
     '</div>'+
