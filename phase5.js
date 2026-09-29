@@ -391,7 +391,13 @@ async function setEnrollmentLifecycle(studentId,status){
   const reason=prompt("Reason for "+status.toLowerCase()+"?")||"";
   try{
     if(status==="Completed"){
-      await updateDoc(doc(db,"sections",section.id,"members",studentId),{status:"completed",completedAt:serverTimestamp(),updatedAt:serverTimestamp()});
+      const batch=writeBatch(db);
+      batch.update(doc(db,"sections",section.id,"members",studentId),{status:"completed",completedAt:serverTimestamp(),updatedAt:serverTimestamp()});
+      batch.set(doc(db,"users",studentId,"enrollments",section.id),{
+        sectionId:section.id,courseId:section.courseId,courseCode:section.courseCode,courseTitle:section.courseTitle,
+        sectionName:section.sectionName,term:section.term,status:"Completed",completedAt:serverTimestamp(),updatedAt:serverTimestamp()
+      },{merge:true});
+      await batch.commit();
     }else{
       const batch=writeBatch(db);
       batch.delete(doc(db,"sections",section.id,"members",studentId));
@@ -631,6 +637,16 @@ async function enhanceSection(section,tab){
     }else if(role){
       hero.insertAdjacentHTML("beforeend",'<span class="badge">'+esc(ROLE_LABELS[role]||role)+'</span>');
     }
+  }
+  if(section.status==="Archived"){
+    $("#sectionDetail")?.classList.add("archived-section-view");
+    $("#sectionDetail")?.querySelectorAll("[data-action],[data-phase3-action],[data-phase4-action]").forEach(button=>{
+      const action=button.dataset.action||button.dataset.phase3Action||button.dataset.phase4Action||"";
+      const allowed=new Set(["section-tab","back-sections","open-assessment","assessment-tab","record-audit","record-history","portfolio","print-record","student-assessment-details","student-assessment-results","receipt","gradebook-jump"]);
+      if(!allowed.has(action))button.classList.add("hidden");
+    });
+    const hero=$("#sectionDetail .detail-hero");
+    if(hero&&!hero.querySelector(".archived-readonly-banner"))hero.insertAdjacentHTML("afterend",'<div class="notice archived-readonly-banner"><strong>Archived section — read only.</strong><span>Academic records, assessments, grades, and history are preserved. Restore the section from Academic Operations to resume teaching changes.</span></div>');
   }
   if(tab==="students"){
     const table=$("#sectionTabBody .data-table tbody");
