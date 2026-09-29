@@ -1529,6 +1529,11 @@ async function assessmentModal(existing){
           await batch.commit();
         }
       }
+      if(existing?.sectionId&&window.TheoriaPhase5?.logSectionEvent){
+        await window.TheoriaPhase5.logSectionEvent(existing.sectionId,"assessment_content_updated","assessment",id,{title:String(fd.get("title")||existing.title||""),questionCount:existing?P3.detail?.questions?.length:chosenQuestions.length});
+      }else if(window.TheoriaPhase5?.logCourseEvent){
+        await window.TheoriaPhase5.logCourseEvent(course.id,existing?"assessment_template_updated":"assessment_template_created","assessment",id,{title:String(fd.get("title")||""),questionCount:existing?P3.detail?.questions?.length:chosenQuestions.length});
+      }
       core().closeModal();await openAssessment(id);toast(existing?"Assessment updated.":(chosenQuestions.length?(randomDrawEnabled?"Randomized assessment template created from a "+chosenQuestions.length+"-question pool; each student receives "+plannedQuestionCount+".":"Assessment template created with "+chosenQuestions.length+" Question Bank question"+(chosenQuestions.length===1?"":"s")+"."):"Assessment template created. You can add questions from the Questions tab."));
     }catch(err){toast(err.message||"Unable to save assessment.");}
   };
@@ -2244,6 +2249,7 @@ async function configureEntranceExam(sectionId){
       core().closeModal();
       await core().reloadCurrentSection("overview");
       const sourceLabel=(template.courseCode||sourceCourse.code||"Prerequisite course");
+      if(window.TheoriaPhase5?.logSectionEvent)await window.TheoriaPhase5.logSectionEvent(section.id,"entrance_exam_configured","assessment",ref.id,{sourceCourseId:template.courseId,sourceCourseCode:template.courseCode||sourceCourse.code||"",templateId:template.id,passPercent});
       toast("Entrance examination configured from "+sourceLabel+". Students must earn "+passPercent+"% before enrollment.");
     }catch(error){
       button.disabled=false;button.textContent=section.entranceAssessmentId?"Replace Entrance Exam":"Configure Entrance Exam";
@@ -2563,7 +2569,11 @@ async function setStatus(status){
   batch.update(doc(db,"assessments",a.id),{status,questionIds:P3.detail.questions.map(q=>q.id),updatedAt:serverTimestamp()});
   if(status==="Draft")batch.delete(doc(db,"sections",a.sectionId,"assessmentRefs",a.id));
   else batch.set(doc(db,"sections",a.sectionId,"assessmentRefs",a.id),{assessmentId:a.id,title:a.title,type:a.type,assessmentType:a.type,totalPoints:Number(a.totalPoints||0),status,opensAt:a.opensAt||null,closesAt:a.closesAt||null,durationMinutes:a.durationMinutes||0,updatedAt:serverTimestamp()},{merge:true});
-  try{await batch.commit();await openAssessment(a.id);await renderAssessments();toast("Assessment "+status.toLowerCase()+".");}catch(err){toast(err.message||"Unable to update assessment.");}
+  try{
+    await batch.commit();
+    if(a.sectionId&&window.TheoriaPhase5?.logSectionEvent)await window.TheoriaPhase5.logSectionEvent(a.sectionId,"assessment_status_changed","assessment",a.id,{title:a.title||"",status});
+    await openAssessment(a.id);await renderAssessments();toast("Assessment "+status.toLowerCase()+".");
+  }catch(err){toast(err.message||"Unable to update assessment.");}
 }
 
 /* -------------------- SECTION ASSESSMENTS / PATHWAYS -------------------- */
