@@ -281,6 +281,13 @@ service cloud.firestore {
       allow delete: if isSelf(userId);
     }
 
+    match /academicAccess/{userId} {
+      allow read: if isSelf(userId) || isInstructor();
+      allow create, update: if isInstructor()
+        && request.resource.data.studentId == userId;
+      allow delete: if isSystemOwner();
+    }
+
     match /system/{systemDoc} {
       allow read: if signedIn();
       allow create: if systemDoc == 'owner'
