@@ -1481,3 +1481,14 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .assessment-create-unit-stack{display:grid;gap:9px}
 .assessment-create-unit-stack .unit-question-picker{max-height:none;overflow:visible;padding-right:0}
 .assessment-create-unit-stack .unit-folder-body{padding:10px}
+
+/* Enrollment administration + entrance examinations */
+.delete-impact-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}
+.delete-impact-grid>div{padding:11px 12px;border:1px solid var(--line);border-radius:7px;background:#faf8f3}
+.delete-impact-grid span{display:block;font-size:7px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.delete-impact-grid strong{display:block;margin-top:4px;font-size:10px;color:var(--ink)}
+.entrance-exam-panel{border-left:3px solid var(--burgundy)}
+.entrance-exam-panel .panel-subtitle{margin-top:3px;font-size:8px;line-height:1.45;color:var(--muted)}
+@media(max-width:700px){
+  .delete-impact-grid{grid-template-columns:1fr}
+}
