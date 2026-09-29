@@ -1921,12 +1921,12 @@ async function configureEntranceExam(sectionId){
   if(!section)return toast("Section not found.");
 
   await loadAssessments();
-  const templates=P3.assessments.filter(a=>!a.sectionId&&a.courseId===section.courseId&&Number(a.questionCount||a.questionIds?.length||0)>0);
+  const templates=P3.assessments.filter(a=>!a.sectionId&&a.courseId===section.courseId&&a.mode!=="oral"&&Number(a.questionCount||a.questionIds?.length||0)>0);
   if(!templates.length){
     const modal=core().openModal({
       eyebrow:"Entrance Examination",
       title:"Create an Assessment Template First",
-      body:'<div class="academic-banner"><div class="kicker">'+esc(section.courseCode||"Course")+'</div><h3>'+esc(section.courseTitle||"Course")+'</h3><p>Entrance examinations are built from the same reusable Question Bank assessment templates used elsewhere in Theoria.</p></div><div class="notice"><strong>No eligible assessment templates exist for this course yet.</strong><p>Create an assessment template, choose its Question Bank items, then return here to assign it as the entrance examination.</p></div>',
+      body:'<div class="academic-banner"><div class="kicker">'+esc(section.courseCode||"Course")+'</div><h3>'+esc(section.courseTitle||"Course")+'</h3><p>Entrance examinations are built from the same reusable Question Bank assessment templates used elsewhere in Theoria.</p></div><div class="notice"><strong>No eligible written assessment templates exist for this course yet.</strong><p>Create an assessment template, choose its Question Bank items, then return here to assign it as the entrance examination.</p></div>',
       footer:'<button class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" id="createEntranceTemplate">Create Assessment Template</button>'
     });
     modal.querySelector("#createEntranceTemplate").onclick=()=>{core().closeModal();core().setPage("assessments");setTimeout(()=>assessmentModal(),60);};
