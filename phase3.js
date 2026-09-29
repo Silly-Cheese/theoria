@@ -1643,12 +1643,13 @@ function renderAssessment(tab="overview"){
   if(template&&(tab==="candidates"||tab==="grading"))tab="overview";
   const body=tab==="items"?itemsView():tab==="candidates"?candidatesView():tab==="grading"?gradingView():overviewView();
   let statusButton="";
-  if(template)statusButton='<button class="primary-btn small-btn" data-phase3-action="assign-assessment" data-id="'+a.id+'">Assign to Section</button>';
+  if(a.entranceExam===true)statusButton='';
+  else if(template)statusButton='<button class="primary-btn small-btn" data-phase3-action="assign-assessment" data-id="'+a.id+'">Assign to Section</button>';
   else if(a.status==="Draft")statusButton='<button class="primary-btn small-btn" data-phase3-action="publish">Publish to Students</button>';
   else if(a.status==="Published")statusButton='<button class="secondary-btn small-btn" data-phase3-action="close">Close</button>';
   else statusButton='<button class="secondary-btn small-btn" data-phase3-action="reopen">Reopen</button>';
   $("#assessmentDetail").innerHTML='<button class="text-btn" data-phase3-action="back-assessments">← Assessments</button>'+
-    '<div class="detail-hero"><div class="detail-top"><div><div class="eyebrow">'+esc(a.courseCode)+' • '+esc(a.type)+'</div><h1 class="detail-title">'+esc(a.title)+'</h1><div class="detail-meta"><span>'+(template?'Reusable Template':esc(a.sectionName||"Assigned Section"))+'</span><span>'+esc(template?"Template":a.status)+'</span>'+(template?'':'<span>'+esc(dateText(a.opensAt))+'</span>')+'</div></div><div class="inline-actions">'+(!template?'<button class="secondary-btn small-btn" data-phase3-action="edit-assignment" data-id="'+a.id+'">Edit Assignment</button>':'')+'<button class="secondary-btn small-btn" data-phase3-action="edit-assessment">Edit Content</button>'+statusButton+'<button class="danger-btn small-btn" data-phase3-action="delete-assessment" data-id="'+a.id+'">Delete Assessment</button></div></div>'+(a.instructions?'<p class="page-subtitle" style="margin-top:16px">'+esc(a.instructions)+'</p>':'')+'</div>'+
+    '<div class="detail-hero"><div class="detail-top"><div><div class="eyebrow">'+esc(a.courseCode)+' • '+esc(a.type)+(a.entranceExam?' • ENTRANCE EXAM':'')+'</div><h1 class="detail-title">'+esc(a.title)+'</h1><div class="detail-meta"><span>'+(template?'Reusable Template':esc(a.sectionName||"Assigned Section"))+'</span><span>'+esc(a.entranceExam?'Enrollment Gate':template?"Template":a.status)+'</span>'+(template||a.entranceExam?'':'<span>'+esc(dateText(a.opensAt))+'</span>')+'</div></div><div class="inline-actions">'+(a.entranceExam?'<button class="secondary-btn small-btn" data-phase3-action="open-entrance-section" data-section="'+esc(a.sectionId)+'">Manage Section</button>':(!template?'<button class="secondary-btn small-btn" data-phase3-action="edit-assignment" data-id="'+a.id+'">Edit Assignment</button>':''))+'<button class="secondary-btn small-btn" data-phase3-action="edit-assessment">Edit Content</button>'+statusButton+(a.entranceExam?'':'<button class="danger-btn small-btn" data-phase3-action="delete-assessment" data-id="'+a.id+'">Delete Assessment</button>')+'</div></div>'+(a.instructions?'<p class="page-subtitle" style="margin-top:16px">'+esc(a.instructions)+'</p>':'')+'</div>'+
     (template?'<div class="workflow-strip"><div class="done"><span>1</span><strong>Template</strong></div><div class="'+(a.questionCount?"done":"current")+'"><span>2</span><strong>Question Bank</strong></div><div class="'+(a.questionCount?"current":"")+'"><span>3</span><strong>Assign</strong></div><div><span>4</span><strong>Publish</strong></div></div>':'')+
     assessmentTabs(tab)+'<div>'+body+'</div>';
 }
@@ -2197,6 +2198,7 @@ async function deleteAssessment(assessmentId){
   if(!P3.current || P3.current.id!==assessmentId) await openAssessment(assessmentId);
   const a=P3.current,d=P3.detail;
   if(!a)return toast("Assessment not found.");
+  if(a.entranceExam===true)return toast("Entrance examinations are managed from the section. Replace the entrance exam or delete the section instead.");
 
   const assigned=!!a.sectionId;
   let unresolvedAppeals=[],portfolioDocs=[],sectionGradeDocs=[];
