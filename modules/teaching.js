@@ -198,13 +198,20 @@ async function extensionsModal(sectionId=section()?.id){
 /* -------------------- STUDENT GROUPS -------------------- */
 
 async function groupsModal(sectionId=section()?.id){
-  const members=sectionData()?.members||[],groups=await docs(["sections",sectionId,"groups"]);
+  const members=sectionData()?.members||[],groups=await docs(["sections",sectionId,"groups"]),groupAssignments=await docs(["sections",sectionId,"groupAssignments"]);
+  const groupAssignmentMap=new Map();
+  groupAssignments.forEach(row=>{if(!groupAssignmentMap.has(row.groupId))groupAssignmentMap.set(row.groupId,[]);groupAssignmentMap.get(row.groupId).push(row);});
   const m=modal({
     eyebrow:"Student Groups",
-    title:"Seminar & Project Groups",
+    title:"Seminar, Project & Group Coursework",
     wide:true,
-    body:'<div class="page-head compact-head"><div><div class="panel-title">Groups</div><p class="page-subtitle">Create seminar, discussion, and project teams.</p></div><button class="primary-btn small-btn" data-teaching-action="new-group" data-section="'+sectionId+'">Create Group</button></div>'+
-      (groups.length?'<div class="group-grid">'+groups.map(g=>'<article class="group-card"><div class="card-kicker">'+safe(g.memberIds).length+' members</div><h3>'+esc(g.name||"Group")+'</h3><p>'+esc(g.purpose||"")+'</p><div class="item-tags">'+safe(g.memberIds).map(id=>'<span>'+esc(members.find(x=>x.id===id)?.displayName||id)+'</span>').join("")+'</div><div class="card-actions"><button class="secondary-btn small-btn" data-teaching-action="edit-group" data-section="'+sectionId+'" data-id="'+g.id+'">Edit</button><button class="text-btn danger-text" data-teaching-action="delete-group" data-section="'+sectionId+'" data-id="'+g.id+'">Delete</button></div></article>').join("")+'</div>':'<div class="empty-mini">No groups created.</div>'),
+    body:'<div class="page-head compact-head"><div><div class="panel-title">Groups</div><p class="page-subtitle">Create student teams, attach existing coursework, and choose shared or individual grading.</p></div><button class="primary-btn small-btn" data-teaching-action="new-group" data-section="'+sectionId+'">Create Group</button></div>'+
+      (groups.length?'<div class="group-grid">'+groups.map(g=>{
+        const work=groupAssignmentMap.get(g.id)||[];
+        return '<article class="group-card"><div class="card-kicker">'+safe(g.memberIds).length+' members • '+work.length+' group assignment'+(work.length===1?"":"s")+'</div><h3>'+esc(g.name||"Group")+'</h3><p>'+esc(g.purpose||"")+'</p><div class="item-tags">'+safe(g.memberIds).map(id=>'<span>'+esc(members.find(x=>x.id===id)?.displayName||id)+'</span>').join("")+'</div>'+
+          (work.length?'<div class="group-work-list">'+work.map(row=>'<div class="group-work-row"><div><strong>'+esc(row.assignmentTitle||"Assignment")+'</strong><span>'+esc(row.gradingMode||"Individual")+' grading</span></div>'+(row.gradingMode==="Shared"?'<button class="text-btn" data-teaching-action="grade-group-work" data-section="'+sectionId+'" data-id="'+row.id+'">Grade Group</button>':'<span class="badge">Use Gradebook</span>')+'</div>').join("")+'</div>':'')+
+          '<div class="card-actions"><button class="secondary-btn small-btn" data-teaching-action="assign-group-work" data-section="'+sectionId+'" data-group="'+g.id+'">Assign Group Work</button><button class="secondary-btn small-btn" data-teaching-action="edit-group" data-section="'+sectionId+'" data-id="'+g.id+'">Edit</button><button class="text-btn danger-text" data-teaching-action="delete-group" data-section="'+sectionId+'" data-id="'+g.id+'">Delete</button></div></article>';
+      }).join("")+'</div>':'<div class="empty-mini">No groups created.</div>'),
     footer:'<button class="primary-btn" data-close-modal>Done</button>'
   });
 }
@@ -221,6 +228,60 @@ async function groupEditor(sectionId,groupId=""){
     try{if(existing)await updateDoc(doc(db,"sections",sectionId,"groups",existing.id),data);else await addDoc(collection(db,"sections",sectionId,"groups"),{...data,createdAt:serverTimestamp()});closeModal();toast("Group saved.");await groupsModal(sectionId);}catch(error){toast(error.message||"Unable to save group.");}
   };
 }
+
+async function groupAssignmentModal(sectionId,groupId){
+  const groups=await docs(["sections",sectionId,"groups"]),group=groups.find(x=>x.id===groupId),assignments=(sectionData()?.assignments||[]).filter(a=>a.status!=="Draft");
+  if(!group)return toast("Group not found.");
+  if(!assignments.length)return toast("Publish at least one assignment before attaching group work.");
+  const m=modal({
+    eyebrow:"Group Coursework",
+    title:"Assign Work — "+(group.name||"Group"),
+    body:'<form id="groupAssignmentForm"><div class="field"><label>Coursework</label><select name="assignmentId">'+assignments.map(a=>'<option value="'+a.id+'">'+esc(a.title||"Assignment")+' • '+esc(a.points||0)+' pts</option>').join("")+'</select></div><div class="field"><label>Grading Model</label><select name="gradingMode"><option>Shared</option><option>Individual</option></select></div><div class="notice"><strong>Shared:</strong> one score/comment is copied to every current group member. <strong>Individual:</strong> the grouping is recorded, but each student is graded independently in the normal Gradebook.</div><div class="modal-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Attach Group Work</button></div></form>'
+  });
+  m.querySelector("#groupAssignmentForm").onsubmit=async e=>{
+    e.preventDefault();const fd=new FormData(e.currentTarget),assignmentId=String(fd.get("assignmentId")),assignment=assignments.find(a=>a.id===assignmentId),gradingMode=String(fd.get("gradingMode")||"Individual");
+    try{
+      await setDoc(doc(db,"sections",sectionId,"groupAssignments",groupId+"_"+assignmentId),{
+        groupId,groupName:group.name||"Group",memberIds:safe(group.memberIds),assignmentId,assignmentTitle:assignment?.title||"Assignment",
+        gradingMode,createdBy:state().user.uid,createdAt:serverTimestamp(),updatedAt:serverTimestamp()
+      },{merge:true});
+      await p5()?.logSectionEvent?.(sectionId,"group_assignment_created","group",groupId,{assignmentId,gradingMode});
+      closeModal();toast("Group work attached.");await groupsModal(sectionId);
+    }catch(error){toast(error.message||"Unable to attach group work.");}
+  };
+}
+
+async function gradeGroupWork(sectionId,groupAssignmentId){
+  const [groupAssignments,groups]=await Promise.all([docs(["sections",sectionId,"groupAssignments"]),docs(["sections",sectionId,"groups"])]);
+  const row=groupAssignments.find(x=>x.id===groupAssignmentId);if(!row)return toast("Group assignment not found.");
+  const group=groups.find(x=>x.id===row.groupId);if(!group)return toast("Group not found.");
+  const assignment=(sectionData()?.assignments||[]).find(a=>a.id===row.assignmentId);if(!assignment)return toast("Assignment not found.");
+  if(row.gradingMode!=="Shared")return toast("This group assignment uses individual grading. Grade students from the normal Gradebook.");
+  const members=safe(group.memberIds).map(memberById).filter(Boolean);
+  if(!members.length)return toast("This group has no enrolled members.");
+  const m=modal({
+    eyebrow:"Shared Group Grade",
+    title:(group.name||"Group")+" — "+(assignment.title||"Assignment"),
+    body:'<form id="sharedGroupGradeForm"><div class="notice">This score will be written as an individual grade record for each current group member, with a shared-group audit marker. You can still override an individual student later with a reason.</div><div class="field"><label>Score</label><div class="input-with-suffix"><input name="score" type="number" min="0" max="'+esc(assignment.points||0)+'" step="0.1" required><span>/ '+esc(assignment.points||0)+'</span></div></div><div class="field"><label>Group Feedback</label><textarea name="comment"></textarea></div><div class="item-tags">'+members.map(m=>'<span>'+esc(m.displayName||"Student")+'</span>').join("")+'</div><div class="modal-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Apply Shared Grade</button></div></form>'
+  });
+  m.querySelector("#sharedGroupGradeForm").onsubmit=async e=>{
+    e.preventDefault();const fd=new FormData(e.currentTarget),score=Number(fd.get("score")||0),comment=String(fd.get("comment")||"").trim();
+    if(score>Number(assignment.points||0))return toast("The shared score cannot exceed the assignment point value.");
+    try{
+      const batch=writeBatch(db);
+      members.forEach(student=>batch.set(doc(db,"sections",sectionId,"grades",assignment.id+"_"+student.id),{
+        assignmentId:assignment.id,assignmentTitle:assignment.title||"Assignment",studentId:student.id,studentName:student.displayName||"Student",
+        score,maxPoints:Number(assignment.points||0),gradeStatus:"Normal",comment,groupGrade:true,groupId:group.id,groupName:group.name||"Group",
+        groupAssignmentId,updatedAt:serverTimestamp()
+      },{merge:true}));
+      batch.update(doc(db,"sections",sectionId,"groupAssignments",groupAssignmentId),{lastSharedScore:score,lastGradedAt:serverTimestamp(),updatedAt:serverTimestamp()});
+      await batch.commit();
+      await p5()?.logSectionEvent?.(sectionId,"shared_group_grade_applied","group",group.id,{assignmentId:assignment.id,score,memberIds:members.map(x=>x.id)});
+      closeModal();toast("Shared group grade applied to "+members.length+" student"+(members.length===1?"":"s")+".");await core().reloadCurrentSection("gradebook");
+    }catch(error){toast(error.message||"Unable to apply the shared group grade.");}
+  };
+}
+
 
 /* -------------------- FLAGS + NARRATIVES + PROFILE DRAWER -------------------- */
 
@@ -557,6 +618,8 @@ function bind(){
     if(a==="groups"){closeModal();return groupsModal(sid);}
     if(a==="new-group"){closeModal();return groupEditor(sid);}
     if(a==="edit-group"){closeModal();return groupEditor(sid,b.dataset.id);}
+    if(a==="assign-group-work"){closeModal();return groupAssignmentModal(sid,b.dataset.group);}
+    if(a==="grade-group-work"){closeModal();return gradeGroupWork(sid,b.dataset.id);}
     if(a==="delete-group"){if(confirm("Delete this student group?")){await deleteDoc(doc(db,"sections",sid,"groups",b.dataset.id));closeModal();return groupsModal(sid);}return;}
     if(a==="student-directory"){closeModal();return studentDirectory();}
     if(a==="student-profile"){closeModal();return studentProfileModal(b.dataset.student);}
