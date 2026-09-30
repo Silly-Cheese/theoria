@@ -55,7 +55,7 @@ async function loadSectionProductivity(section){
     getCollection(["sections",sid,"assignments"]),
     getCollection(["sections",sid,"assessmentRefs"]),
     getCollection(["sections",sid,"announcements"]),
-    getCollection(["sections",sid,"calendarEvents"]),
+    getCollection(["sections",sid,"events"]),
     getCollection(["sections",sid,"extensions"])
   ]);
   return {section,assignments,refs,announcements,events,extensions};
@@ -129,7 +129,7 @@ async function createCalendarEventModal(){
   m.querySelector("#calendarEventForm").onsubmit=async e=>{
     e.preventDefault();const fd=new FormData(e.currentTarget),sectionId=String(fd.get("sectionId")),start=new Date(String(fd.get("startAt")));
     try{
-      await addDoc(collection(db,"sections",sectionId,"calendarEvents"),{
+      await addDoc(collection(db,"sections",sectionId,"events"),{
         title:String(fd.get("title")).trim(),type:String(fd.get("type")),startAt:Timestamp.fromDate(start),
         notes:String(fd.get("notes")||"").trim(),createdBy:state().user.uid,createdAt:serverTimestamp(),updatedAt:serverTimestamp()
       });
