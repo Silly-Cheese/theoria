@@ -341,21 +341,50 @@ async function renderInsights(){
 
 /* -------------------- ASSESSMENT SECURITY -------------------- */
 
+async function hashCode(value){
+  const bytes=new TextEncoder().encode(String(value||""));
+  const digest=await crypto.subtle.digest("SHA-256",bytes);
+  return [...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,"0")).join("");
+}
+
 async function assessmentSecurityModal(assessmentId){
-  const snap=await getDoc(doc(db,"assessments",assessmentId));if(!snap.exists())return toast("Assessment not found.");
-  const a={id:snap.id,...snap.data()},p=a.securityPolicy||{};
-  const m=modal({
-    eyebrow:"Assessment Security Center",
-    title:a.title||"Assessment",
-    wide:true,
-    body:'<form id="securityForm"><div class="academic-banner"><div class="kicker">Attempt & Session Controls</div><h3>Security Policy</h3><p>These controls support academic integrity. They do not attempt invasive device surveillance.</p></div><div class="policy-grid"><label class="policy-card"><input type="checkbox" name="requireAccessCode" '+(p.requireAccessCode?'checked':'')+'><div><strong>Access Code</strong><span>Require an instructor-provided code before starting.</span></div></label><label class="policy-card"><input type="checkbox" name="blockPaste" '+(p.blockPaste?'checked':'')+'><div><strong>Block Paste</strong><span>Prevent paste inside written-response fields.</span></div></label><label class="policy-card"><input type="checkbox" name="logFocusLoss" '+(p.logFocusLoss!==false?'checked':'')+'><div><strong>Log Focus Changes</strong><span>Record visibility/focus changes in the attempt event log.</span></div></label><label class="policy-card"><input type="checkbox" name="lateEntryBlocked" '+(p.lateEntryBlocked?'checked':'')+'><div><strong>Block Late Entry</strong><span>Do not allow a new attempt to begin after the close time.</span></div></label></div><div class="compact-field-grid"><div class="field"><label>Access Code</label><input name="accessCode" value="'+esc(p.accessCode||"")+'"></div><div class="field"><label>Maximum Attempts</label><input name="maxAttempts" type="number" min="1" max="10" value="'+esc(p.maxAttempts||1)+'"></div></div><div class="modal-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Security Policy</button></div></form>'
-  });
-  m.querySelector("#securityForm").onsubmit=async e=>{
-    e.preventDefault();const fd=new FormData(e.currentTarget),policy={requireAccessCode:e.currentTarget.elements.requireAccessCode.checked,accessCode:String(fd.get("accessCode")||"").trim(),blockPaste:e.currentTarget.elements.blockPaste.checked,logFocusLoss:e.currentTarget.elements.logFocusLoss.checked,lateEntryBlocked:e.currentTarget.elements.lateEntryBlocked.checked,maxAttempts:Math.max(1,Number(fd.get("maxAttempts")||1))};
-    if(policy.requireAccessCode&&!policy.accessCode)return toast("Enter an access code or disable the access-code requirement.");
-    try{await updateDoc(doc(db,"assessments",assessmentId),{securityPolicy:policy,updatedAt:serverTimestamp()});if(a.sectionId)await p5()?.logSectionEvent?.(a.sectionId,"assessment_security_updated","assessment",assessmentId,{...policy,accessCode:policy.requireAccessCode?"configured":""});closeModal();toast("Assessment security policy saved.");}catch(error){toast(error.message||"Unable to save security policy.");}
+  if(window.TheoriaPhase3?.openAssessment)return window.TheoriaPhase3.openAssessment(assessmentId,"security");
+}
+
+async function renderAssessmentSecurity(detail){
+  const root=$("#phase6AssessmentSecurity");if(!root||!detail?.assessment)return;
+  const a=detail.assessment,p=a.securityPolicy||{};
+  root.innerHTML='<form id="phase6SecurityForm" class="academic-form">'+
+    '<div class="academic-banner"><div class="kicker">Assessment Security Center</div><h3>Attempt & Session Policy</h3><p>Use proportionate academic-integrity controls without invasive device surveillance. Security events are recorded in the existing attempt event log.</p></div>'+
+    '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Attempt Controls</h3><p>Control entry timing, retakes, and acknowledgement.</p></div></div><div class="compact-field-grid"><div class="field"><label>Maximum Attempts</label><input name="maxAttempts" type="number" min="1" max="10" value="'+esc(p.maxAttempts||1)+'"></div><div class="field"><label>Late Entry</label><select name="lateEntryPolicy"><option value="allow">Allow while assessment is open</option><option value="deny-after-start">Deny after opening grace period</option></select></div><div class="field"><label>Late Entry Grace</label><div class="input-with-suffix"><input name="lateEntryGraceMinutes" type="number" min="0" max="1440" value="'+esc(p.lateEntryGraceMinutes||0)+'"><span>min</span></div></div></div><label class="policy-card"><input type="checkbox" name="honorAcknowledgement" '+(p.honorAcknowledgement?'checked':'')+'><div><strong>Academic Integrity Acknowledgement</strong><span>Require the student to affirm the instructor’s integrity expectations before the attempt begins.</span></div></label></section>'+
+    '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Session Expectations</h3><p>Configure browser-session signals that Theoria may record for instructor review.</p></div></div><div class="policy-grid"><label class="policy-card"><input type="checkbox" name="fullscreenExpectation" '+(p.fullscreenExpectation?'checked':'')+'><div><strong>Fullscreen Expected</strong><span>Tell students fullscreen is expected and permit fullscreen-change logging.</span></div></label><label class="policy-card"><input type="checkbox" name="logFocusLoss" '+(p.logFocusLoss!==false?'checked':'')+'><div><strong>Log Focus Changes</strong><span>Record focus/visibility changes as attempt events.</span></div></label><label class="policy-card"><input type="checkbox" name="blockPaste" '+(p.blockPaste?'checked':'')+'><div><strong>Block Paste</strong><span>Prevent paste into assessment response fields.</span></div></label><label class="policy-card"><input type="checkbox" name="logCopy" '+(p.logCopy!==false?'checked':'')+'><div><strong>Log Copy Events</strong><span>Record copy actions during the assessment session.</span></div></label></div></section>'+
+    '<section class="form-section"><div class="form-section-head"><div><span>03</span><h3>Access Code</h3><p>Optionally require a code before the official attempt begins.</p></div></div><label class="policy-card"><input type="checkbox" name="accessCodeConfigured" '+(p.accessCodeConfigured?'checked':'')+'><div><strong>Require Access Code</strong><span>The stored value is hashed; instructors can replace it but cannot read the previous code.</span></div></label><div class="field" style="margin-top:12px"><label>'+(p.accessCodeConfigured?'Replace Access Code (leave blank to keep current)':'Access Code')+'</label><input name="accessCode" type="password" autocomplete="new-password"></div></section>'+
+    '<div class="modal-foot form-sticky-foot"><button class="primary-btn" type="submit">Save Security Policy</button></div></form>';
+  const form=root.querySelector("#phase6SecurityForm");form.elements.lateEntryPolicy.value=p.lateEntryPolicy||"allow";
+  form.onsubmit=async e=>{
+    e.preventDefault();const fd=new FormData(form),code=String(fd.get("accessCode")||"").trim(),configured=form.elements.accessCodeConfigured.checked;
+    const policy={
+      maxAttempts:Math.max(1,Math.floor(Number(fd.get("maxAttempts")||1))),
+      lateEntryPolicy:String(fd.get("lateEntryPolicy")||"allow"),
+      lateEntryGraceMinutes:Math.max(0,Number(fd.get("lateEntryGraceMinutes")||0)),
+      honorAcknowledgement:form.elements.honorAcknowledgement.checked,
+      fullscreenExpectation:form.elements.fullscreenExpectation.checked,
+      logFocusLoss:form.elements.logFocusLoss.checked,
+      blockPaste:form.elements.blockPaste.checked,
+      logCopy:form.elements.logCopy.checked,
+      accessCodeConfigured:configured,
+      accessCodeHash:configured?(code?await hashCode(code):(p.accessCodeHash||"")):"",
+      updatedAt:serverTimestamp()
+    };
+    if(configured&&!policy.accessCodeHash)return toast("Enter an access code.");
+    try{
+      await updateDoc(doc(db,"assessments",a.id),{securityPolicy:policy,updatedAt:serverTimestamp()});
+      if(a.sectionId)await p5()?.logSectionEvent?.(a.sectionId,"assessment_security_updated","assessment",a.id,{maxAttempts:policy.maxAttempts,lateEntryPolicy:policy.lateEntryPolicy,fullscreenExpectation:policy.fullscreenExpectation,accessCodeConfigured:policy.accessCodeConfigured});
+      Object.assign(a,{securityPolicy:policy});toast("Assessment security policy saved.");
+    }catch(error){toast(error.message||"Unable to save the security policy.");}
   };
 }
+
 async function preflightSecurity(assessment){
   const p=assessment?.securityPolicy||{},uid=state()?.user?.uid;if(!uid)return false;
   if(p.lateEntryBlocked&&assessment.closesAt){
@@ -414,23 +443,35 @@ async function questionQualityModal(courseId,itemId){
 
 /* -------------------- BLUEPRINT DESIGNER -------------------- */
 
-async function blueprintDesigner(assessmentId){
-  const aSnap=await getDoc(doc(db,"assessments",assessmentId));if(!aSnap.exists())return;
-  const a={id:aSnap.id,...aSnap.data()},qSnap=await getDocs(collection(db,"assessments",assessmentId,"questions")),questions=qSnap.docs.map(d=>({id:d.id,...d.data()}));
-  const byUnit=new Map(),byCog=new Map(),total=questions.reduce((n,q)=>n+Number(q.points||0),0);
-  questions.forEach(q=>{const u=q.unitTitle||q.unitId||"Unmapped";byUnit.set(u,(byUnit.get(u)||0)+Number(q.points||0));const c=q.cognitiveLevel||"Unspecified";byCog.set(c,(byCog.get(c)||0)+Number(q.points||0));});
-  const target=a.blueprintDesign||{};
-  const m=modal({
-    eyebrow:"Assessment Blueprint Designer",
-    title:a.title||"Assessment",
-    wide:true,
-    body:'<form id="blueprintDesignForm"><div class="academic-banner"><div class="kicker">Blueprint Intelligence</div><h3>Actual vs. Intended Coverage</h3><p>Set optional targets. Theoria warns about large differences but does not automatically rewrite the assessment.</p></div><section class="form-section"><div class="panel-title">Unit Coverage</div><div class="blueprint-design-grid">'+[...byUnit.entries()].map(([name,pts])=>{const actual=total?Math.round(pts/total*1000)/10:0;return '<div class="blueprint-design-row"><div><strong>'+esc(name)+'</strong><span>Actual '+actual+'%</span></div><div class="input-with-suffix mini"><input name="unitTarget" data-unit="'+esc(name)+'" type="number" min="0" max="100" step="0.1" value="'+esc(target.units?.[name]??actual)+'"><span>%</span></div></div>';}).join("")+'</div></section><section class="form-section"><div class="panel-title">Cognitive-Level Coverage</div><div class="blueprint-design-grid">'+[...byCog.entries()].map(([name,pts])=>{const actual=total?Math.round(pts/total*1000)/10:0;return '<div class="blueprint-design-row"><div><strong>'+esc(name)+'</strong><span>Actual '+actual+'%</span></div><div class="input-with-suffix mini"><input name="cogTarget" data-cog="'+esc(name)+'" type="number" min="0" max="100" step="0.1" value="'+esc(target.cognitiveLevels?.[name]??actual)+'"><span>%</span></div></div>';}).join("")+'</div></section><div class="modal-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Blueprint Targets</button></div></form>'
+async function renderBlueprintDesigner(detail){
+  const root=$("#phase6BlueprintDesigner");if(!root||!detail?.assessment)return;
+  const a=detail.assessment,questions=detail.questions||[],total=questions.reduce((n,q)=>n+Number(q.points||0),0),targets=a.blueprintDesign||{};
+  const unitMap=new Map(),cogMap=new Map(),compMap=new Map();
+  questions.forEach(q=>{
+    const pts=Number(q.points||0),unit=q.unitTitle||q.unitId||"Unmapped",cog=q.cognitiveLevel||"Unspecified";
+    unitMap.set(unit,(unitMap.get(unit)||0)+pts);cogMap.set(cog,(cogMap.get(cog)||0)+pts);
+    const comps=safe(q.competencyCodes);if(comps.length){const share=pts/comps.length;comps.forEach(code=>compMap.set(code,(compMap.get(code)||0)+share));}
   });
-  m.querySelector("#blueprintDesignForm").onsubmit=async e=>{
-    e.preventDefault();const units={},cognitiveLevels={};m.querySelectorAll("[data-unit]").forEach(x=>units[x.dataset.unit]=Number(x.value||0));m.querySelectorAll("[data-cog]").forEach(x=>cognitiveLevels[x.dataset.cog]=Number(x.value||0));
-    try{await updateDoc(doc(db,"assessments",assessmentId),{blueprintDesign:{units,cognitiveLevels,updatedAt:serverTimestamp()},updatedAt:serverTimestamp()});closeModal();toast("Assessment blueprint targets saved.");}catch(error){toast(error.message||"Unable to save blueprint targets.");}
+  const actual=(map,key)=>total?Math.round(((map.get(key)||0)/total)*1000)/10:0;
+  const row=(kind,key,map,targetSet)=>{
+    const now=actual(map,key),target=targetSet?.[key]??now,delta=Math.round((now-Number(target||0))*10)/10;
+    return '<div class="blueprint-intelligence-row '+(Math.abs(delta)>=10?'mismatch':'')+'"><div><strong>'+esc(key)+'</strong><span>Actual '+now+'%'+(Math.abs(delta)>=10?' • '+(delta>0?"+":"")+delta+' pts from target':'')+'</span></div><div class="input-with-suffix mini"><input type="number" step="0.1" min="0" max="100" data-blueprint-kind="'+kind+'" data-blueprint-key="'+esc(key)+'" value="'+esc(target)+'"><span>%</span></div></div>';
+  };
+  root.innerHTML='<form id="phase6BlueprintForm" class="academic-form"><div class="academic-banner"><div class="kicker">Assessment Blueprint Designer</div><h3>Actual coverage vs. intended coverage.</h3><p>Targets are advisory. Theoria highlights mismatches but never silently rewrites your questions.</p></div>'+
+    '<div class="grid-2"><section class="form-section"><div class="panel-title">Unit Coverage</div><div class="blueprint-intelligence-list">'+[...unitMap.keys()].map(k=>row("units",k,unitMap,targets.units)).join("")+'</div></section><section class="form-section"><div class="panel-title">Cognitive Levels</div><div class="blueprint-intelligence-list">'+[...cogMap.keys()].map(k=>row("cognitiveLevels",k,cogMap,targets.cognitiveLevels)).join("")+'</div></section></div>'+
+    '<section class="form-section"><div class="panel-title">Competency Coverage</div><div class="blueprint-intelligence-list">'+([...compMap.keys()].length?[...compMap.keys()].map(k=>row("competencies",k,compMap,targets.competencies)).join(""):'<div class="empty-mini">No competency-tagged assessment questions.</div>')+'</div></section>'+
+    '<div class="modal-foot form-sticky-foot"><button class="primary-btn" type="submit">Save Blueprint Targets</button></div></form>';
+  root.querySelector("#phase6BlueprintForm").onsubmit=async e=>{
+    e.preventDefault();const out={units:{},cognitiveLevels:{},competencies:{}};
+    root.querySelectorAll("[data-blueprint-kind]").forEach(input=>out[input.dataset.blueprintKind][input.dataset.blueprintKey]=Number(input.value||0));
+    try{await updateDoc(doc(db,"assessments",a.id),{blueprintDesign:{...out,updatedAt:serverTimestamp()},updatedAt:serverTimestamp()});a.blueprintDesign=out;toast("Blueprint targets saved.");renderBlueprintDesigner(detail);}catch(error){toast(error.message||"Unable to save blueprint targets.");}
   };
 }
+
+async function blueprintDesigner(assessmentId){
+  if(window.TheoriaPhase3?.openAssessment)return window.TheoriaPhase3.openAssessment(assessmentId,"blueprint");
+}
+
 
 /* -------------------- SECTION TOOLS -------------------- */
 
@@ -498,7 +539,8 @@ export function initTeaching(){
   bind();
   return {
     renderInsights,sectionToolsModal,rubricLibraryModal,openRubricGrade,
-    assessmentSecurityModal,preflightSecurity,questionQualityModal,blueprintDesigner,
+    assessmentSecurityModal,preflightSecurity,renderAssessmentSecurity,hashCode,
+    questionQualityModal,blueprintDesigner,renderBlueprintDesigner,
     studentProfileModal
   };
 }
