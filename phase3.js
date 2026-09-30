@@ -3067,6 +3067,7 @@ async function resetEntranceAttempt(studentId){
     const batch=writeBatch(db);
     batch.delete(doc(db,"assessments",a.id,"submissions",studentId));
     batch.delete(doc(db,"assessments",a.id,"results",studentId));
+    batch.delete(doc(db,"assessments",a.id,"attemptCounters",studentId));
     batch.set(doc(db,"sections",a.sectionId,"entranceCandidates",studentId),{
       status:"pending",
       assessmentId:a.id,
