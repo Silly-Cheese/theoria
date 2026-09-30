@@ -190,10 +190,10 @@ async function systemAnnouncement(){
 
 async function coursePackage(courseId){
   const cSnap=await getDoc(doc(db,"courses",courseId));if(!cSnap.exists())throw new Error("Course not found.");
-  const course={id:cSnap.id,...cSnap.data()},[competencies,units,items]=await Promise.all([docs(["courses",courseId,"competencies"]),docs(["courses",courseId,"units"]),docs(["courses",courseId,"items"])]);
+  const course={id:cSnap.id,...cSnap.data()},[competencies,units,items,rubrics]=await Promise.all([docs(["courses",courseId,"competencies"]),docs(["courses",courseId,"units"]),docs(["courses",courseId,"items"]),docs(["courses",courseId,"rubrics"])]);
   const unitRows=[];
   for(const unit of units)unitRows.push({...unit,topics:await docs(["courses",courseId,"units",unit.id,"topics"])});
-  return {format:"theoria-course-package",version:1,exportedAt:new Date().toISOString(),course:serialize(course),competencies:serialize(competencies),units:serialize(unitRows),items:serialize(items)};
+  return {format:"theoria-course-package",version:2,exportedAt:new Date().toISOString(),course:serialize(course),competencies:serialize(competencies),units:serialize(unitRows),items:serialize(items),rubrics:serialize(rubrics)};
 }
 async function exportCoursePackage(courseId){
   try{const pkg=await coursePackage(courseId),safeName=String(pkg.course.code||"course").replace(/[^a-z0-9_-]+/gi,"-").toLowerCase();download(safeName+"-theoria-course.json",JSON.stringify(pkg,null,2));}catch(error){toast(error.message||"Unable to export course.");}
@@ -220,6 +220,7 @@ async function importCoursePackageModal(){
       for(const comp of safe(pkg.competencies)){const cr=doc(collection(db,"courses",ref.id,"competencies"));compIdMap.set(comp.id,cr.id);const row={...comp};delete row.id;await setDoc(cr,{...row,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});}
       for(const unit of safe(pkg.units)){const ur=doc(collection(db,"courses",ref.id,"units"));unitIdMap.set(unit.id,ur.id);const row={...unit};delete row.id;delete row.topics;await setDoc(ur,{...row,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});for(const topic of safe(unit.topics)){const tr=doc(collection(db,"courses",ref.id,"units",ur.id,"topics")),t={...topic};delete t.id;t.competencyIds=safe(t.competencyIds).map(id=>compIdMap.get(id)||id);await setDoc(tr,{...t,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});}}
       for(const item of safe(pkg.items)){const ir=doc(collection(db,"courses",ref.id,"items")),row={...item};delete row.id;row.unitId=unitIdMap.get(row.unitId)||"";row.competencyIds=safe(row.competencyIds).map(id=>compIdMap.get(id)||id);await setDoc(ir,{...row,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});}
+      for(const rubric of safe(pkg.rubrics)){const rr=doc(collection(db,"courses",ref.id,"rubrics")),row={...rubric};delete row.id;await setDoc(rr,{...row,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});}
       closeModal();toast("Course package imported as an unpublished catalog copy.");await core().loadWorkspace();core().setPage("courses");
     }catch(error){toast(error.message||"Unable to import the course package.");}
   };
