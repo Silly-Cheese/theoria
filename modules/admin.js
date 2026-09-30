@@ -226,6 +226,68 @@ async function importCoursePackageModal(){
   };
 }
 
+
+function csvCell(value){
+  const text=String(value??"");
+  return /[",\n\r]/.test(text)?'"'+text.replace(/"/g,'""')+'"':text;
+}
+function csvFile(rows){return rows.map(row=>row.map(csvCell).join(",")).join("\r\n");}
+
+async function exportSectionRoster(sectionId){
+  try{
+    const sectionSnap=await getDoc(doc(db,"sections",sectionId));if(!sectionSnap.exists())throw new Error("Section not found.");
+    const section={id:sectionSnap.id,...sectionSnap.data()},members=await docs(["sections",sectionId,"members"]);
+    const rows=[["Student ID","Name","Email","Status","Joined","Course","Section","Term"]].concat(members.map(m=>[
+      m.id,m.displayName||"",m.email||"",m.status||"enrolled",serialize(m.joinedAt)||"",section.courseCode||"",section.sectionName||"",section.term||""
+    ]));
+    const name=((section.courseCode||"section")+"-"+(section.sectionName||"roster")).replace(/[^a-z0-9_-]+/gi,"-").toLowerCase();
+    download(name+"-roster.csv",csvFile(rows),"text/csv");
+  }catch(error){toast(error.message||"Unable to export roster.");}
+}
+
+async function exportSectionGradebook(sectionId){
+  try{
+    const sectionSnap=await getDoc(doc(db,"sections",sectionId));if(!sectionSnap.exists())throw new Error("Section not found.");
+    const section={id:sectionSnap.id,...sectionSnap.data()};
+    const [members,assignments,grades,assessmentRefs,assessmentGrades]=await Promise.all([
+      docs(["sections",sectionId,"members"]),docs(["sections",sectionId,"assignments"]),docs(["sections",sectionId,"grades"]),
+      docs(["sections",sectionId,"assessmentRefs"]),docs(["sections",sectionId,"assessmentGrades"])
+    ]);
+    const gradeMap=new Map(grades.map(g=>[g.assignmentId+"_"+g.studentId,g]));
+    const assessmentMap=new Map(assessmentGrades.map(g=>[g.assessmentId+"_"+g.studentId,g]));
+    const rows=[["Student ID","Name","Email",...assignments.map(a=>"Coursework: "+a.title),...assessmentRefs.map(a=>"Assessment: "+a.title)]];
+    members.forEach(student=>rows.push([
+      student.id,student.displayName||"",student.email||"",
+      ...assignments.map(a=>{const g=gradeMap.get(a.id+"_"+student.id);return g?.gradeStatus==="Excused"?"Excused":g?.score??"";}),
+      ...assessmentRefs.map(a=>assessmentMap.get(a.id+"_"+student.id)?.percent??"")
+    ]));
+    const name=((section.courseCode||"section")+"-"+(section.sectionName||"gradebook")).replace(/[^a-z0-9_-]+/gi,"-").toLowerCase();
+    download(name+"-gradebook.csv",csvFile(rows),"text/csv");
+  }catch(error){toast(error.message||"Unable to export gradebook.");}
+}
+
+async function exportAssessmentPackage(assessmentId){
+  try{
+    const snap=await getDoc(doc(db,"assessments",assessmentId));if(!snap.exists())throw new Error("Assessment not found.");
+    const assessment={id:snap.id,...snap.data()},questions=await docs(["assessments",assessmentId,"questions"]);
+    const pkg={format:"theoria-assessment-package",version:1,exportedAt:new Date().toISOString(),assessment:serialize(assessment),questions:serialize(questions)};
+    const name=String(assessment.title||"assessment").replace(/[^a-z0-9_-]+/gi,"-").toLowerCase();
+    download(name+"-theoria-assessment.json",JSON.stringify(pkg,null,2));
+  }catch(error){toast(error.message||"Unable to export assessment.");}
+}
+
+async function exportAcademicConfigurationBackup(){
+  try{
+    const packages=[];for(const course of await docs(["courses"]))packages.push(await coursePackage(course.id));
+    const sections=serialize(await docs(["sections"])),assessments=serialize(await docs(["assessments"]));
+    const platform=await getDoc(doc(db,"system","platform"));
+    download("theoria-academic-configuration-backup-"+new Date().toISOString().slice(0,10)+".json",JSON.stringify({
+      format:"theoria-academic-configuration-backup",version:1,exportedAt:new Date().toISOString(),courses:packages,sections,assessments,
+      platform:platform.exists()?serialize(platform.data()):{}
+    },null,2));
+  }catch(error){toast(error.message||"Unable to export academic configuration backup.");}
+}
+
 async function importExportCenter(){
   const courses=state()?.courses||[];
   const m=modal({
