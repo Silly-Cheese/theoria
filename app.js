@@ -2696,6 +2696,11 @@ async function openStudentAssignmentModal(assignmentId){
     }catch(_){}
   }
   const locked=submission?.status==="submitted"&&!assignment.allowResubmission;
+  const localDraft=window.TheoriaPhase6?.loadAssignmentDraft?.(state.currentSection.id,assignmentId);
+  const serverUpdated=submission?.updatedAt?.toMillis?.()||0;
+  const recoverLocal=!!(localDraft&&Number(localDraft.savedAt||0)>serverUpdated&&!locked);
+  const initialResponseText=recoverLocal?String(localDraft.responseText||""):String(submission?.responseText||"");
+  const initialResponseUrl=recoverLocal?String(localDraft.responseUrl||""):String(submission?.responseUrl||"");
   const due=assignmentDueState(assignment);
   const showText=["Text + Link","Text Response"].includes(mode),showLink=["Text + Link","Link / Document"].includes(mode),completion=mode==="Completion Confirmation";
   const modal=openModal({
@@ -2709,10 +2714,11 @@ async function openStudentAssignmentModal(assignmentId){
       (assignment.instructionSteps?.length?'<div class="assignment-full-steps"><div class="eyebrow">Instructions</div>'+assignment.instructionSteps.map((step,i)=>'<div class="assignment-full-step"><span>'+String(i+1).padStart(2,"0")+'</span><p>'+esc(step)+'</p></div>').join("")+'</div>':'')+
       (assignment.requirements?.length?'<div class="assignment-requirements"><div class="eyebrow">Requirements</div>'+assignment.requirements.map(req=>'<div>✓ '+esc(req)+'</div>').join("")+'</div>':'')+
       '</div><div class="assignment-response-panel">'+
-      '<div class="panel-title">'+(locked?"Submitted Work":"Your Submission")+'</div><p class="page-subtitle">'+(locked?"This submission is locked because revision after submission is disabled.":"Your work is saved to this section in Firestore.")+'</p>'+
+      '<div class="panel-title">'+(locked?"Submitted Work":"Your Submission")+'</div><p class="page-subtitle">'+(locked?"This submission is locked because revision after submission is disabled.":"Your work is saved to Firestore, with local browser recovery protection while you type.")+'</p>'+
+      (recoverLocal?'<div class="notice local-recovery-notice"><strong>Recovered local draft.</strong><p>Theoria found a newer browser copy from '+esc(new Date(localDraft.savedAt).toLocaleString())+' and restored it after the interrupted cloud save.</p></div>':'')+
       '<form id="studentAssignmentForm">'+
-      (showText?'<div class="field"><label>Written Response</label><textarea class="assignment-response-editor" name="responseText" placeholder="Write your response here…" '+(locked?'disabled':'')+'>'+esc(submission?.responseText||"")+'</textarea></div>':'')+
-      (showLink?'<div class="field"><label>Document / Research Link</label><input type="url" name="responseUrl" value="'+esc(submission?.responseUrl||"")+'" placeholder="https://" '+(locked?'disabled':'')+'></div>':'')+
+      (showText?'<div class="field"><label>Written Response</label><textarea class="assignment-response-editor" name="responseText" placeholder="Write your response here…" '+(locked?'disabled':'')+'>'+esc(initialResponseText)+'</textarea></div>':'')+
+      (showLink?'<div class="field"><label>Document / Research Link</label><input type="url" name="responseUrl" value="'+esc(initialResponseUrl)+'" placeholder="https://" '+(locked?'disabled':'')+'></div>':'')+
       (completion?'<label class="completion-confirmation"><input type="checkbox" name="completionAck" '+(submission?.status==="submitted"?'checked':'')+' '+(locked?'disabled':'')+'><div><strong>I completed this assignment.</strong><span>Check this box and submit to record completion.</span></div></label>':'')+
       (submission?.submittedAt?'<div class="submission-timestamp">Submitted '+esc(formatDate(submission.submittedAt))+'</div>':'')+
       (!locked?'<div class="assignment-submit-actions">'+(!completion?'<button type="button" class="secondary-btn" id="saveAssignmentDraft">Save Draft</button>':'')+'<button type="submit" class="primary-btn">'+(submission?.status==="submitted"?"Resubmit Assignment":"Submit Assignment")+'</button></div>':'')+
@@ -2720,6 +2726,18 @@ async function openStudentAssignmentModal(assignmentId){
   });
   if(locked)return;
   const form=modal.querySelector("#studentAssignmentForm");
+  let localDraftTimer=null;
+  const persistLocalDraft=()=>{
+    clearTimeout(localDraftTimer);
+    localDraftTimer=setTimeout(()=>{
+      window.TheoriaPhase6?.saveAssignmentDraft?.(state.currentSection.id,assignmentId,{
+        responseText:String(form.elements.responseText?.value||""),
+        responseUrl:String(form.elements.responseUrl?.value||"")
+      });
+    },300);
+  };
+  form.elements.responseText?.addEventListener("input",persistLocalDraft);
+  form.elements.responseUrl?.addEventListener("input",persistLocalDraft);
   const save=async status=>{
     const fd=new FormData(form),responseText=String(fd.get("responseText")||"").trim(),responseUrl=String(fd.get("responseUrl")||"").trim();
     if(status==="submitted"){
@@ -2741,6 +2759,7 @@ async function openStudentAssignmentModal(assignmentId){
     if(!existingSnap.exists())data.createdAt=serverTimestamp();
     try{
       await setDoc(ref,data,{merge:true});
+      window.TheoriaPhase6?.clearAssignmentDraft?.(state.currentSection.id,assignmentId);
       closeModal();state.sectionData=await loadSectionData(state.currentSection);renderSectionDetail("assignments");
       showToast(status==="submitted"?"Assignment submitted.":"Draft saved.");
     }catch(error){showToast(humanizeFirebaseError(error));}
