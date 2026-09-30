@@ -390,8 +390,20 @@ async function transcriptData(userId=state()?.user?.uid){
 async function renderTranscript(){
   const el=$("#transcriptContent");if(!el)return;
   if(state()?.role!=="student"){el.innerHTML='<div class="empty-state"><div class="empty-symbol">T</div><h3>Student transcript workspace.</h3><p>Instructor academic records remain available from Reports and student profile drawers.</p></div>';return;}
-  const rows=await transcriptData(),name=state().profile?.displayName||state().user.displayName||"Student";
-  el.innerHTML='<article class="transcript-sheet" id="theoriaTranscript"><div class="record-seal">Θ</div><div class="transcript-head"><div class="eyebrow">Theoria Multi-Course Academic Record</div><h1>'+esc(name)+'</h1><p>'+esc(state().user.email||"")+'</p></div><div class="data-table-wrap"><table class="data-table"><thead><tr><th>Course</th><th>Term</th><th>Final Grade</th><th>Mastery</th><th>Pathway</th><th>Status</th></tr></thead><tbody>'+rows.map(r=>'<tr><td><strong>'+esc(r.courseCode||"")+'</strong><span class="grade-sub">'+esc(r.courseTitle||"")+'</span></td><td>'+esc(r.term||"—")+'</td><td><strong>'+esc(r.letterGrade||"—")+'</strong> • '+esc(r.finalPercent??"—")+'%</td><td>'+(r.masteryPercent===null||r.masteryPercent===undefined?"—":esc(r.masteryPercent)+"%")+'</td><td>'+esc(r.pathway==="examination"?"Examination":"Composite")+'</td><td><span class="badge live">'+esc(r.status||"Certified")+'</span></td></tr>').join("")+'</tbody></table></div><div class="record-footer"><p>This record documents academic work within Theoria and does not independently establish outside accreditation.</p><button class="primary-btn" onclick="window.print()">Print Transcript</button></div></article>';
+  const rows=await transcriptData(),name=state().profile?.displayName||state().user.displayName||"Student",recognitions=[];
+  try{
+    const enroll=await getDocs(collection(db,"users",state().user.uid,"enrollments"));
+    for(const e of enroll.docs){
+      try{
+        const rs=await getDocs(query(collection(db,"sections",e.id,"recognitions"),where("studentId","==",state().user.uid)));
+        rs.docs.forEach(d=>recognitions.push({id:d.id,sectionId:e.id,...d.data()}));
+      }catch(_){}
+    }
+  }catch(_){}
+  recognitions.sort((a,b)=>String(a.term||"").localeCompare(String(b.term||""))||String(a.title||"").localeCompare(String(b.title||"")));
+  el.innerHTML='<article class="transcript-sheet" id="theoriaTranscript"><div class="record-seal">Θ</div><div class="transcript-head"><div class="eyebrow">Theoria Multi-Course Academic Record</div><h1>'+esc(name)+'</h1><p>'+esc(state().user.email||"")+'</p></div><div class="data-table-wrap"><table class="data-table"><thead><tr><th>Course</th><th>Term</th><th>Version</th><th>Final Grade</th><th>Mastery</th><th>Pathway</th><th>Status</th></tr></thead><tbody>'+rows.map(r=>'<tr><td><strong>'+esc(r.courseCode||"")+'</strong><span class="grade-sub">'+esc(r.courseTitle||"")+'</span></td><td>'+esc(r.term||"—")+'</td><td>'+esc(r.courseVersion||"—")+'</td><td><strong>'+esc(r.letterGrade||"—")+'</strong> • '+esc(r.finalPercent??"—")+'%</td><td>'+(r.masteryPercent===null||r.masteryPercent===undefined?"—":esc(r.masteryPercent)+"%")+'</td><td>'+esc(r.pathway==="examination"?"Examination":"Composite")+'</td><td><span class="badge live">'+esc(r.status||"Certified")+'</span></td></tr>').join("")+'</tbody></table></div>'+
+    (recognitions.length?'<div class="transcript-recognitions"><div class="panel-title">Honors & Academic Recognition</div>'+recognitions.map(r=>'<div class="profile-record-row"><div><strong>'+esc(r.title||"Recognition")+'</strong><span>'+esc(r.description||"")+'</span></div><b>'+esc(r.term||"")+'</b></div>').join("")+'</div>':'')+
+    '<div class="record-footer"><p>This record documents academic work within Theoria and does not independently establish outside accreditation.</p><button class="primary-btn" onclick="window.print()">Print Transcript</button></div></article>';
 }
 
 /* -------------------- EVENT WIRING -------------------- */
