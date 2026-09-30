@@ -12,7 +12,6 @@ const modal=a=>core()?.openModal?.(a);
 const closeModal=()=>core()?.closeModal?.();
 const now=()=>new Date();
 const dateKey=d=>{const x=new Date(d);return x.toISOString().slice(0,10);};
-const tsDate=v=>v?.toDate?.()||v?.seconds?new Date(v.seconds*1000):null;
 const parseDate=v=>{if(!v)return null;if(v instanceof Date)return v;if(v?.toDate)return v.toDate();if(typeof v==="string"){const d=new Date(v.length===10?v+"T23:59:00":v);return Number.isNaN(d.getTime())?null:d;}return null;};
 const humanDate=v=>{const d=parseDate(v);return d?d.toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}):"—";};
 const humanDateTime=v=>{const d=parseDate(v);return d?d.toLocaleString(undefined,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}):"—";};
@@ -23,12 +22,19 @@ async function fetchPlannerData(){
   if(!s?.user)return {items,announcements};
 
   for(const section of activeSections()){
+    let extensionMap=new Map();
+    if(s.role==="student"){
+      try{
+        const ext=await getDocs(query(collection(db,"sections",section.id,"extensions"),where("studentId","==",s.user.uid)));
+        extensionMap=new Map(ext.docs.map(d=>[d.data().assignmentId,d.data()]));
+      }catch(_){}
+    }
     try{
       const a=await getDocs(collection(db,"sections",section.id,"assignments"));
       a.docs.forEach(d=>{
         const x=d.data();if(x.status==="Draft")return;
-        const due=parseDate(x.dueDate);
-        if(due)items.push({id:d.id,kind:"Assignment",title:x.title||"Assignment",date:due,section,meta:x.type||"Coursework",source:x});
+        const extension=extensionMap.get(d.id),due=parseDate(extension?.dueDate||x.dueDate);
+        if(due)items.push({id:d.id,kind:extension?"Assignment Extension":"Assignment",title:x.title||"Assignment",date:due,section,meta:x.type||"Coursework",source:{...x,extension}});
       });
     }catch(_){}
 
