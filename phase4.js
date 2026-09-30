@@ -64,7 +64,7 @@ async function loadSectionBundle(sectionId,{deep=false}={}){
     : await getDocs(query(collection(db,"sections",sectionId,"assignments"),where("status","==","Published")));
   const assignments=assignmentsSnap.docs.map(d=>({id:d.id,...d.data()})).filter(x=>x.status!=="Draft");
 
-  let members=[],grades=[],assessmentGrades=[],pathways=[],records=[],mastery=[],appeals=[],portfolios=[];
+  let members=[],grades=[],assessmentGrades=[],pathways=[],records=[],mastery=[],appeals=[],portfolios=[],narratives=[];
   if(s.role==="instructor"){
     const results=await Promise.all([
       getDocs(collection(db,"sections",sectionId,"members")),
@@ -74,7 +74,8 @@ async function loadSectionBundle(sectionId,{deep=false}={}){
       getDocs(collection(db,"sections",sectionId,"academicRecords")),
       getDocs(collection(db,"sections",sectionId,"mastery")),
       getDocs(collection(db,"sections",sectionId,"appeals")),
-      getDocs(collection(db,"sections",sectionId,"portfolios"))
+      getDocs(collection(db,"sections",sectionId,"portfolios")),
+      getDocs(collection(db,"sections",sectionId,"narratives"))
     ]);
     members=results[0].docs.map(d=>({id:d.id,...d.data()}));
     grades=results[1].docs.map(d=>({id:d.id,...d.data()}));
@@ -84,6 +85,7 @@ async function loadSectionBundle(sectionId,{deep=false}={}){
     mastery=results[5].docs.map(d=>({id:d.id,...d.data()}));
     appeals=results[6].docs.map(d=>({id:d.id,...d.data()}));
     portfolios=results[7].docs.map(d=>({id:d.id,...d.data()}));
+    narratives=results[8].docs.map(d=>({id:d.id,...d.data()}));
   }else{
     const uid=s.user.uid;
     const gets=await Promise.all([
@@ -93,7 +95,8 @@ async function loadSectionBundle(sectionId,{deep=false}={}){
       getDoc(doc(db,"sections",sectionId,"academicRecords",uid)),
       getDoc(doc(db,"sections",sectionId,"mastery",uid)),
       getDocs(query(collection(db,"sections",sectionId,"appeals"),where("studentId","==",uid))),
-      getDoc(doc(db,"sections",sectionId,"portfolios",uid))
+      getDoc(doc(db,"sections",sectionId,"portfolios",uid)),
+      getDoc(doc(db,"sections",sectionId,"narratives",uid))
     ]);
     if(gets[0].exists())members=[{id:gets[0].id,...gets[0].data()}];
     grades=gets[1].docs.map(d=>({id:d.id,...d.data()}));
@@ -102,6 +105,7 @@ async function loadSectionBundle(sectionId,{deep=false}={}){
     if(gets[4].exists())mastery=[{id:gets[4].id,...gets[4].data()}];
     appeals=gets[5].docs.map(d=>({id:d.id,...d.data()}));
     if(gets[6].exists())portfolios=[{id:gets[6].id,...gets[6].data()}];
+    if(gets[7].exists())narratives=[{id:gets[7].id,...gets[7].data()}];
 
     const refSnap=await getDocs(collection(db,"sections",sectionId,"assessmentRefs"));
     for(const ref of refSnap.docs){
@@ -131,7 +135,7 @@ async function loadSectionBundle(sectionId,{deep=false}={}){
     }
   }
 
-  const bundle={section,assignments,members,grades,assessmentGrades,pathways,records,mastery,appeals,portfolios,assessments};
+  const bundle={section,assignments,members,grades,assessmentGrades,pathways,records,mastery,appeals,portfolios,narratives,assessments};
   P4.cache.set(key,bundle);
   return bundle;
 }
@@ -423,11 +427,18 @@ async function buildRecordSnapshot(bundle,studentId){
   const member=bundle.members.find(x=>x.id===studentId);
   const calc=finalCalculation(bundle,studentId);
   const mastery=bundle.mastery.find(x=>x.id===studentId);
+  const narrative=bundle.narratives.find(x=>x.id===studentId);
   const scale=bundle.section.gradingPolicy?.gradeScale||DEFAULT_SCALE;
+  let courseVersion="";
+  try{
+    const courseSnap=await getDoc(doc(db,"courses",bundle.section.courseId));
+    if(courseSnap.exists())courseVersion=courseSnap.data().versionLabel||"";
+  }catch(_){}
   return {
     studentId,studentName:member?.displayName||"Student",studentEmail:member?.email||"",sectionId:bundle.section.id,
     courseId:bundle.section.courseId,courseCode:bundle.section.courseCode||"",courseTitle:bundle.section.courseTitle||"",
-    sectionName:bundle.section.sectionName||"",term:bundle.section.term||"",
+    sectionName:bundle.section.sectionName||"",term:bundle.section.term||"",courseVersion,
+    narrativeEvaluation:narrative?.includeOnRecord?{strengths:narrative.strengths||"",recommendations:narrative.recommendations||""}:null,
     pathway:calc.pathway,
     courseworkPercent:calc.coursework.percent,
     semesterExamPercent:calc.semester.percent,
@@ -585,7 +596,7 @@ async function renderStudentRecord(sectionId,targetSelector="#phase4SectionTab")
 }
 
 function formalRecordHtml(record,portfolio,mastery,studentView=false){
-  return '<article class="formal-record" id="formalAcademicRecord"><div class="record-seal">Θ</div><div class="record-heading"><div class="eyebrow">Theoria Academic Record</div><h2>'+esc(record.courseCode)+' — '+esc(record.courseTitle)+'</h2><p>'+esc(record.sectionName)+' • '+esc(record.term)+'</p></div><div class="record-identity"><div><span>Student</span><strong>'+esc(record.studentName)+'</strong></div><div><span>Record ID</span><strong>'+esc(record.recordId)+'</strong></div><div><span>Status</span><strong>'+esc(record.status)+'</strong></div><div><span>Version</span><strong>'+esc(record.version||1)+'</strong></div></div><div class="record-final"><div><span>Certified Final Grade</span><strong>'+esc(record.letterGrade)+'</strong><small>'+esc(record.finalPercent)+'%</small></div><div><span>Academic Mastery</span><strong>'+(record.masteryPercent===null||record.masteryPercent===undefined?"—":esc(record.masteryPercent)+"%")+'</strong><small>Separate from grade</small></div><div><span>Grading Pathway</span><strong class="record-path">'+esc(record.pathway==="examination"?"Examination":"Composite")+'</strong></div></div><div class="record-breakdown"><div><span>Coursework</span><strong>'+(record.courseworkPercent===null?"N/A":esc(record.courseworkPercent)+"%")+'</strong></div><div><span>Semester I Examination</span><strong>'+esc(record.semesterExamPercent)+'%</strong></div><div><span>Comprehensive Final Examination</span><strong>'+esc(record.comprehensiveExamPercent)+'%</strong></div></div><div class="record-footer"><p>This record documents academic performance within Theoria. It does not represent outside accreditation unless separately established by the issuing institution.</p><div class="inline-actions"><button class="secondary-btn small-btn" data-phase4-action="print-record">Print Record</button>'+(studentView?'<button class="text-btn" data-phase4-action="record-history" data-section="'+esc(record.sectionId||"")+'" data-student="'+esc(record.studentId)+'">View Amendment History</button>':'')+'</div></div></article>';
+  return '<article class="formal-record" id="formalAcademicRecord"><div class="record-seal">Θ</div><div class="record-heading"><div class="eyebrow">Theoria Academic Record</div><h2>'+esc(record.courseCode)+' — '+esc(record.courseTitle)+'</h2><p>'+esc(record.sectionName)+' • '+esc(record.term)+'</p></div><div class="record-identity"><div><span>Student</span><strong>'+esc(record.studentName)+'</strong></div><div><span>Record ID</span><strong>'+esc(record.recordId)+'</strong></div><div><span>Status</span><strong>'+esc(record.status)+'</strong></div><div><span>Version</span><strong>'+esc(record.version||1)+'</strong></div></div><div class="record-final"><div><span>Certified Final Grade</span><strong>'+esc(record.letterGrade)+'</strong><small>'+esc(record.finalPercent)+'%</small></div><div><span>Academic Mastery</span><strong>'+(record.masteryPercent===null||record.masteryPercent===undefined?"—":esc(record.masteryPercent)+"%")+'</strong><small>Separate from grade</small></div><div><span>Grading Pathway</span><strong class="record-path">'+esc(record.pathway==="examination"?"Examination":"Composite")+'</strong></div></div><div class="record-breakdown"><div><span>Coursework</span><strong>'+(record.courseworkPercent===null?"N/A":esc(record.courseworkPercent)+"%")+'</strong></div><div><span>Semester I Examination</span><strong>'+esc(record.semesterExamPercent)+'%</strong></div><div><span>Comprehensive Final Examination</span><strong>'+esc(record.comprehensiveExamPercent)+'%</strong></div></div>'+(record.courseVersion?'<div class="notice" style="margin-top:14px"><strong>Course Version</strong><p>'+esc(record.courseVersion)+'</p></div>':'')+(record.narrativeEvaluation?'<div class="record-narrative"><div><span>Instructor Narrative — Strengths</span><p>'+esc(record.narrativeEvaluation.strengths||"")+'</p></div><div><span>Growth / Recommendations</span><p>'+esc(record.narrativeEvaluation.recommendations||"")+'</p></div></div>':'')+'<div class="record-footer"><p>This record documents academic performance within Theoria. It does not represent outside accreditation unless separately established by the issuing institution.</p><div class="inline-actions"><button class="secondary-btn small-btn" data-phase4-action="print-record">Print Record</button>'+(studentView?'<button class="text-btn" data-phase4-action="record-history" data-section="'+esc(record.sectionId||"")+'" data-student="'+esc(record.studentId)+'">View Amendment History</button>':'')+'</div></div></article>';
 }
 
 function portfolioHtml(portfolio){
