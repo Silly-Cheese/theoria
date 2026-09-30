@@ -3381,6 +3381,6 @@ document.addEventListener("click",async e=>{
   if(a==="calculator")return calculator();
 });
 
-window.TheoriaPhase3={renderSectionTab,renderAssessments,renderItemBank,openAssessment,configureEntranceExam,startEntranceExam:(id)=>startExam(id),getCurrent:()=>P3.current,getDetail:()=>P3.detail,getExam:()=>P3.exam};
+window.TheoriaPhase3={renderSectionTab,renderAssessments,renderItemBank,openAssessment,configureEntranceExam,startEntranceExam:(id)=>startExam(id),getCurrent:()=>P3.current,getDetail:()=>P3.detail,getExam:()=>P3.exam,getItems:()=>P3.items,getAssessments:()=>P3.assessments};
 
 if(window.TheoriaCore)onReady();
