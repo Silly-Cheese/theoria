@@ -55,7 +55,7 @@ async function renderAdminCenter(){
   const el=$("#adminCenterContent"),s=state();if(!el)return;
   if(!s?.isSystemOwner){el.innerHTML='<div class="empty-state"><div class="empty-symbol">Θ</div><h3>System Owner access required.</h3><p>This workspace manages the shared Theoria platform.</p></div>';return;}
   el.innerHTML='<div class="empty-mini">Loading system control center…</div>';
-  const m=await systemMetrics(),configSnap=await getDoc(doc(db,"system","config")).catch(()=>null),config=configSnap?.exists?.()?configSnap.data():{};
+  const m=await systemMetrics(),configSnap=await getDoc(doc(db,"system","platform")).catch(()=>null),config=configSnap?.exists?.()?configSnap.data():{};
   const activeSections=m.sections.filter(x=>x.status!=="Archived"),publishedCourses=m.courses.filter(x=>x.catalogPublished===true);
   el.innerHTML='<div class="academic-banner"><div class="kicker">System Owner Control Center</div><h3>Theoria Platform Administration</h3><p>Catalog health, data integrity, feature controls, diagnostics, migration tools, and academic-package management.</p></div>'+
     '<div class="admin-metric-grid"><div><span>Catalog Courses</span><strong>'+m.courses.length+'</strong><small>'+publishedCourses.length+' published</small></div><div><span>Teaching Sections</span><strong>'+m.sections.length+'</strong><small>'+activeSections.length+' active</small></div><div><span>Users</span><strong>'+m.users.length+'</strong><small>'+m.users.filter(x=>x.role==="instructor").length+' instructors</small></div><div><span>Assessments</span><strong>'+m.assessments.length+'</strong><small>'+m.assessments.filter(x=>x.sectionId).length+' assigned</small></div><div><span>Question Bank</span><strong>'+m.questionCount+'</strong><small>master questions</small></div><div><span>Framework Units</span><strong>'+m.unitCount+'</strong><small>'+m.competencyCount+' competencies</small></div></div>'+
@@ -104,7 +104,7 @@ async function diagnostics(){
   await check("Teaching sections",async()=>{const s=await getDocs(collection(db,"sections"));return s.size+" documents";});
   await check("Assessments",async()=>{const s=await getDocs(collection(db,"assessments"));return s.size+" documents";});
   await check("User directory",async()=>{const s=await getDocs(collection(db,"directory"));return s.size+" entries";});
-  await check("System configuration write",async()=>{await setDoc(doc(db,"system","diagnostics"),{lastCheckAt:serverTimestamp(),lastCheckBy:state().user.uid},{merge:true});return "Writable";});
+  await check("System configuration write",async()=>{await setDoc(doc(db,"system","platform"),{lastCheckAt:serverTimestamp(),lastCheckBy:state().user.uid},{merge:true});return "Writable";});
   modal({
     eyebrow:"System Health",
     title:"Diagnostics",
@@ -127,7 +127,7 @@ const FLAG_DEFS=[
   ["maintenanceMode","Maintenance Mode"]
 ];
 async function featureFlags(){
-  const snap=await getDoc(doc(db,"system","config")),config=snap.exists()?snap.data():{},features=config.features||{};
+  const snap=await getDoc(doc(db,"system","platform")),config=snap.exists()?snap.data():{},features=config.features||{};
   const m=modal({
     eyebrow:"Platform Configuration",
     title:"Feature Flags",
@@ -136,7 +136,7 @@ async function featureFlags(){
   });
   m.querySelector("#featureFlagForm").onsubmit=async e=>{
     e.preventDefault();const featuresOut={};FLAG_DEFS.forEach(([id])=>featuresOut[id]=e.currentTarget.elements[id].checked);
-    try{await setDoc(doc(db,"system","config"),{features:featuresOut,version:Number(config.version||1)+1,updatedAt:serverTimestamp(),updatedBy:state().user.uid},{merge:true});closeModal();toast("Feature flags saved. Reload Theoria to apply all visibility changes.");}catch(error){toast(error.message||"Unable to save feature flags.");}
+    try{await setDoc(doc(db,"system","platform"),{features:featuresOut,version:Number(config.version||1)+1,updatedAt:serverTimestamp(),updatedBy:state().user.uid},{merge:true});closeModal();toast("Feature flags saved. Reload Theoria to apply all visibility changes.");}catch(error){toast(error.message||"Unable to save feature flags.");}
   };
 }
 
@@ -168,7 +168,7 @@ async function migrationTools(){
           await batch.commit();
         }
       }
-      await setDoc(doc(db,"system","config"),{lastMigrationLabel:"Phase 6 legacy normalization",lastMigrationAt:serverTimestamp(),lastMigrationBy:state().user.uid},{merge:true});
+      await setDoc(doc(db,"system","platform"),{lastMigrationLabel:"Phase 6 legacy normalization",lastMigrationAt:serverTimestamp(),lastMigrationBy:state().user.uid},{merge:true});
       closeModal();toast(changed+" legacy record"+(changed===1?"":"s")+" normalized.");
     }catch(error){button.disabled=false;button.textContent="Run Safe Migration";toast(error.message||"Migration failed.");}
   };
@@ -182,7 +182,7 @@ async function systemAnnouncement(){
   });
   m.querySelector("#systemAnnouncementForm").onsubmit=async e=>{
     e.preventDefault();const fd=new FormData(e.currentTarget),raw=String(fd.get("expiresAt")||"");
-    try{await addDoc(collection(db,"systemAnnouncements"),{title:String(fd.get("title")).trim(),body:String(fd.get("body")).trim(),severity:String(fd.get("severity")),expiresAt:raw?Timestamp.fromDate(new Date(raw+"T23:59:59")):null,createdAt:serverTimestamp(),createdBy:state().user.uid});closeModal();toast("System announcement published.");}catch(error){toast(error.message||"Unable to publish announcement.");}
+    try{await setDoc(doc(db,"system","announcement"),{title:String(fd.get("title")).trim(),body:String(fd.get("body")).trim(),severity:String(fd.get("severity")),expiresAt:raw?Timestamp.fromDate(new Date(raw+"T23:59:59")):null,createdAt:serverTimestamp(),createdBy:state().user.uid},{merge:true});closeModal();toast("System announcement published.");}catch(error){toast(error.message||"Unable to publish announcement.");}
   };
 }
 
