@@ -1544,7 +1544,7 @@ async function assessmentModal(existing){
           chunk.forEach((item,index)=>{
             const ref=questionRefs[offset+index],order=offset+index+1;
             batch.set(ref,{
-              itemId:item.id,order,partId:(data.parts?.[0]?.id||"main"),type:item.type,prompt:item.prompt,
+              itemId:item.id,itemVersion:Number(item.version||1),order,partId:(data.parts?.[0]?.id||"main"),type:item.type,prompt:item.prompt,
               stimulus:item.stimulus||"",sourceTitle:item.sourceTitle||"",options:item.options||[],points:Number(item.pointsDefault||1),
               difficulty:item.difficulty||"Moderate",cognitiveLevel:item.cognitiveLevel||"Application",tags:item.tags||[],qualityStatus:item.qualityStatus||"Published",
               unitId:item.unitId||"",unitTitle:item.unitTitle||"",unitNumber:Number(item.unitNumber||0),
@@ -1552,7 +1552,7 @@ async function assessmentModal(existing){
               competencyIds:item.competencyIds||[],competencyCodes:item.competencyCodes||[],createdAt:serverTimestamp()
             });
             batch.set(doc(db,"assessments",id,"keys",ref.id),{
-              itemId:item.id,correctAnswer:item.correctAnswer??"",explanation:item.explanation||"",rubric:item.rubric||[],createdAt:serverTimestamp()
+              itemId:item.id,itemVersion:Number(item.version||1),correctAnswer:item.correctAnswer??"",explanation:item.explanation||"",rubric:item.rubric||[],createdAt:serverTimestamp()
             });
           });
           await batch.commit();
@@ -1667,7 +1667,7 @@ function itemsView(){
   return '<div class="page-head" style="margin-bottom:16px"><div><div class="panel-title">'+(a.entranceExam?'Entrance Examination Snapshot':a.randomDrawEnabled?'Randomized Assessment Pool':'Assessment Assembly')+'</div><p class="page-subtitle">'+(a.entranceExam?'This entrance exam is a locked copy of '+esc(a.entranceSourceCourseCode||a.courseCode||"the source course")+' Question Bank material. Edit the source assessment template and replace the exam from the section to change its content.':a.randomDrawEnabled?'Students receive a locked random subset from this pool according to the draw plan.':'Students never receive answer-key documents.')+'</p></div><div class="inline-actions">'+(a.entranceExam?'<button class="secondary-btn small-btn" data-phase3-action="open-entrance-section" data-section="'+esc(a.sectionId)+'">Manage Entrance Exam</button>':((canConfigure?'<button class="secondary-btn small-btn" data-phase3-action="configure-random-draw">'+(a.randomDrawEnabled?'Edit Random Draw':'Configure Random Draw')+'</button>':'')+'<button class="primary-btn small-btn" data-phase3-action="add-items">Add from Question Bank</button>'))+'</div></div>'+
     randomSummary+
     (a.randomDrawEnabled?'<div class="random-plan-display">'+(a.randomDrawPlan||[]).map(row=>'<div><span>'+esc(row.type)+'</span><strong>'+esc(row.count)+' of '+esc(row.available||q.filter(x=>x.type===row.type).length)+'</strong></div>').join("")+'</div>':'')+
-    (q.length?'<div class="assessment-builder-list">'+q.map((x,i)=>'<div class="builder-item"><div class="builder-order">'+(i+1)+'</div><div class="builder-copy"><div class="card-kicker">'+esc((a.parts||[]).find(p=>p.id===x.partId)?.title||"Main")+' • '+esc(x.type)+'</div><h4>'+esc(x.prompt)+'</h4><div class="item-tags"><span>'+esc(x.points)+' pts</span>'+(x.sourceCourseCode?'<span>Source: '+esc(x.sourceCourseCode)+'</span>':'')+(x.unitTitle?'<span>Unit '+esc(x.unitNumber||"")+' — '+esc(x.unitTitle)+'</span>':'')+'<span>'+esc(x.topicNumber||"No topic")+'</span>'+(x.competencyCodes||[]).map(code=>'<span>'+esc(code)+'</span>').join("")+'</div></div>'+(a.entranceExam?'':'<div class="inline-actions"><button class="text-btn" data-phase3-action="configure-item" data-id="'+x.id+'">Configure</button><button class="text-btn danger-text" data-phase3-action="remove-item" data-id="'+x.id+'">Remove</button></div>')+'</div>').join("")+'</div>':
+    (q.length?'<div class="assessment-builder-list">'+q.map((x,i)=>'<div class="builder-item"><div class="builder-order">'+(i+1)+'</div><div class="builder-copy"><div class="card-kicker">'+esc((a.parts||[]).find(p=>p.id===x.partId)?.title||"Main")+' • '+esc(x.type)+'</div><h4>'+esc(x.prompt)+'</h4><div class="item-tags"><span>'+esc(x.points)+' pts</span>'+(x.itemId?'<span>QB v'+esc(x.itemVersion||1)+'</span>':'')+(x.sourceCourseCode?'<span>Source: '+esc(x.sourceCourseCode)+'</span>':'')+(x.unitTitle?'<span>Unit '+esc(x.unitNumber||"")+' — '+esc(x.unitTitle)+'</span>':'')+'<span>'+esc(x.topicNumber||"No topic")+'</span>'+(x.competencyCodes||[]).map(code=>'<span>'+esc(code)+'</span>').join("")+'</div></div>'+(a.entranceExam?'':'<div class="inline-actions">'+(x.itemId?'<button class="text-btn" data-phase3-action="refresh-item-version" data-id="'+x.id+'">Check Latest</button>':'')+'<button class="text-btn" data-phase3-action="configure-item" data-id="'+x.id+'">Configure</button><button class="text-btn danger-text" data-phase3-action="remove-item" data-id="'+x.id+'">Remove</button></div>')+'</div>').join("")+'</div>':
     '<div class="empty-state"><div class="empty-symbol">Q</div><h3>No assessment questions yet.</h3><p>'+(a.entranceExam?'Replace the entrance exam from the section with a populated source template.':'Add reusable questions from the course Question Bank.')+'</p>'+(a.entranceExam?'':'<button class="primary-btn" data-phase3-action="add-items">Add Questions</button>')+'</div>');
 }
 
@@ -1772,6 +1772,47 @@ function renderAssessment(tab="overview"){
   if(tab==="analytics")window.TheoriaPhase5?.renderAssessmentAnalytics?.(P3.detail);
   if(tab==="blueprint")window.TheoriaPlatform?.renderBlueprintDesigner?.(P3.detail);
   if(tab==="security")window.TheoriaPlatform?.renderAssessmentSecurity?.(P3.detail);
+}
+
+async function refreshAssessmentQuestionFromBank(questionId){
+  const a=P3.current,d=P3.detail,q=d?.questions?.find(x=>x.id===questionId);if(!a||!q)return;
+  if(a.entranceExam)return toast("Entrance examination snapshots are replaced from their prerequisite source template, not updated question-by-question.");
+  if(a.sectionId&&(d.submissions||[]).length)return toast("Question snapshots lock after the first assessment attempt is created.");
+  if(!q.itemId)return toast("This question is not linked to a reusable Question Bank item.");
+  const sourceCourseId=q.sourceCourseId||a.courseId;
+  try{
+    const snap=await getDoc(doc(db,"courses",sourceCourseId,"items",q.itemId));
+    if(!snap.exists())return toast("The linked Question Bank item no longer exists.");
+    const item={id:snap.id,...snap.data()},currentVersion=Math.max(1,Number(q.itemVersion||1)),latestVersion=Math.max(1,Number(item.version||1));
+    if(latestVersion<=currentVersion)return toast("This assessment question already uses Question Bank v"+latestVersion+".");
+    if(item.type!==q.type)return toast("The latest Question Bank version changed question type. Remove and re-add the item so assessment structure can be recalculated safely.");
+    if(!confirm("Update this assessment snapshot from Question Bank v"+currentVersion+" to v"+latestVersion+"? The answer key and academic mappings will be refreshed from the master item."))return;
+    const questionPatch={
+      itemVersion:latestVersion,type:item.type,prompt:item.prompt||"",stimulus:item.stimulus||"",sourceTitle:item.sourceTitle||"",
+      options:item.options||[],unitId:item.unitId||"",unitTitle:item.unitTitle||"",unitNumber:Number(item.unitNumber||0),
+      topicId:item.topicId||"",topicTitle:item.topicTitle||"",topicNumber:item.topicNumber||"",
+      competencyIds:item.competencyIds||[],competencyCodes:item.competencyCodes||[],
+      cognitiveLevel:item.cognitiveLevel||q.cognitiveLevel||"Application",difficulty:item.difficulty||q.difficulty||"Moderate",
+      tags:item.tags||[],updatedAt:serverTimestamp()
+    };
+    const batch=writeBatch(db);
+    batch.update(doc(db,"assessments",a.id,"questions",q.id),questionPatch);
+    batch.set(doc(db,"assessments",a.id,"keys",q.id),{
+      itemId:item.id,itemVersion:latestVersion,correctAnswer:item.correctAnswer??"",explanation:item.explanation||"",rubric:item.rubric||[],updatedAt:serverTimestamp()
+    },{merge:true});
+    await batch.commit();
+
+    const updatedQuestions=d.questions.map(row=>row.id===q.id?{...row,...questionPatch}:row),fw=await framework(a.courseId);
+    const competencyDerivation=deriveCompetencyBlueprint(updatedQuestions,fw.competencies||[],{randomDrawEnabled:!!a.randomDrawEnabled,randomDrawPlan:a.randomDrawPlan||[]});
+    await updateDoc(doc(db,"assessments",a.id),{
+      competencyBlueprint:competencyDerivation.rows,competencyBlueprintAuto:true,
+      competencyBlueprintMappedPoints:competencyDerivation.taggedExpectedPoints,
+      competencyBlueprintUnmappedPoints:competencyDerivation.untaggedExpectedPoints,updatedAt:serverTimestamp()
+    });
+    if(a.sectionId&&window.TheoriaPhase5?.logSectionEvent)await window.TheoriaPhase5.logSectionEvent(a.sectionId,"assessment_question_version_updated","question",q.id,{itemId:item.id,fromVersion:currentVersion,toVersion:latestVersion});
+    else if(window.TheoriaPhase5?.logCourseEvent)await window.TheoriaPhase5.logCourseEvent(a.courseId,"assessment_question_version_updated","question",q.id,{itemId:item.id,fromVersion:currentVersion,toVersion:latestVersion});
+    await openAssessment(a.id,"items");toast("Assessment snapshot updated to Question Bank v"+latestVersion+".");
+  }catch(error){toast(error.message||"Unable to refresh the assessment question.");}
 }
 
 async function addItemsModal(){
@@ -1915,14 +1956,14 @@ async function addItemsModal(){
       if(!a.randomDrawEnabled)total+=points;
       questionPool.push({id:ref.id,itemId:item.id,type:item.type,points});
       batch.set(ref,{
-        itemId:item.id,order,partId:String(fd.get("partId")),type:item.type,prompt:item.prompt,
+        itemId:item.id,itemVersion:Number(item.version||1),order,partId:String(fd.get("partId")),type:item.type,prompt:item.prompt,
         stimulus:item.stimulus||"",sourceTitle:item.sourceTitle||"",options:item.options||[],points,
         difficulty:item.difficulty||"Moderate",cognitiveLevel:item.cognitiveLevel||"Application",tags:item.tags||[],qualityStatus:item.qualityStatus||"Published",
         unitId:item.unitId||"",unitTitle:item.unitTitle||"",unitNumber:Number(item.unitNumber||0),
         topicId:item.topicId||"",topicTitle:item.topicTitle||"",topicNumber:item.topicNumber||"",
         competencyIds:item.competencyIds||[],competencyCodes:item.competencyCodes||[],createdAt:serverTimestamp()
       });
-      batch.set(doc(db,"assessments",a.id,"keys",ref.id),{itemId:item.id,correctAnswer:item.correctAnswer??"",explanation:item.explanation||"",rubric:item.rubric||[],createdAt:serverTimestamp()});
+      batch.set(doc(db,"assessments",a.id,"keys",ref.id),{itemId:item.id,itemVersion:Number(item.version||1),correctAnswer:item.correctAnswer??"",explanation:item.explanation||"",rubric:item.rubric||[],createdAt:serverTimestamp()});
     }
     const addedQuestions=ids.map(id=>{
       const item=available.find(x=>x.id===id);
@@ -3311,6 +3352,7 @@ document.addEventListener("click",async e=>{
   if(a==="edit-assessment")return assessmentModal(P3.current);
   if(a==="add-items")return addItemsModal();
   if(a==="configure-random-draw")return configureRandomDrawModal();
+  if(a==="refresh-item-version")return refreshAssessmentQuestionFromBank(b.dataset.id);
   if(a==="configure-item")return configureItemModal(b.dataset.id);
   if(a==="remove-item")return removeItem(b.dataset.id);
   if(a==="publish")return setStatus("Published");
