@@ -2715,6 +2715,30 @@ async function renderSectionAssessments(){
   }
 }
 
+async function toggleGradingPeriodLock(period){
+  const s=state(),section=s?.currentSection;if(!section||s.role!=="instructor")return;
+  const snap=await getDoc(doc(db,"sections",section.id));if(!snap.exists())return toast("Section not found.");
+  const data=snap.data(),policy=data.gradingPolicy||{},settings={...(policy.gradingPeriodSettings||{})},current=settings[period]||{},nextLocked=current.locked!==true;
+  if(nextLocked&&!confirm("Finalize and lock "+period+"? Grade edits for assignments in this period will be blocked until an instructor reopens it."))return;
+  if(!nextLocked&&!confirm("Reopen "+period+" for grade changes? The audit log will record this action."))return;
+  settings[period]={
+    ...current,
+    locked:nextLocked,
+    finalizedAt:nextLocked?Timestamp.now():null,
+    finalizedBy:nextLocked?s.user.uid:"",
+    reopenedAt:nextLocked?null:Timestamp.now(),
+    reopenedBy:nextLocked?"":s.user.uid
+  };
+  const gradingPolicy={...policy,gradingPeriodSettings:settings,updatedAt:Timestamp.now()};
+  try{
+    await updateDoc(doc(db,"sections",section.id),{gradingPolicy,updatedAt:serverTimestamp()});
+    section.gradingPolicy=gradingPolicy;
+    if(window.TheoriaPhase5?.logSectionEvent)await window.TheoriaPhase5.logSectionEvent(section.id,nextLocked?"grading_period_finalized":"grading_period_reopened","section",section.id,{period});
+    toast(period+(nextLocked?" finalized and locked.":" reopened for grading."));
+    await renderGradingPolicy();
+  }catch(error){toast(error.message||"Unable to update the grading period.");}
+}
+
 async function renderGradingPolicy(){
   const s=state(),section=s.currentSection,el=$("#phase3SectionTab");if(!section||!el)return;
   const secSnap=await getDoc(doc(db,"sections",section.id)),sec=secSnap.exists()?secSnap.data():section;
@@ -2723,6 +2747,7 @@ async function renderGradingPolicy(){
   const selections=pathSnap.docs.map(d=>({id:d.id,...d.data()}));
   el.innerHTML='<div class="grid-2"><div class="panel"><div class="panel-head"><div class="panel-title">Grading Pathway Policy</div></div><div class="panel-body"><form id="gradingPolicyForm">'+
     '<div class="compact-field-grid"><div class="field"><label>Selection Deadline</label><input name="deadline" type="datetime-local" value="'+esc(localDateTime(policy.selectionDeadline))+'"></div><div class="field"><label>Grading Periods</label><input name="gradingPeriods" value="'+esc((policy.gradingPeriods?.length?policy.gradingPeriods:["Overall"]).join(", "))+'" placeholder="Quarter 1, Quarter 2, Final"></div></div>'+
+    '<div class="grading-period-locks">'+(policy.gradingPeriods?.length?policy.gradingPeriods:["Overall"]).map(period=>{const setting=policy.gradingPeriodSettings?.[period]||{};return '<div class="grading-period-lock-row"><div><strong>'+esc(period)+'</strong><span>'+(setting.locked?'Finalized'+(setting.finalizedAt?' • '+esc(dateText(setting.finalizedAt)):''):'Open for grading')+'</span></div><button type="button" class="'+(setting.locked?'secondary-btn':'danger-btn')+' small-btn" data-phase3-action="toggle-grading-period" data-period="'+esc(period)+'">'+(setting.locked?'Reopen':'Finalize & Lock')+'</button></div>';}).join("")+'</div>'+
     '<label class="checkbox-line" style="margin-bottom:16px"><input type="checkbox" name="selectionOpen" '+(policy.selectionOpen!==false?'checked':'')+'> Students may select/change pathways</label>'+
     '<div class="path-policy"><h4>Examination Pathway</h4><div class="form-grid"><div class="field"><label>Semester I Exam %</label><input name="examSemester" type="number" value="'+esc(policy.examination?.semester??35)+'"></div><div class="field"><label>Comprehensive Final %</label><input name="examFinal" type="number" value="'+esc(policy.examination?.comprehensive??65)+'"></div></div></div>'+
     '<div class="path-policy"><h4>Composite Pathway</h4><div class="form-grid"><div class="field"><label>Coursework %</label><input name="compCoursework" type="number" value="'+esc(policy.composite?.coursework??60)+'"></div><div class="field"><label>Semester I Exam %</label><input name="compSemester" type="number" value="'+esc(policy.composite?.semester??15)+'"></div><div class="field"><label>Comprehensive Final %</label><input name="compFinal" type="number" value="'+esc(policy.composite?.comprehensive??25)+'"></div></div></div>'+
@@ -3296,6 +3321,7 @@ document.addEventListener("click",async e=>{
   if(a==="start-exam")return startExam(b.dataset.id);
   if(a==="receipt")return receipt(b.dataset.id);
   if(a==="save-pathway")return savePathway();
+  if(a==="toggle-grading-period")return toggleGradingPeriodLock(b.dataset.period);
   if(a==="accommodations")return accommodationsModal(b.dataset.student);
   if(a==="create-evaluation")return createEvaluation(b.dataset.student);
   if(a==="grade-candidate")return gradeCandidate(b.dataset.student);
