@@ -126,6 +126,12 @@ window.addEventListener("theoria:ready",async()=>{
 
 window.addEventListener("theoria:page",()=>setTimeout(enhanceCurrentContext,60));
 
+window.TheoriaPlatform={
+  hashCode:(value)=>teaching.hashCode(value),
+  renderAssessmentSecurity:(detail)=>teaching.renderAssessmentSecurity(detail),
+  renderBlueprintDesigner:(detail)=>teaching.renderBlueprintDesigner(detail)
+};
+
 window.TheoriaPhase6={
   productivity,teaching,admin,
   applyFeatureFlags,
