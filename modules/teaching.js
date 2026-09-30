@@ -57,7 +57,7 @@ async function rubricLibraryModal(sectionId=section()?.id){
     title:"Rubric Library",
     wide:true,
     body:'<div class="page-head compact-head"><div><div class="panel-title">'+esc((course?.code||sec.courseCode||"Course")+" Rubric Library")+'</div><p class="page-subtitle">Reusable course-level criterion grading. Official catalog rubrics are managed by the course owner/System Owner and can be attached to section assignments.</p></div>'+(canEdit?'<button class="primary-btn small-btn" data-teaching-action="new-rubric" data-section="'+sectionId+'">Create Rubric</button>':'')+'</div>'+
-      (rubrics.length?'<div class="rubric-library-grid">'+rubrics.map(r=>'<article class="rubric-library-card"><div class="card-kicker">'+safe(r.criteria).length+' criteria • '+rubricTotal(r)+' pts</div><h3>'+esc(r.title||"Rubric")+'</h3><p>'+esc(r.description||"")+'</p><div class="card-actions"><button class="secondary-btn small-btn" data-teaching-action="attach-rubric" data-section="'+sectionId+'" data-id="'+r.id+'">Attach to Assignment</button><button class="secondary-btn small-btn" data-teaching-action="edit-rubric" data-section="'+sectionId+'" data-id="'+r.id+'">Edit</button><button class="text-btn danger-text" data-teaching-action="delete-rubric" data-section="'+sectionId+'" data-id="'+r.id+'">Delete</button></div></article>').join("")+'</div>':'<div class="empty-state compact-empty"><div class="empty-symbol">R</div><h3>No rubrics yet.</h3><p>Create a reusable analytic rubric for written work, research, exegesis, argumentation, or seminar preparation.</p></div>'),
+      (rubrics.length?'<div class="rubric-library-grid">'+rubrics.map(r=>'<article class="rubric-library-card"><div class="card-kicker">'+safe(r.criteria).length+' criteria • '+rubricTotal(r)+' pts</div><h3>'+esc(r.title||"Rubric")+'</h3><p>'+esc(r.description||"")+'</p><div class="card-actions"><button class="secondary-btn small-btn" data-teaching-action="rubric-analytics" data-section="'+sectionId+'" data-id="'+r.id+'">Analytics</button><button class="secondary-btn small-btn" data-teaching-action="attach-rubric" data-section="'+sectionId+'" data-id="'+r.id+'">Attach to Assignment</button><button class="secondary-btn small-btn" data-teaching-action="edit-rubric" data-section="'+sectionId+'" data-id="'+r.id+'">Edit</button><button class="text-btn danger-text" data-teaching-action="delete-rubric" data-section="'+sectionId+'" data-id="'+r.id+'">Delete</button></div></article>').join("")+'</div>':'<div class="empty-state compact-empty"><div class="empty-symbol">R</div><h3>No rubrics yet.</h3><p>Create a reusable analytic rubric for written work, research, exegesis, argumentation, or seminar preparation.</p></div>'),
     footer:'<button class="primary-btn" data-close-modal>Done</button>'
   });
 }
@@ -109,6 +109,34 @@ async function attachRubric(sectionId,rubricId){
       closeModal();toast("Rubric attached to assignment.");await core().reloadCurrentSection("assignments");
     }catch(error){toast(error.message||"Unable to attach rubric.");}
   };
+}
+
+async function rubricAnalyticsModal(sectionId,rubricId){
+  const sec=await ensureSection(sectionId);if(!sec)return;
+  const rubricSnap=await getDoc(doc(db,"courses",sec.courseId,"rubrics",rubricId));if(!rubricSnap.exists())return toast("Rubric not found.");
+  const rubric={id:rubricSnap.id,...rubricSnap.data()},criteria=safe(rubric.criteria),grades=(await docs(["sections",sectionId,"grades"])).filter(g=>g.rubricId===rubricId);
+  const rows=criteria.map((criterion,index)=>{
+    let earned=0,possible=0,count=0;
+    for(const grade of grades){
+      const rs=grade.rubricScores;
+      let scoreRow=null;
+      if(Array.isArray(rs))scoreRow=rs.find(x=>Number(x.index)===index||x.name===criterion.name);
+      else if(rs&&typeof rs==="object")scoreRow=rs[criterion.id]||Object.values(rs).find(x=>x.criterion===criterion.name||x.name===criterion.name);
+      if(scoreRow&&scoreRow.score!==undefined){
+        const max=Number(scoreRow.maxPoints??criterion.points??0);
+        earned+=Number(scoreRow.score||0);possible+=max;count++;
+      }
+    }
+    return {criterion,count,percent:possible?Math.round((earned/possible)*1000)/10:null,avg:count?Math.round((earned/count)*100)/100:null};
+  });
+  modal({
+    eyebrow:"Rubric Analytics",
+    title:rubric.title||"Rubric",
+    wide:true,
+    body:'<div class="academic-banner"><div class="kicker">'+grades.length+' graded submission'+(grades.length===1?"":"s")+'</div><h3>Criterion performance across this section.</h3><p>Use this view to identify where the class is consistently strong or where instruction and feedback may need reinforcement.</p></div>'+
+      (grades.length?'<div class="rubric-analytics-grid">'+rows.map(row=>'<div class="rubric-analytics-row '+(row.percent!==null&&row.percent<70?"needs-attention":"")+'"><div><strong>'+esc(row.criterion.name||"Criterion")+'</strong><span>'+esc(row.criterion.description||"")+'</span></div><div><b>'+(row.percent===null?"—":row.percent+"%")+'</b><small>'+row.count+' scored • avg '+(row.avg===null?"—":row.avg)+' / '+esc(row.criterion.points||0)+'</small></div></div>').join("")+'</div>':'<div class="empty-state compact-empty"><div class="empty-symbol">R</div><h3>No rubric evidence yet.</h3><p>Grade an assignment with this rubric to begin criterion analytics.</p></div>'),
+    footer:'<button class="primary-btn" data-close-modal>Close</button>'
+  });
 }
 
 async function openRubricGrade(assignment,student,existing){
@@ -611,6 +639,7 @@ function bind(){
     if(a==="new-rubric"){closeModal();return rubricEditor(sid);}
     if(a==="edit-rubric"){closeModal();return rubricEditor(sid,b.dataset.id);}
     if(a==="delete-rubric"){if(confirm("Delete this reusable rubric? Assignments already graded with it keep their stored rubric evidence.")){const sec=await ensureSection(sid);if(!sec)return;await deleteDoc(doc(db,"courses",sec.courseId,"rubrics",b.dataset.id));closeModal();toast("Rubric deleted.");return rubricLibraryModal(sid);}return;}
+    if(a==="rubric-analytics"){closeModal();return rubricAnalyticsModal(sid,b.dataset.id);}
     if(a==="attach-rubric"){closeModal();return attachRubric(sid,b.dataset.id);}
     if(a==="attendance"){closeModal();return attendanceModal(sid);}
     if(a==="extensions"){closeModal();return extensionsModal(sid);}
