@@ -281,15 +281,63 @@ async function commandItems(){
     {label:"Communications",detail:"Announcements and notifications",action:()=>core().setPage("communications")},
     {label:"Assessments",detail:"Evaluation",action:()=>core().setPage("assessments")},
     {label:"Progression",detail:"Academic pathways",action:()=>core().setPage("progression")},
-    {label:"Academic Profile",detail:"Records and identity",action:()=>core().setPage("academic-profile")}
+    {label:"Academic Profile",detail:"Records and identity",action:()=>core().setPage("academic-profile")},
+    {label:"Question Bank",detail:"Assessment design",action:()=>core().setPage("itembank")}
   ];
-  if(isInstructor())items.push({label:"Insights",detail:"Instructor analytics",action:()=>core().setPage("insights")});
-  if(s?.isSystemOwner)items.push({label:"System Control Center",detail:"Administration",action:()=>core().setPage("admin-center")});
-  (s?.courses||[]).forEach(c=>items.push({label:(c.code||"Course")+" — "+(c.title||"Untitled"),detail:"Course Catalog",action:()=>core().openCourse?core().openCourse(c.id):core().setPage("courses")}));
-  (s?.sections||[]).forEach(sec=>items.push({label:(sec.courseCode||"Course")+" — "+(sec.sectionName||sec.courseTitle),detail:"Section • "+(sec.term||""),action:()=>core().openSection(sec.id)}));
+  if(isInstructor()){
+    items.push({label:"Insights",detail:"Instructor analytics",action:()=>core().setPage("insights")});
+    items.push({label:"Teaching Tools",detail:"Rubrics, attendance, groups, extensions",action:()=>core().setPage("teaching-tools")});
+  }
+  if(s?.isSystemOwner){
+    items.push({label:"System Control Center",detail:"Administration",action:()=>core().setPage("admin-center")});
+    items.push({label:"Program Map",detail:"Curriculum dependencies",action:()=>core().setPage("program-map")});
+  }
+
+  (s?.courses||[]).forEach(c=>items.push({
+    label:(c.code||"Course")+" — "+(c.title||"Untitled"),
+    detail:"Course Catalog • "+(c.discipline||""),
+    action:()=>core().openCourse?core().openCourse(c.id):core().setPage("courses")
+  }));
+  (s?.sections||[]).forEach(sec=>items.push({
+    label:(sec.courseCode||"Course")+" — "+(sec.sectionName||sec.courseTitle),
+    detail:"Section • "+(sec.term||""),
+    action:()=>core().openSection(sec.id)
+  }));
+
   if(s?.currentSection&&s.sectionData){
-    (s.sectionData.assignments||[]).forEach(a=>items.push({label:a.title,detail:"Assignment • "+(s.currentSection.courseCode||""),action:()=>core().openSection(s.currentSection.id,"assignments")}));
-    (s.sectionData.resources||[]).forEach(r=>items.push({label:r.title,detail:"Resource • "+(s.currentSection.courseCode||""),action:()=>core().openSection(s.currentSection.id,"resources")}));
+    (s.sectionData.members||[]).forEach(student=>items.push({
+      label:student.displayName||student.email||"Student",
+      detail:"Student • "+(s.currentSection.courseCode||"")+" • "+(student.email||""),
+      action:()=>window.TheoriaPhase6?.teaching?.studentProfileModal?.(student.id)
+    }));
+    (s.sectionData.assignments||[]).forEach(a=>items.push({
+      label:a.title,detail:"Assignment • "+(s.currentSection.courseCode||""),
+      action:()=>core().openSection(s.currentSection.id,"assignments")
+    }));
+    (s.sectionData.resources||[]).forEach(r=>items.push({
+      label:r.title,detail:"Resource • "+(s.currentSection.courseCode||""),
+      action:()=>core().openSection(s.currentSection.id,"resources")
+    }));
+  }
+
+  if(isInstructor()){
+    let loaded=0;
+    for(const course of (s?.courses||[])){
+      if(loaded>=250)break;
+      try{
+        const snap=await getDocs(collection(db,"courses",course.id,"items"));
+        for(const q of snap.docs){
+          if(loaded++>=250)break;
+          const item=q.data();
+          if(item.qualityStatus==="Retired")continue;
+          items.push({
+            label:(item.prompt||"Question").slice(0,120),
+            detail:"Question Bank • "+(course.code||"Course")+" • "+(item.topicNumber||item.type||""),
+            action:()=>core().setPage("itembank")
+          });
+        }
+      }catch(_){}
+    }
   }
   return items;
 }
