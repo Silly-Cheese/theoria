@@ -676,6 +676,11 @@ service cloud.firestore {
         allow create, update, delete: if sectionCourseworkManager(sectionId);
       }
 
+      match /groupAssignments/{groupAssignmentId} {
+        allow read: if sectionOwner(sectionId) || sectionStaff(sectionId) || sectionMember(sectionId);
+        allow create, update, delete: if sectionCourseworkManager(sectionId);
+      }
+
       match /flags/{flagId} {
         allow read: if sectionGrader(sectionId);
         allow create, update, delete: if sectionAcademicManager(sectionId);
