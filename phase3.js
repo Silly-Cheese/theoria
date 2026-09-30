@@ -2935,7 +2935,16 @@ async function startExam(id,confirmed=false){
 
 function launchExam(assessment,questions,submission){
   clearInterval(P3.timer);
-  P3.exam={assessment,questions,submission,index:Number(submission.currentIndex||0),answers:{...(submission.answers||{})},marked:[...(submission.marked||[])]};
+  const localDraft=window.TheoriaPhase6?.loadExamDraft?.(assessment.id);
+  const serverUpdated=submission.updatedAt?.toMillis?.()||0;
+  const recoverLocal=!!(localDraft&&Number(localDraft.savedAt||0)>serverUpdated&&submission.status==="in_progress");
+  P3.exam={
+    assessment,questions,submission,
+    index:recoverLocal?Number(localDraft.currentIndex||0):Number(submission.currentIndex||0),
+    answers:recoverLocal?{...(localDraft.answers||{})}:{...(submission.answers||{})},
+    marked:recoverLocal?[...(localDraft.marked||[])]:[...(submission.marked||[])]
+  };
+  if(recoverLocal)setTimeout(()=>toast("Recovered a newer local assessment draft after an interrupted save."),80);
   core().setPage("exam",assessment.title);
   $("#examRoot").classList.toggle("large-text-exam",!!submission.accommodationsApplied?.largeText);
   renderExam();
@@ -2948,7 +2957,11 @@ function launchExam(assessment,questions,submission){
   };
   tick();P3.timer=setInterval(tick,1000);
   document.addEventListener("visibilitychange",visibilityEvent);
+  document.addEventListener("fullscreenchange",fullscreenEvent);
   window.addEventListener("beforeunload",unloadEvent);
+  if(assessment.securityPolicy?.fullscreenExpectation&&document.documentElement.requestFullscreen){
+    document.documentElement.requestFullscreen().catch(()=>{});
+  }
 }
 
 function clock(sec){
@@ -2958,6 +2971,9 @@ function clock(sec){
 
 function visibilityEvent(){
   if(P3.exam&&document.visibilityState==="hidden")logEvent("visibility_hidden");
+}
+function fullscreenEvent(){
+  if(P3.exam?.assessment?.securityPolicy?.fullscreenExpectation&&!document.fullscreenElement)logEvent("fullscreen_exit");
 }
 function unloadEvent(e){
   if(!P3.exam)return;e.preventDefault();e.returnValue="";
@@ -2994,7 +3010,14 @@ function scheduleSave(){
 }
 async function saveExam(){
   if(!P3.exam)return;
-  try{await updateDoc(doc(db,"assessments",P3.exam.assessment.id,"submissions",state().user.uid),{answers:P3.exam.answers,marked:P3.exam.marked,currentIndex:P3.exam.index,updatedAt:serverTimestamp()});}catch(_){}
+  window.TheoriaPhase6?.saveExamDraft?.(P3.exam.assessment.id,{
+    answers:P3.exam.answers,marked:P3.exam.marked,currentIndex:P3.exam.index
+  });
+  try{
+    await updateDoc(doc(db,"assessments",P3.exam.assessment.id,"submissions",state().user.uid),{answers:P3.exam.answers,marked:P3.exam.marked,currentIndex:P3.exam.index,updatedAt:serverTimestamp()});
+  }catch(error){
+    console.warn("Assessment server autosave failed; local recovery copy retained.",error);
+  }
 }
 function reviewExam(){
   const ex=P3.exam;if(!ex)return;
@@ -3025,7 +3048,13 @@ async function submitExam(auto=false){
       await setDoc(doc(db,"users",state().user.uid,"entranceAttempts",P3.exam.assessment.sectionId),{status:"submitted",assessmentId:P3.exam.assessment.id,submittedAt:serverTimestamp(),updatedAt:serverTimestamp()},{merge:true});
     }
     const id=P3.exam.assessment.id;
-    clearInterval(P3.timer);document.removeEventListener("visibilitychange",visibilityEvent);window.removeEventListener("beforeunload",unloadEvent);P3.exam=null;receipt(id,auto);
+    window.TheoriaPhase6?.clearExamDraft?.(id);
+    clearInterval(P3.timer);
+    document.removeEventListener("visibilitychange",visibilityEvent);
+    document.removeEventListener("fullscreenchange",fullscreenEvent);
+    window.removeEventListener("beforeunload",unloadEvent);
+    if(document.fullscreenElement&&document.exitFullscreen)document.exitFullscreen().catch(()=>{});
+    P3.exam=null;receipt(id,auto);
   }catch(err){toast(err.message||"Unable to submit assessment.");}
 }
 
