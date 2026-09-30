@@ -3137,6 +3137,9 @@ function openGradeModal(assignmentId,studentId){
   const a=state.sectionData.assignments.find(x=>x.id===assignmentId);
   const s=state.sectionData.members.find(x=>x.id===studentId);
   const existing=state.sectionData.grades.find(g=>g.assignmentId===assignmentId&&g.studentId===studentId);
+  const gradingPeriod=a?.gradingPeriod||"Overall";
+  const periodSetting=state.currentSection?.gradingPolicy?.gradingPeriodSettings?.[gradingPeriod]||{};
+  if(periodSetting.locked===true)return showToast(gradingPeriod+" is finalized and locked. Reopen the grading period before changing grades.");
   const modal=openModal({
     eyebrow:"Gradebook",
     title:(s?.displayName||"Student")+" — "+(a?.title||"Assignment"),
