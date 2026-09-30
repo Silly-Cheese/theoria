@@ -3097,7 +3097,9 @@ function openGradeModal(assignmentId,studentId){
   const modal=openModal({
     eyebrow:"Gradebook",
     title:(s?.displayName||"Student")+" — "+(a?.title||"Assignment"),
-    body:'<form id="gradeForm"><div class="notice">Possible points: <strong>'+esc(a?.points||0)+'</strong></div><div class="compact-field-grid"><div class="field"><label>Score</label><input type="number" min="0" step="0.1" name="score" value="'+esc(existing?.score??"")+'" required></div><div class="field"><label>Grade Status</label><select name="gradeStatus"><option>Normal</option><option>Late</option><option>Missing</option><option>Excused</option></select></div></div><div class="field"><label>Instructor Comment</label><textarea class="editor-compact" rows="2" name="comment" placeholder="Optional concise feedback">'+esc(existing?.comment||"")+'</textarea></div>'+(existing?'<div class="field"><label>Reason for Grade Change</label><textarea class="editor-compact" rows="2" name="overrideReason" required placeholder="Required because this changes an existing grade."></textarea></div>':'')+'<div class="modal-foot" style="margin:24px -24px -24px"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Grade</button></div></form>'
+    body:'<form id="gradeForm"><div class="notice">Possible points: <strong>'+esc(a?.points||0)+'</strong>'+(a?.rubricTitle?' • Rubric: <strong>'+esc(a.rubricTitle)+'</strong>':'')+'</div>'+
+      ((a?.rubricSnapshot||[]).length?'<div class="rubric-grade-grid">'+(a.rubricSnapshot||[]).map((criterion,i)=>'<div class="rubric-grade-row"><div><strong>'+esc(criterion.name||criterion.criterion||"Criterion")+'</strong><span>'+esc(criterion.description||"")+'</span></div><div class="input-with-suffix mini"><input class="rubric-grade-score" data-index="'+i+'" type="number" min="0" max="'+esc(criterion.points||0)+'" step="0.1" value="'+esc(existing?.rubricScores?.[i]?.score??"")+'"><span>/ '+esc(criterion.points||0)+'</span></div><input class="table-input rubric-grade-comment" data-index="'+i+'" placeholder="Criterion feedback" value="'+esc(existing?.rubricScores?.[i]?.comment||"")+'"></div>').join("")+'</div><button type="button" class="secondary-btn small-btn" id="calculateRubricScore">Use Rubric Total</button>':'')+
+      '<div class="compact-field-grid"><div class="field"><label>Score</label><input type="number" min="0" step="0.1" name="score" value="'+esc(existing?.score??"")+'" required></div><div class="field"><label>Grade Status</label><select name="gradeStatus"><option>Normal</option><option>Late</option><option>Missing</option><option>Excused</option></select></div></div><div class="field"><label>Instructor Comment</label><textarea class="editor-compact" rows="2" name="comment" placeholder="Optional concise feedback">'+esc(existing?.comment||"")+'</textarea></div>'+(existing?'<div class="field"><label>Reason for Grade Change</label><textarea class="editor-compact" rows="2" name="overrideReason" required placeholder="Required because this changes an existing grade."></textarea></div>':'')+'<div class="modal-foot" style="margin:24px -24px -24px"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Grade</button></div></form>'
   });
   const gradeForm=modal?.querySelector("#gradeForm");
   if(!gradeForm){closeModal();return showToast("The grade editor could not be initialized. Refresh Theoria and try again.");}
@@ -3112,12 +3114,17 @@ function openGradeModal(assignmentId,studentId){
     else{scoreInput.required=true;scoreInput.readOnly=false;}
   };
   gradeStatusInput.addEventListener("change",syncGradeStatus);syncGradeStatus();
+  modal.querySelector("#calculateRubricScore")?.addEventListener("click",()=>{
+    const total=[...gradeForm.querySelectorAll(".rubric-grade-score")].reduce((n,input)=>n+Number(input.value||0),0);
+    scoreInput.value=String(Math.round(total*100)/100);
+  });
   gradeForm.addEventListener("submit",async e=>{
     e.preventDefault();const fd=new FormData(e.currentTarget),gradeStatus=String(fd.get("gradeStatus")||"Normal");const score=gradeStatus==="Missing"?0:Number(fd.get("score")||0);
     try{
       await setDoc(doc(db,"sections",state.currentSection.id,"grades",assignmentId+"_"+studentId),{
         assignmentId,studentId,studentName:s?.displayName||"Student",assignmentTitle:a?.title||"Assignment",
         score,maxPoints:Number(a?.points||0),gradeStatus:String(fd.get("gradeStatus")||"Normal"),comment:String(fd.get("comment")).trim(),
+        rubricId:a?.rubricId||"",rubricTitle:a?.rubricTitle||"",rubricScores:[...gradeForm.querySelectorAll(".rubric-grade-score")].map((input,i)=>({index:i,name:a?.rubricSnapshot?.[i]?.name||a?.rubricSnapshot?.[i]?.criterion||"Criterion",score:Number(input.value||0),maxPoints:Number(a?.rubricSnapshot?.[i]?.points||0),comment:gradeForm.querySelector('.rubric-grade-comment[data-index="'+i+'"]')?.value.trim()||""})),
         overrideReason:String(fd.get("overrideReason")||"").trim(),updatedAt:serverTimestamp()
       },{merge:true});
       if(existing&&window.TheoriaPhase5?.logSectionEvent)await window.TheoriaPhase5.logSectionEvent(state.currentSection.id,"grade_changed","student",studentId,{assignmentId,assignmentTitle:a?.title||"",priorScore:existing.score,newScore:score,reason:String(fd.get("overrideReason")||"").trim()});
@@ -3634,6 +3641,7 @@ window.TheoriaCore = {
   esc,
   formatDate,
   loadWorkspace,
+  openCourse,
   openSection,
   loadSectionData,
   renderSectionDetail,
