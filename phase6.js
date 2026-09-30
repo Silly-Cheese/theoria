@@ -23,6 +23,7 @@ function featureEnabled(flags,key){return flags[key]!==false;}
 
 async function applyFeatureFlags(){
   const flags=await loadFeatureFlags();
+  window.TheoriaFeatureFlags=flags;
   const map={
     planner:"planner",
     communications:"communications",
