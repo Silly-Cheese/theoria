@@ -2482,7 +2482,7 @@ function openAssignmentModal(existing){
         '<div class="field"><label>Due Date</label><input type="date" name="dueDate" value="'+esc(existing?.dueDate||"")+'"></div>'+
         '<div class="field"><label>Grading Period</label><select name="gradingPeriod" id="assignmentGradingPeriod"></select></div>'+
         '<div class="field"><label>Status</label><select name="status"><option>Published</option><option>Draft</option></select></div></div>'+
-        '<div class="compact-field-grid" style="margin-top:12px"><div class="field"><label>Student Submission</label><select name="submissionMode"><option>Text + Link</option><option>Text Response</option><option>Link / Document</option><option>Completion Confirmation</option><option>No Online Submission</option></select></div><div class="field"><label class="checkbox-line submission-setting"><input type="checkbox" name="allowResubmission" '+(existing?.allowResubmission?'checked':'')+'> Allow students to revise after submitting</label></div></div>'+
+        '<div class="compact-field-grid" style="margin-top:12px"><div class="field"><label>Student Submission</label><select name="submissionMode"><option>Text + Link</option><option>Text Response</option><option>Link / Document</option><option>Completion Confirmation</option><option>No Online Submission</option></select></div><div class="field"><label>Reusable Rubric</label><select name="rubricId" id="assignmentRubric"><option value="">No rubric</option></select></div><div class="field"><label class="checkbox-line submission-setting"><input type="checkbox" name="allowResubmission" '+(existing?.allowResubmission?'checked':'')+'> Allow students to revise after submitting</label></div></div>'+
       '</section>'+
       '<section class="form-section"><div class="form-section-head"><div><span>03</span><h3>Student Directions</h3><p>Build clear instructions one step at a time instead of writing one giant block.</p></div></div>'+
         '<div class="field"><label>Short Overview</label><input name="description" value="'+esc(existing?.description||"")+'" placeholder="One sentence describing what students are doing."></div>'+
@@ -2499,6 +2499,19 @@ function openAssignmentModal(existing){
   const gradingPeriods=(state.currentSection?.gradingPolicy?.gradingPeriods?.length?state.currentSection.gradingPolicy.gradingPeriods:["Overall"]);
   form.querySelector("#assignmentGradingPeriod").innerHTML=gradingPeriods.map(period=>'<option value="'+esc(period)+'">'+esc(period)+'</option>').join("");
   form.querySelector("#assignmentGradingPeriod").value=gradingPeriods.includes(existing?.gradingPeriod)?existing.gradingPeriod:gradingPeriods[0];
+  const rubricSelect=form.querySelector("#assignmentRubric");
+  (async()=>{
+    try{
+      const rubricSnap=await getDocs(collection(db,"courses",state.currentSection.courseId,"rubrics"));
+      const rubrics=rubricSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(a.title||"").localeCompare(String(b.title||"")));
+      rubricSelect.innerHTML='<option value="">No rubric</option>'+rubrics.map(r=>'<option value="'+r.id+'">'+esc(r.title||"Rubric")+' • '+esc(r.totalPoints||0)+' pts</option>').join("");
+      rubricSelect.value=existing?.rubricId||"";
+      rubricSelect.dataset.rubrics=JSON.stringify(rubrics.map(r=>({id:r.id,title:r.title,criteria:r.criteria||[],totalPoints:r.totalPoints||0})));
+    }catch(error){
+      console.warn("Unable to load course rubrics:",error);
+      rubricSelect.innerHTML='<option value="">Rubrics unavailable</option>';
+    }
+  })();
 
   const assignmentFramework=state.sectionData?.framework||{units:[]};
   const assignmentUnit=form.querySelector("#assignmentUnit"),assignmentTopic=form.querySelector("#assignmentTopic");
@@ -2535,6 +2548,11 @@ function openAssignmentModal(existing){
     const requirements=[...reqBox.querySelectorAll(".structured-input")].map(x=>x.value.trim()).filter(Boolean);
     const selectedUnit=assignmentFramework.units.find(u=>u.id===String(fd.get("unitId")||""));
     const selectedTopic=(selectedUnit?.topics||[]).find(t=>t.id===String(fd.get("topicId")||""));
+    let rubricSnapshot=null,rubricTitle="";
+    try{
+      const rubrics=JSON.parse(rubricSelect.dataset.rubrics||"[]"),selectedRubric=rubrics.find(r=>r.id===String(fd.get("rubricId")||""));
+      if(selectedRubric){rubricSnapshot=selectedRubric.criteria||[];rubricTitle=selectedRubric.title||"Rubric";}
+    }catch(_){}
     const data={
       title:String(fd.get("title")).trim(),
       type:String(fd.get("type")||"Assignment"),
@@ -2547,6 +2565,7 @@ function openAssignmentModal(existing){
       requirements,
       submissionMode:String(fd.get("submissionMode")||"Text + Link"),
       allowResubmission:form.querySelector('[name="allowResubmission"]')?.checked===true,
+      rubricId:String(fd.get("rubricId")||""),rubricTitle,rubricSnapshot,
       unitId:selectedUnit?.id||"",
       unitTitle:selectedUnit?.title||"",
       unitNumber:Number(selectedUnit?.order||0),
