@@ -111,11 +111,18 @@ async function runAcademicWorkflowChecks(){
   productivity.updateNotificationBadge?.();
 }
 
+function updateConnectivityStatus(){
+  const pill=document.querySelector("#connectivityStatus");if(!pill)return;
+  pill.textContent=navigator.onLine?"Online":"Offline — recovery active";
+  pill.classList.toggle("offline",!navigator.onLine);
+}
 function addPlatformControls(){
   const top=document.querySelector(".top-actions");if(!top)return;
   if(!document.querySelector("#commandPaletteBtn"))top.insertAdjacentHTML("afterbegin",'<button id="commandPaletteBtn" class="icon-action-btn" data-productivity-action="open-command" title="Search Theoria (Ctrl/Cmd + K)">⌘K</button>');
   if(!document.querySelector("#accessibilityBtn"))top.insertAdjacentHTML("afterbegin",'<button id="accessibilityBtn" class="icon-action-btn" data-productivity-action="accessibility" title="Accessibility">Aa</button>');
   if(!document.querySelector("#notificationBtn"))top.insertAdjacentHTML("afterbegin",'<button id="notificationBtn" class="notification-btn" data-page-shortcut="communications" title="Notifications">◔<span id="notificationBadge" class="notification-badge hidden">0</span></button>');
+  if(!document.querySelector("#connectivityStatus"))top.insertAdjacentHTML("afterbegin",'<span id="connectivityStatus" class="connectivity-pill">Online</span>');
+  updateConnectivityStatus();
 }
 
 function enhanceCurrentContext(){
@@ -147,6 +154,8 @@ window.addEventListener("theoria:ready",async()=>{
     navigator.serviceWorker.register("./sw.js").catch(error=>console.warn("Theoria offline shell registration failed:",error));
   }
   addPlatformControls();
+  window.addEventListener("online",()=>{updateConnectivityStatus();core()?.showToast?.("Theoria is back online. Cloud saves are available again.");});
+  window.addEventListener("offline",()=>{updateConnectivityStatus();core()?.showToast?.("Theoria is offline. Local draft recovery remains active until connectivity returns.");});
   await applyFeatureFlags();
   await showSystemAnnouncement();
   await productivity.synthesizeNotifications?.();
