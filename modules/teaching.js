@@ -320,16 +320,17 @@ async function gradeGroupWork(sectionId,groupAssignmentId){
 
 async function studentProfileModal(studentId){
   const sec=section(),student=memberById(studentId);if(!sec||!student)return;
-  const [grades,assessmentGrades,masterySnap,recordSnap,flags,narrativeSnap,attendance]=await Promise.all([
+  const [grades,assessmentGrades,masterySnap,recordSnap,flags,narrativeSnap,attendance,recognitions]=await Promise.all([
     docs(["sections",sec.id,"grades"]),
     docs(["sections",sec.id,"assessmentGrades"]),
     getDoc(doc(db,"sections",sec.id,"mastery",studentId)).catch(()=>null),
     getDoc(doc(db,"sections",sec.id,"academicRecords",studentId)).catch(()=>null),
     docs(["sections",sec.id,"flags"]),
     getDoc(doc(db,"sections",sec.id,"narratives",studentId)).catch(()=>null),
-    docs(["sections",sec.id,"attendance"])
+    docs(["sections",sec.id,"attendance"]),
+    docs(["sections",sec.id,"recognitions"])
   ]);
-  const sg=grades.filter(x=>x.studentId===studentId),ag=assessmentGrades.filter(x=>x.studentId===studentId),mastery=masterySnap?.exists?.()?masterySnap.data():null,record=recordSnap?.exists?.()?recordSnap.data():null,narrative=narrativeSnap?.exists?.()?narrativeSnap.data():null,studentFlags=flags.filter(x=>x.studentId===studentId&&x.status!=="Resolved"),studentAttendance=attendance.filter(x=>x.studentId===studentId);
+  const sg=grades.filter(x=>x.studentId===studentId),ag=assessmentGrades.filter(x=>x.studentId===studentId),mastery=masterySnap?.exists?.()?masterySnap.data():null,record=recordSnap?.exists?.()?recordSnap.data():null,narrative=narrativeSnap?.exists?.()?narrativeSnap.data():null,studentFlags=flags.filter(x=>x.studentId===studentId&&x.status!=="Resolved"),studentAttendance=attendance.filter(x=>x.studentId===studentId),studentRecognitions=recognitions.filter(x=>x.studentId===studentId);
   const present=studentAttendance.filter(x=>["Present","Remote"].includes(x.status)).length,attendancePct=studentAttendance.length?Math.round(present/studentAttendance.length*1000)/10:null;
   const m=modal({
     eyebrow:"Student Academic Profile",
@@ -337,6 +338,7 @@ async function studentProfileModal(studentId){
     wide:true,
     body:'<div class="student-profile-summary"><div><span>Coursework Grades</span><strong>'+sg.length+'</strong></div><div><span>Formal Assessments</span><strong>'+ag.length+'</strong></div><div><span>Mastery</span><strong>'+(mastery?.overallPercent??"—")+(mastery?.overallPercent!==undefined?"%":"")+'</strong></div><div><span>Attendance</span><strong>'+(attendancePct===null?"—":attendancePct+"%")+'</strong></div></div>'+
       '<div class="grid-2"><div class="panel"><div class="panel-head"><div class="panel-title">Academic Standing</div></div><div class="panel-body"><div class="detail-list"><div><span>Email</span><strong>'+esc(student.email||"—")+'</strong></div><div><span>Enrollment</span><strong>'+esc(student.status||"enrolled")+'</strong></div><div><span>Certified Record</span><strong>'+(record?esc(record.letterGrade+" • "+record.finalPercent+"%"):"Not certified")+'</strong></div></div></div></div><div class="panel"><div class="panel-head"><div class="panel-title">Academic Flags</div><button class="panel-link" data-teaching-action="new-flag" data-student="'+studentId+'">+ Flag</button></div><div class="panel-body">'+(studentFlags.length?studentFlags.map(f=>'<div class="flag-row"><div><strong>'+esc(f.type||"Academic Flag")+'</strong><span>'+esc(f.note||"")+'</span></div><button class="text-btn" data-teaching-action="resolve-flag" data-id="'+f.id+'" data-student="'+studentId+'">Resolve</button></div>').join(""):'<div class="empty-mini">No active academic flags.</div>')+'</div></div></div>'+
+      '<div class="panel" style="margin-top:16px"><div class="panel-head"><div><div class="panel-title">Honors & Academic Recognition</div><div class="panel-subtitle">Formal recognitions can appear in the student transcript.</div></div><button class="panel-link" data-teaching-action="new-recognition" data-student="'+studentId+'">+ Recognition</button></div><div class="panel-body">'+(studentRecognitions.length?studentRecognitions.map(r=>'<div class="profile-record-row"><div><strong>'+esc(r.title||"Recognition")+'</strong><span>'+esc(r.description||"")+'</span></div><b>'+esc(r.term||sec.term||"")+'</b></div>').join(""):'<div class="empty-mini">No academic recognitions recorded.</div>')+'</div></div>'+
       '<div class="panel" style="margin-top:16px"><div class="panel-head"><div><div class="panel-title">Narrative Evaluation</div><div class="panel-subtitle">Term-level academic commentary separate from numerical grades.</div></div></div><div class="panel-body"><form id="narrativeForm"><div class="field"><label>Strengths</label><textarea name="strengths">'+esc(narrative?.strengths||"")+'</textarea></div><div class="field"><label>Growth / Recommendations</label><textarea name="recommendations">'+esc(narrative?.recommendations||"")+'</textarea></div><label class="checkbox-line"><input type="checkbox" name="includeOnRecord" '+(narrative?.includeOnRecord?'checked':'')+'> Include on student academic record</label><button class="primary-btn" type="submit">Save Narrative Evaluation</button></form></div></div>',
     footer:'<button class="primary-btn" data-close-modal>Done</button>'
   });
@@ -347,6 +349,24 @@ async function studentProfileModal(studentId){
       await p5()?.logSectionEvent?.(sec.id,"narrative_evaluation_updated","student",studentId,{includeOnRecord:e.currentTarget.elements.includeOnRecord.checked});
       toast("Narrative evaluation saved.");
     }catch(error){toast(error.message||"Unable to save narrative evaluation.");}
+  };
+}
+
+function recognitionModal(studentId){
+  const student=memberById(studentId),sec=section();if(!student||!sec)return;
+  const m=modal({
+    eyebrow:"Academic Recognition",
+    title:student.displayName||"Student",
+    body:'<form id="recognitionForm"><div class="field"><label>Recognition / Honor</label><input name="title" required placeholder="e.g. Distinguished Seminar Performance"></div><div class="field"><label>Description</label><textarea name="description" placeholder="Optional context for the recognition."></textarea></div><div class="field"><label>Term / Label</label><input name="term" value="'+esc(sec.term||"")+'"></div><div class="modal-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Record Recognition</button></div></form>'
+  });
+  m.querySelector("#recognitionForm").onsubmit=async e=>{
+    e.preventDefault();const fd=new FormData(e.currentTarget);
+    try{
+      const ref=doc(collection(db,"sections",sec.id,"recognitions"));
+      await setDoc(ref,{studentId,studentName:student.displayName||"Student",title:String(fd.get("title")).trim(),description:String(fd.get("description")||"").trim(),term:String(fd.get("term")||sec.term||"").trim(),createdBy:state().user.uid,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+      await p5()?.logSectionEvent?.(sec.id,"academic_recognition_created","student",studentId,{recognitionId:ref.id,title:String(fd.get("title")).trim()});
+      closeModal();toast("Academic recognition recorded.");await studentProfileModal(studentId);
+    }catch(error){toast(error.message||"Unable to record recognition.");}
   };
 }
 
@@ -705,6 +725,7 @@ function bind(){
     if(a==="delete-group"){if(confirm("Delete this student group?")){await deleteDoc(doc(db,"sections",sid,"groups",b.dataset.id));closeModal();return groupsModal(sid);}return;}
     if(a==="student-directory"){closeModal();return studentDirectory();}
     if(a==="student-profile"){closeModal();return studentProfileModal(b.dataset.student);}
+    if(a==="new-recognition"){closeModal();return recognitionModal(b.dataset.student);}
     if(a==="new-flag"){closeModal();return newFlagModal(b.dataset.student);}
     if(a==="resolve-flag"){await updateDoc(doc(db,"sections",section().id,"flags",b.dataset.id),{status:"Resolved",resolvedAt:serverTimestamp(),resolvedBy:state().user.uid,updatedAt:serverTimestamp()});closeModal();toast("Flag resolved.");return studentProfileModal(b.dataset.student);}
     if(a==="bulk-ops"){closeModal();return bulkOperationsModal(sid);}
