@@ -853,6 +853,8 @@ function openSectionModal(existing,preferredCourseId=""){
           courseId:course.id,
           courseTitle:course.title,
           courseCode:course.code,
+          courseVersion:course.currentVersion||"",
+          frameworkVersionId:course.currentVersionId||"",
           sectionNumber,
           term:String(fd.get("term")).trim(),
           sectionName:String(fd.get("sectionName")).trim() || course.title+" — Section "+sectionNumber,
@@ -1469,7 +1471,29 @@ function openTopicModal(unitId,existing){
 async function loadSectionData(section){
   const courseSnap=await getDoc(doc(db,"courses",section.courseId));
   const course=courseSnap.exists()?{id:courseSnap.id,...courseSnap.data()}:null;
-  const framework=course?await loadCourseFramework(course.id):{units:[],competencies:[]};
+  let framework={units:[],competencies:[]};
+  let frameworkVersionLabel=section.courseVersion||"";
+  let frameworkVersionPinned=false;
+  if(course){
+    const versionId=section.frameworkVersionId||"";
+    if(versionId){
+      try{
+        const versionSnap=await getDoc(doc(db,"courses",course.id,"versions",versionId));
+        const snapshot=versionSnap.exists()?versionSnap.data()?.frameworkSnapshot:null;
+        if(snapshot&&Array.isArray(snapshot.units)&&Array.isArray(snapshot.competencies)){
+          framework={
+            units:snapshot.units.map(unit=>({...unit,topics:Array.isArray(unit.topics)?unit.topics:[]})),
+            competencies:snapshot.competencies
+          };
+          frameworkVersionLabel=versionSnap.data()?.label||frameworkVersionLabel||versionId;
+          frameworkVersionPinned=true;
+        }
+      }catch(error){
+        console.warn("Unable to load pinned course framework version:",versionId,error);
+      }
+    }
+    if(!frameworkVersionPinned)framework=await loadCourseFramework(course.id);
+  }
   const assignmentSnap=state.role==="instructor"
     ? await getDocs(collection(db,"sections",section.id,"assignments"))
     : await getDocs(query(collection(db,"sections",section.id,"assignments"),where("status","==","Published")));
@@ -1564,7 +1588,7 @@ async function loadSectionData(section){
   }
 
   return {
-    course, framework, assignments,
+    course, framework, frameworkVersionLabel, frameworkVersionPinned, assignments,
     resources:resourceSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>{
       const au=Number(a.unitNumber||9999),bu=Number(b.unitNumber||9999);
       const as=Number(a.unitSequence||9999),bs=Number(b.unitSequence||9999);
