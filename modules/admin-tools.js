@@ -177,10 +177,29 @@ async function versionCourseModal(){
     e.preventDefault();const fd=new FormData(e.currentTarget),course=state().courses.find(c=>c.id===String(fd.get("courseId")));if(!course)return;
     try{
       const pkg=await coursePackage(course),label=String(fd.get("versionLabel")).trim();
-      await setDoc(doc(db,"courses",course.id,"versions",label.replace(/[^A-Za-z0-9_.-]/g,"_")),{
-        label,note:String(fd.get("note")||"").trim(),snapshot:pkg,createdBy:state().user.uid,createdAt:serverTimestamp()
+      const versionId=label.replace(/[^A-Za-z0-9_.-]/g,"_");
+      const courseSnapshot={
+        code:course.code||"",
+        title:course.title||"",
+        discipline:course.discipline||"",
+        level:course.level||"",
+        status:course.status||"",
+        description:course.description||"",
+        prerequisitePolicy:course.prerequisitePolicy||{},
+        entranceExamRequired:course.entranceExamRequired===true
+      };
+      await setDoc(doc(db,"courses",course.id,"versions",versionId),{
+        label,
+        versionId,
+        note:String(fd.get("note")||"").trim(),
+        courseSnapshot,
+        frameworkSnapshot:pkg.framework||{competencies:[],units:[]},
+        questionCount:(pkg.questions||[]).length,
+        rubricCount:(pkg.rubrics||[]).length,
+        createdBy:state().user.uid,
+        createdAt:serverTimestamp()
       });
-      await updateDoc(doc(db,"courses",course.id),{currentVersion:label,versionedAt:serverTimestamp(),updatedAt:serverTimestamp()});
+      await updateDoc(doc(db,"courses",course.id),{currentVersion:label,currentVersionId:versionId,versionedAt:serverTimestamp(),updatedAt:serverTimestamp()});
       closeModal();toast("Course snapshot "+label+" created.");
     }catch(error){toast(error.message||"Unable to create course snapshot.");}
   };
