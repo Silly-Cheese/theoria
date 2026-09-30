@@ -285,6 +285,10 @@ service cloud.firestore {
         allow create, update: if isSelf(userId) || sectionGrader(sectionId);
         allow delete: if isSelf(userId) || sectionAcademicManager(sectionId);
       }
+
+      match /notifications/{notificationId} {
+        allow read, create, update, delete: if isSelf(userId);
+      }
     }
 
     match /directory/{userId} {
@@ -303,32 +307,44 @@ service cloud.firestore {
 
     match /system/{systemDoc} {
       allow read: if signedIn();
-      allow create: if systemDoc == 'owner'
-        && !ownerExists()
-        && isInstructorAfter()
-        && request.resource.data.uid == uid()
-        && request.resource.data.confirmed == true;
-      allow update: if systemDoc == 'owner'
-        && request.resource.data.confirmed == true
-        && (
-          (
-            ownerRecordMatchesUser()
-            && request.resource.data.uid == resource.data.uid
-          )
-          || (
-            ownerEmailMatchesUser()
-            && request.resource.data.uid == uid()
-            && request.resource.data.email == request.auth.token.email
-          )
+      allow create: if (
+          systemDoc in ['platform', 'announcement']
+          && isSystemOwner()
         )
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'uid',
-          'displayName',
-          'email',
-          'confirmed',
-          'confirmedAt',
-          'updatedAt'
-        ]);
+        || (
+          systemDoc == 'owner'
+          && !ownerExists()
+          && isInstructorAfter()
+          && request.resource.data.uid == uid()
+          && request.resource.data.confirmed == true
+        );
+      allow update: if (
+          systemDoc in ['platform', 'announcement']
+          && isSystemOwner()
+        )
+        || (
+          systemDoc == 'owner'
+          && request.resource.data.confirmed == true
+          && (
+            (
+              ownerRecordMatchesUser()
+              && request.resource.data.uid == resource.data.uid
+            )
+            || (
+              ownerEmailMatchesUser()
+              && request.resource.data.uid == uid()
+              && request.resource.data.email == request.auth.token.email
+            )
+          )
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'uid',
+            'displayName',
+            'email',
+            'confirmed',
+            'confirmedAt',
+            'updatedAt'
+          ])
+        );
       allow delete: if false;
     }
 
@@ -434,6 +450,17 @@ service cloud.firestore {
         allow read: if canManageCourse(courseId);
         allow create: if canManageCourse(courseId);
         allow update, delete: if false;
+      }
+
+      match /rubrics/{rubricId} {
+        allow read: if canUseCourseAsInstructor(courseId) || courseIsPublishedCatalog(courseId);
+        allow create, update, delete: if canManageCourse(courseId);
+      }
+
+      match /versions/{versionId} {
+        allow read: if signedIn();
+        allow create: if canManageCourse(courseId);
+        allow update, delete: if isSystemOwner();
       }
     }
 
@@ -611,6 +638,54 @@ service cloud.firestore {
         allow update: if false;
         allow delete: if sectionAcademicManager(sectionId);
       }
+
+      match /events/{eventId} {
+        allow read: if sectionOwner(sectionId) || sectionStaff(sectionId) || sectionMember(sectionId);
+        allow create, update, delete: if sectionCourseworkManager(sectionId);
+      }
+
+      match /announcements/{announcementId} {
+        allow read: if sectionOwner(sectionId) || sectionStaff(sectionId) || sectionMember(sectionId);
+        allow create, update, delete: if sectionCourseworkManager(sectionId);
+      }
+
+      match /attendance/{attendanceId} {
+        allow read: if sectionGrader(sectionId)
+          || (
+            sectionMember(sectionId)
+            && resource.data.studentId == uid()
+          );
+        allow create, update, delete: if sectionCourseworkManager(sectionId);
+      }
+
+      match /extensions/{extensionId} {
+        allow read: if sectionGrader(sectionId)
+          || (
+            sectionMember(sectionId)
+            && resource.data.studentId == uid()
+          );
+        allow create, update, delete: if sectionCourseworkManager(sectionId);
+      }
+
+      match /groups/{groupId} {
+        allow read: if sectionOwner(sectionId) || sectionStaff(sectionId) || sectionMember(sectionId);
+        allow create, update, delete: if sectionCourseworkManager(sectionId);
+      }
+
+      match /flags/{flagId} {
+        allow read: if sectionGrader(sectionId);
+        allow create, update, delete: if sectionAcademicManager(sectionId);
+      }
+
+      match /narratives/{userId} {
+        allow read: if sectionGrader(sectionId)
+          || (
+            isSelf(userId)
+            && sectionMember(sectionId)
+            && resource.data.includeOnRecord == true
+          );
+        allow create, update, delete: if sectionAcademicManager(sectionId);
+      }
     }
 
     match /joinCodes/{code} {
@@ -720,7 +795,8 @@ service cloud.firestore {
               'elapsedSeconds',
               'questionOrder',
               'acknowledgedAt',
-              'accommodationsApplied'
+              'accommodationsApplied',
+              'attemptNumber'
             ])
           );
 
@@ -786,6 +862,28 @@ service cloud.firestore {
           || (
             assessmentData(assessmentId).sectionId != ''
             && sectionGrader(assessmentData(assessmentId).sectionId)
+          );
+      }
+
+      match /attemptCounters/{studentId} {
+        allow read: if isSelf(studentId)
+          || assessmentOwner(assessmentId)
+          || (
+            assessmentData(assessmentId).sectionId != ''
+            && sectionGrader(assessmentData(assessmentId).sectionId)
+          );
+        allow create: if isSelf(studentId)
+          && assessmentOpen(assessmentId)
+          && request.resource.data.studentId == uid()
+          && request.resource.data.count == 1;
+        allow update: if isSelf(studentId)
+          && assessmentOpen(assessmentId)
+          && request.resource.data.studentId == uid()
+          && request.resource.data.count == resource.data.count + 1;
+        allow delete: if assessmentOwner(assessmentId)
+          || (
+            assessmentData(assessmentId).sectionId != ''
+            && sectionAcademicManager(assessmentData(assessmentId).sectionId)
           );
       }
     }
