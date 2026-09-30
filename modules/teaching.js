@@ -182,13 +182,17 @@ async function attendanceModal(sectionId=section()?.id){
     eyebrow:"Attendance",
     title:sec.sectionName||sec.courseTitle,
     wide:true,
-    body:'<form id="attendanceForm"><div class="compact-field-grid"><div class="field"><label>Date</label><input id="attendanceDate" type="date" value="'+today+'"></div><div class="field"><label>Session</label><input name="sessionTitle" placeholder="Class meeting, seminar, review…"></div></div><div id="attendanceRoster" class="attendance-roster"></div><div class="modal-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Attendance</button></div></form>'
+    body:'<form id="attendanceForm"><div class="compact-field-grid"><div class="field"><label>Date</label><input id="attendanceDate" type="date" value="'+today+'"></div><div class="field"><label>Session</label><input name="sessionTitle" placeholder="Class meeting, seminar, review…"></div></div><div id="attendanceSummary" class="attendance-summary"></div><div id="attendanceRoster" class="attendance-roster"></div><div class="modal-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Attendance</button></div></form>'
   });
   const roster=m.querySelector("#attendanceRoster"),dateInputEl=m.querySelector("#attendanceDate");
   const render=async()=>{
     const date=dateInputEl.value||today,existing=await docs(["sections",sectionId,"attendance"]),map=new Map(existing.filter(x=>x.date===date).map(x=>[x.studentId,x]));
     roster.innerHTML=members.length?members.map(student=>{const row=map.get(student.id);return '<div class="attendance-row"><div><strong>'+esc(student.displayName||"Student")+'</strong><span>'+esc(student.email||"")+'</span></div><select data-attendance-student="'+student.id+'"><option>Present</option><option>Absent</option><option>Tardy</option><option>Excused</option><option>Remote</option></select><input data-attendance-note="'+student.id+'" placeholder="Note" value="'+esc(row?.note||"")+'"></div>';}).join(""):'<div class="empty-mini">No students enrolled.</div>';
     members.forEach(student=>{const row=map.get(student.id),select=roster.querySelector('[data-attendance-student="'+student.id+'"]');if(select)select.value=row?.status||"Present";});
+    const summary=m.querySelector("#attendanceSummary"),allRows=existing,counts={Present:0,Absent:0,Tardy:0,Excused:0,Remote:0};
+    allRows.forEach(x=>{if(counts[x.status]!==undefined)counts[x.status]++;});
+    const meetings=[...new Set(allRows.map(x=>x.date).filter(Boolean))].length,attendanceRate=(counts.Present+counts.Remote+counts.Tardy+counts.Absent)>0?Math.round((counts.Present+counts.Remote+counts.Tardy)/(counts.Present+counts.Remote+counts.Tardy+counts.Absent)*1000)/10:null;
+    if(summary)summary.innerHTML='<div><span>Recorded Meetings</span><strong>'+meetings+'</strong></div><div><span>Present / Remote</span><strong>'+(counts.Present+counts.Remote)+'</strong></div><div><span>Tardy</span><strong>'+counts.Tardy+'</strong></div><div><span>Attendance Rate</span><strong>'+(attendanceRate===null?"—":attendanceRate+"%")+'</strong></div>';
   };
   dateInputEl.onchange=render;await render();
   m.querySelector("#attendanceForm").onsubmit=async e=>{
