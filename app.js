@@ -1480,15 +1480,18 @@ async function loadSectionData(section){
   let members=[];
   let grades=[];
   let assessmentGrades=[];
+  let extensions=[];
   if(state.role==="instructor"){
-    const [memberSnap,gradeSnap,assessmentGradeSnap]=await Promise.all([
+    const [memberSnap,gradeSnap,assessmentGradeSnap,extensionSnap]=await Promise.all([
       getDocs(collection(db,"sections",section.id,"members")),
       getDocs(collection(db,"sections",section.id,"grades")),
-      getDocs(collection(db,"sections",section.id,"assessmentGrades"))
+      getDocs(collection(db,"sections",section.id,"assessmentGrades")),
+      getDocs(collection(db,"sections",section.id,"extensions"))
     ]);
     members=memberSnap.docs.map(d=>({id:d.id,...d.data()}));
     grades=gradeSnap.docs.map(d=>({id:d.id,...d.data()}));
     assessmentGrades=assessmentGradeSnap.docs.map(d=>({id:d.id,...d.data()}));
+    extensions=extensionSnap.docs.map(d=>({id:d.id,...d.data()}));
 
     // Hydrate older assessmentRefs that predate points/type metadata.
     for(const ref of assessmentRefs){
@@ -1507,8 +1510,12 @@ async function loadSectionData(section){
   }else{
     const memberSnap=await getDoc(doc(db,"sections",section.id,"members",state.user.uid));
     if(memberSnap.exists()) members=[{id:memberSnap.id,...memberSnap.data()}];
-    const gradeSnap=await getDocs(query(collection(db,"sections",section.id,"grades"),where("studentId","==",state.user.uid)));
+    const [gradeSnap,extensionSnap]=await Promise.all([
+      getDocs(query(collection(db,"sections",section.id,"grades"),where("studentId","==",state.user.uid))),
+      getDocs(query(collection(db,"sections",section.id,"extensions"),where("studentId","==",state.user.uid)))
+    ]);
     grades=gradeSnap.docs.map(d=>({id:d.id,...d.data()}));
+    extensions=extensionSnap.docs.map(d=>({id:d.id,...d.data()}));
 
     // Student assessment-grade rules require direct reads and released=true.
     for(const ref of assessmentRefs){
@@ -1526,7 +1533,19 @@ async function loadSectionData(section){
       return at-bt || String(a.title||"").localeCompare(String(b.title||""));
     });
 
-  const assignments=assignmentSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>{
+  const assignments=assignmentSnap.docs.map(d=>{
+    const assignment={id:d.id,...d.data()};
+    if(state.role==="student"){
+      const extension=extensions.find(x=>x.assignmentId===assignment.id&&x.studentId===state.user.uid);
+      if(extension?.dueDate){
+        assignment.originalDueDate=assignment.dueDate||"";
+        assignment.effectiveDueDate=extension.dueDate;
+        assignment.dueDate=extension.dueDate;
+        assignment.extension=extension;
+      }
+    }
+    return assignment;
+  }).sort((a,b)=>{
     const ad=String(a.dueDate||""),bd=String(b.dueDate||"");
     if(ad&&bd&&ad!==bd)return ad.localeCompare(bd);
     if(ad&&!bd)return -1;
@@ -1552,7 +1571,7 @@ async function loadSectionData(section){
       return au-bu||as-bs||String(a.title||"").localeCompare(String(b.title||""));
     }),
     members:members.sort((a,b)=>String(a.displayName||"").localeCompare(String(b.displayName||""))),
-    grades, assignmentSubmissions, assessmentRefs, assessmentGrades
+    grades, assignmentSubmissions, assessmentRefs, assessmentGrades, extensions
   };
 }
 
@@ -1728,7 +1747,7 @@ function renderAssignments(){
       (a.topicNumber?' • Topic '+esc(a.topicNumber):'')+
       '</div><h4>'+esc(a.title)+'</h4>'+(a.description?'<p>'+esc(a.description)+'</p>':'')+
       (a.instructionSteps?.length?'<div class="assignment-step-preview">'+a.instructionSteps.slice(0,3).map((step,i)=>'<div><span>'+String(i+1).padStart(2,"0")+'</span>'+esc(step)+'</div>').join("")+(a.instructionSteps.length>3?'<small>+'+(a.instructionSteps.length-3)+' more step'+(a.instructionSteps.length-3===1?"":"s")+'</small>':'')+'</div>':'')+
-      '<div class="assignment-meta"><span>'+esc(a.points||0)+' points</span><span>'+esc(a.gradingPeriod||"Overall")+'</span><span class="'+(due.late&&!submission?"late-text":"")+'">'+esc(due.label)+'</span>'+(a.requirements?.length?'<span>'+a.requirements.length+' requirement'+(a.requirements.length===1?"":"s")+'</span>':'')+'<span>'+esc(a.submissionMode||"Text + Link")+'</span>'+(state.role==="instructor"?'<span class="badge '+(a.status==="Published"?'live':'gold')+'">'+esc(a.status||"Published")+'</span>':'<span class="badge '+statusClass+'">'+esc(studentStatus)+'</span>')+'</div>'+
+      '<div class="assignment-meta"><span>'+esc(a.points||0)+' points</span><span>'+esc(a.gradingPeriod||"Overall")+'</span><span class="'+(due.late&&!submission?"late-text":"")+'">'+esc(due.label)+'</span>'+(a.extension?'<span class="badge live">Individual extension</span>':'')+(a.requirements?.length?'<span>'+a.requirements.length+' requirement'+(a.requirements.length===1?"":"s")+'</span>':'')+'<span>'+esc(a.submissionMode||"Text + Link")+'</span>'+(state.role==="instructor"?'<span class="badge '+(a.status==="Published"?'live':'gold')+'">'+esc(a.status||"Published")+'</span>':'<span class="badge '+statusClass+'">'+esc(studentStatus)+'</span>')+'</div>'+
       (grade&&state.role==="student"?'<div class="assignment-grade-preview"><strong>'+esc(grade.score)+' / '+esc(a.points||0)+'</strong>'+(grade.comment?'<span>'+esc(grade.comment)+'</span>':'')+'</div>':'')+
       '</div><div class="inline-actions">'+
       (state.role==="instructor"?'<button class="secondary-btn small-btn" data-action="assignment-submissions" data-id="'+a.id+'">Submissions</button><button class="text-btn" data-action="edit-assignment" data-id="'+a.id+'">Edit</button><button class="danger-btn small-btn" data-action="delete-assignment" data-id="'+a.id+'">Delete</button>':
