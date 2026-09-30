@@ -232,6 +232,36 @@ async function synthesizeNotifications(){
     if(a.status==="Draft")return;
     seeds.push({key:"announcement|"+a.sectionId+"|"+a.id,type:"announcement",title:a.title,body:(a.courseCode?a.courseCode+" • ":"")+String(a.body||"").slice(0,180),sectionId:a.sectionId,targetPage:"communications"});
   });
+
+  if(s.role==="student"&&prefs.grades!==false){
+    for(const section of (s.sections||[]).filter(x=>x.status!=="Archived")){
+      try{
+        const gradeSnap=await getDocs(query(collection(db,"sections",section.id,"grades"),where("studentId","==",uid)));
+        gradeSnap.docs.forEach(d=>{
+          const g=d.data(),stamp=g.updatedAt?.toMillis?.()||g.updatedAt?.seconds||0;
+          seeds.push({
+            key:"grade|"+section.id+"|"+d.id+"|"+stamp,type:"grade",
+            title:(g.assignmentTitle||"Coursework")+" graded",
+            body:(section.courseCode?section.courseCode+" • ":"")+String(g.gradeStatus&&g.gradeStatus!=="Normal"?g.gradeStatus+" • ":"")+(g.score!==undefined?g.score+" / "+(g.maxPoints||"—"):"Grade updated"),
+            sectionId:section.id,targetPage:"reports"
+          });
+        });
+      }catch(_){}
+      try{
+        const resultSnap=await getDocs(query(collection(db,"sections",section.id,"assessmentGrades"),where("studentId","==",uid)));
+        resultSnap.docs.forEach(d=>{
+          const g=d.data(),stamp=g.updatedAt?.toMillis?.()||g.updatedAt?.seconds||0;
+          seeds.push({
+            key:"assessment-grade|"+section.id+"|"+d.id+"|"+stamp,type:"grade",
+            title:(g.assessmentTitle||"Assessment")+" result available",
+            body:(section.courseCode?section.courseCode+" • ":"")+(g.percent!==undefined?g.percent+"%":"Result updated"),
+            sectionId:section.id,targetPage:"reports"
+          });
+        });
+      }catch(_){}
+    }
+  }
+
   for(const n of seeds){
     const ref=doc(db,"users",uid,"notifications",stableId(n.key));
     try{
