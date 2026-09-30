@@ -183,10 +183,10 @@ function itemCard(item){
   return '<article class="assessment-item-card">'+
     '<div class="item-card-head"><div><div class="card-kicker">'+esc(item.courseCode||"COURSE")+' • '+esc(item.type||"Question")+'</div>'+
     '<h3>'+esc((item.prompt||"Untitled question").slice(0,150))+(String(item.prompt||"").length>150?"…":"")+'</h3></div>'+
-    '<span class="badge">'+esc(item.difficulty||"Moderate")+'</span></div>'+
+    '<div class="inline-actions"><span class="badge '+((item.qualityStatus||"Published")==="Retired"?"closed":(item.qualityStatus||"Published")==="Draft"?"gold":"")+'">'+esc(item.qualityStatus||"Published")+'</span><span class="badge">'+esc(item.difficulty||"Moderate")+'</span></div></div>'+
     '<div class="item-tags"><span>v'+esc(item.version||1)+'</span><span>'+esc(item.topicNumber||"No topic")+'</span><span>'+esc(item.cognitiveLevel||"Application")+'</span><span>'+esc(item.pointsDefault||1)+' pts</span>'+
     (item.competencyCodes||[]).map(x=>'<span>'+esc(x)+'</span>').join("")+'</div>'+
-    '<div class="card-actions">'+(manager?'<button class="secondary-btn small-btn" data-phase3-action="item-history" data-course="'+item.courseId+'" data-id="'+item.id+'">History</button><button class="secondary-btn small-btn" data-phase3-action="edit-item" data-course="'+item.courseId+'" data-id="'+item.id+'">Edit</button><button class="danger-btn small-btn" data-phase3-action="delete-bank-question" data-course="'+item.courseId+'" data-id="'+item.id+'">Delete</button>':'<span class="badge">Official Question Bank • v'+esc(item.version||1)+'</span>')+'</div></article>';
+    '<div class="card-actions">'+(manager?'<button class="secondary-btn small-btn" data-phase3-action="item-history" data-course="'+item.courseId+'" data-id="'+item.id+'">History & Analytics</button><button class="secondary-btn small-btn" data-phase3-action="edit-item" data-course="'+item.courseId+'" data-id="'+item.id+'">Edit</button>'+((item.qualityStatus||"Published")==="Retired"?'<button class="secondary-btn small-btn" data-phase3-action="restore-bank-question" data-course="'+item.courseId+'" data-id="'+item.id+'">Restore</button>':'<button class="danger-btn small-btn" data-phase3-action="retire-bank-question" data-course="'+item.courseId+'" data-id="'+item.id+'">Retire</button>'):'<span class="badge">Official Question Bank • v'+esc(item.version||1)+'</span>')+'</div></article>';
 }
 
 async function renderItemBank(){
@@ -644,7 +644,9 @@ async function itemModal(existing){
         '<div class="structured-builder"><div class="structured-builder-head"><div><strong>Rubric Criteria</strong><span>Most useful for written, oral, and analytical items.</span></div><button type="button" class="secondary-btn small-btn" id="addRubricCriterion">+ Add Criterion</button></div><div id="rubricRows" class="structured-list"></div></div>'+
         '<div class="field"><label>Instructor Explanation / Key Notes</label><textarea class="editor-compact" rows="3" name="explanation" placeholder="Why is the answer correct, or what should a strong response demonstrate?">'+esc(existing?.explanation||"")+'</textarea></div>'+
       '</section>'+
-      '<section class="form-section"><div class="form-section-head"><div><span>05</span><h3>Academic Mapping</h3><p>Tag the item for analytics and mastery evidence.</p></div></div>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>05</span><h3>Academic Mapping & Quality</h3><p>Tag the item for mastery evidence and move it through the Question Bank quality workflow.</p></div></div>'+
+        '<div class="compact-field-grid"><div class="field"><label>Quality Status</label><select name="qualityStatus"><option>Draft</option><option>Reviewed</option><option>Published</option><option>Retired</option></select></div><label class="policy-card compact-policy"><input type="checkbox" name="reviewFlag" '+(existing?.reviewFlag?'checked':'')+'><div><strong>Flag for review</strong><span>Keep this item visible to authors as needing revision.</span></div></label></div>'+
+        '<div class="field"><label>Revision / Review Notes</label><textarea class="editor-compact" rows="2" name="qualityNotes" placeholder="Why was this revised, flagged, or retired?">'+esc(existing?.qualityNotes||"")+'</textarea></div>'+
         '<div class="field"><label>Academic Competencies</label><div id="itemCompetencies" class="competency-picker"></div></div>'+
         '<div class="field"><label>Tags</label><input name="tags" value="'+esc((existing?.tags||[]).join(", "))+'" placeholder="christology, primary-source, final-review"></div>'+
       '</section>'+
@@ -655,6 +657,7 @@ async function itemModal(existing){
   form.courseId.value=courseId;
   form.difficulty.value=existing?.difficulty||"Moderate";
   form.cognitiveLevel.value=existing?.cognitiveLevel||"Application";
+  form.qualityStatus.value=existing?.qualityStatus|| (existing?"Published":"Draft");
 
   let optionSeed=(existing?.options||[]).map(x=>x.text||x);
   if(!optionSeed.length&&objective(currentType))optionSeed=["","","",""];
@@ -747,11 +750,15 @@ async function itemModal(existing){
       unitId:unit?.id||"",unitTitle:unit?.title||"",unitNumber:Number(unit?.order||0),topicId:topic?.id||"",topicTitle:topic?.title||"",topicNumber:topic?.number||"",
       competencyIds:selected.map(x=>x.value),competencyCodes:selected.map(x=>x.dataset.code),
       pointsDefault:Number(fd.get("pointsDefault")||1),tags:String(fd.get("tags")||"").split(",").map(x=>x.trim()).filter(Boolean),
+      qualityStatus:String(fd.get("qualityStatus")||"Draft"),reviewFlag:form.elements.reviewFlag.checked,qualityNotes:String(fd.get("qualityNotes")||"").trim(),
       sourceTitle:String(fd.get("sourceTitle")||"").trim(),sourceSet:String(fd.get("sourceSet")||"").trim(),stimulus:String(fd.get("stimulus")||"").trim(),
       prompt:String(fd.get("prompt")||"").trim(),options,
       correctAnswer:type==="Multiple Select"?checked.sort():(checked[0]||""),
       explanation:String(fd.get("explanation")||"").trim(),rubric,updatedAt:serverTimestamp()
     };
+    const normalizedPrompt=String(data.prompt||"").toLowerCase().replace(/\s+/g," ").trim();
+    const duplicate=P3.items.find(x=>x.courseId===cid&&x.id!==existing?.id&&String(x.prompt||"").toLowerCase().replace(/\s+/g," ").trim()===normalizedPrompt);
+    if(duplicate&&!confirm("A Question Bank item with the same prompt already exists. Save this as a separate item/version anyway?"))return;
     try{
       if(existing){
         const currentVersion=Math.max(1,Number(existing.version||1));
@@ -836,6 +843,16 @@ async function itemHistoryModal(courseId,itemId){
       footer:'<button class="primary-btn" data-close-modal>Close</button>'
     });
   }catch(error){toast(error.message||"Unable to load question history.");}
+}
+
+async function setQuestionQuality(courseId,itemId,status){
+  const item=P3.items.find(x=>x.courseId===courseId&&x.id===itemId);if(!item)return;
+  if(status==="Retired"&&!confirm("Retire this Question Bank item? Existing assessment snapshots are preserved, but it will not be available for new assessments."))return;
+  try{
+    await updateDoc(doc(db,"courses",courseId,"items",itemId),{qualityStatus:status,reviewFlag:false,qualityUpdatedAt:serverTimestamp(),updatedAt:serverTimestamp()});
+    if(window.TheoriaPhase5?.logCourseEvent)await window.TheoriaPhase5.logCourseEvent(courseId,"question_quality_changed","question",itemId,{status});
+    await renderItemBank();toast(status==="Retired"?"Question retired.":"Question restored to Published.");
+  }catch(error){toast(error.message||"Unable to update question quality status.");}
 }
 
 /* -------------------- ASSESSMENTS -------------------- */
@@ -1529,6 +1546,7 @@ async function assessmentModal(existing){
             batch.set(ref,{
               itemId:item.id,order,partId:(data.parts?.[0]?.id||"main"),type:item.type,prompt:item.prompt,
               stimulus:item.stimulus||"",sourceTitle:item.sourceTitle||"",options:item.options||[],points:Number(item.pointsDefault||1),
+              difficulty:item.difficulty||"Moderate",cognitiveLevel:item.cognitiveLevel||"Application",tags:item.tags||[],qualityStatus:item.qualityStatus||"Published",
               unitId:item.unitId||"",unitTitle:item.unitTitle||"",unitNumber:Number(item.unitNumber||0),
               topicId:item.topicId||"",topicTitle:item.topicTitle||"",topicNumber:item.topicNumber||"",
               competencyIds:item.competencyIds||[],competencyCodes:item.competencyCodes||[],createdAt:serverTimestamp()
@@ -1612,7 +1630,9 @@ async function openAssessment(id,tab="overview"){
 }
 
 function assessmentTabs(active){
-  const tabs=P3.current?.sectionId?[["overview","Overview"],["items","Questions"],["candidates","Candidates"],["grading","Grading"],["analytics","Analytics"]]:[["overview","Overview"],["items","Questions"]];
+  const tabs=P3.current?.sectionId
+    ? [["overview","Overview"],["items","Questions"],["blueprint","Blueprint"],["security","Security"],["candidates","Candidates"],["grading","Grading"],["analytics","Analytics"]]
+    : [["overview","Overview"],["items","Questions"],["blueprint","Blueprint"],["security","Security"]];
   return '<div class="tabs">'+tabs.map(([id,label])=>'<button class="tab-btn '+(active===id?'active':'')+'" data-phase3-action="assessment-tab" data-tab="'+id+'">'+label+'</button>').join("")+'</div>';
 }
 
@@ -1738,7 +1758,7 @@ function renderAssessment(tab="overview"){
   const a=P3.current;if(!a)return;
   const template=!a.sectionId;
   if(template&&(tab==="candidates"||tab==="grading"))tab="overview";
-  const body=tab==="items"?itemsView():tab==="candidates"?candidatesView():tab==="grading"?gradingView():tab==="analytics"?'<div id="phase5AssessmentAnalytics"><div class="empty-mini">Calculating assessment analytics…</div></div>':overviewView();
+  const body=tab==="items"?itemsView():tab==="blueprint"?'<div id="phase6BlueprintDesigner"><div class="empty-mini">Building assessment blueprint…</div></div>':tab==="security"?'<div id="phase6AssessmentSecurity"><div class="empty-mini">Loading security policy…</div></div>':tab==="candidates"?candidatesView():tab==="grading"?gradingView():tab==="analytics"?'<div id="phase5AssessmentAnalytics"><div class="empty-mini">Calculating assessment analytics…</div></div>':overviewView();
   let statusButton="";
   if(a.entranceExam===true)statusButton='';
   else if(template)statusButton='<button class="primary-btn small-btn" data-phase3-action="assign-assessment" data-id="'+a.id+'">Assign to Section</button>';
@@ -1750,12 +1770,14 @@ function renderAssessment(tab="overview"){
     (template?'<div class="workflow-strip"><div class="done"><span>1</span><strong>Template</strong></div><div class="'+(a.questionCount?"done":"current")+'"><span>2</span><strong>Question Bank</strong></div><div class="'+(a.questionCount?"current":"")+'"><span>3</span><strong>Assign</strong></div><div><span>4</span><strong>Publish</strong></div></div>':'')+
     assessmentTabs(tab)+'<div>'+body+'</div>';
   if(tab==="analytics")window.TheoriaPhase5?.renderAssessmentAnalytics?.(P3.detail);
+  if(tab==="blueprint")window.TheoriaPlatform?.renderBlueprintDesigner?.(P3.detail);
+  if(tab==="security")window.TheoriaPlatform?.renderAssessmentSecurity?.(P3.detail);
 }
 
 async function addItemsModal(){
   await loadItems();
   const a=P3.current;
-  const available=P3.items.filter(x=>x.courseId===a.courseId&&!P3.detail.questions.some(q=>q.itemId===x.id));
+  const available=P3.items.filter(x=>x.courseId===a.courseId&&!["Retired","Draft"].includes(x.qualityStatus||"Published")&&!P3.detail.questions.some(q=>q.itemId===x.id));
   if(!available.length)return toast("No unused Question Bank questions are available for this course.");
 
   let fw={units:[],competencies:[]};
@@ -1895,6 +1917,7 @@ async function addItemsModal(){
       batch.set(ref,{
         itemId:item.id,order,partId:String(fd.get("partId")),type:item.type,prompt:item.prompt,
         stimulus:item.stimulus||"",sourceTitle:item.sourceTitle||"",options:item.options||[],points,
+        difficulty:item.difficulty||"Moderate",cognitiveLevel:item.cognitiveLevel||"Application",tags:item.tags||[],qualityStatus:item.qualityStatus||"Published",
         unitId:item.unitId||"",unitTitle:item.unitTitle||"",unitNumber:Number(item.unitNumber||0),
         topicId:item.topicId||"",topicTitle:item.topicTitle||"",topicNumber:item.topicNumber||"",
         competencyIds:item.competencyIds||[],competencyCodes:item.competencyCodes||[],createdAt:serverTimestamp()
@@ -2803,7 +2826,12 @@ async function startExam(id,confirmed=false){
     const now=Date.now(),opens=a.opensAt?.toMillis?.()||0,closes=a.closesAt?.toMillis?.()||0;
     if(opens&&now<opens)return toast("This assessment opens "+dateText(a.opensAt)+".");
     if(closes&&now>closes)return toast("The assessment window closed "+dateText(a.closesAt)+".");
+    const security=a.securityPolicy||{};
     let subSnap=await getDoc(doc(db,"assessments",id,"submissions",s.user.uid)),sub=subSnap.exists()?{id:subSnap.id,...subSnap.data()}:null;
+    if(!sub&&security.lateEntryPolicy==="deny-after-start"&&opens){
+      const grace=Math.max(0,Number(security.lateEntryGraceMinutes||0))*60000;
+      if(now>opens+grace)return toast("Late entry is not permitted for this assessment.");
+    }
     if(sub&&sub.status!=="in_progress")return receipt(id);
 
     const memberSnap=await getDoc(doc(db,"sections",a.sectionId,"members",s.user.uid));
@@ -2813,6 +2841,12 @@ async function startExam(id,confirmed=false){
       if(candidateSnap.exists())participantData=candidateSnap.data();
     }
     if(!participantData)return toast(a.entranceExam?"Your entrance-exam access has not been initialized. Re-enter the section join code.":"You are not enrolled in the section assigned to this assessment.");
+    let attemptCount=0;
+    try{
+      const counter=await getDoc(doc(db,"assessments",id,"attemptCounters",s.user.uid));
+      if(counter.exists())attemptCount=Number(counter.data().count||0);
+    }catch(_){}
+    if(!sub&&attemptCount>=Math.max(1,Number(security.maxAttempts||1)))return toast("You have reached the maximum number of attempts for this assessment.");
     let persistentDefaults=s.profile?.defaultAccommodations||{};
     try{
       const accessSnap=await getDoc(doc(db,"academicAccess",s.user.uid));
@@ -2828,21 +2862,34 @@ async function startExam(id,confirmed=false){
         title:a.title,
         wide:true,
         body:'<div class="exam-preflight"><div class="preflight-warning"><strong>Before you begin</strong><p>'+(a.entranceExam?"This examination is required before enrollment. Beginning creates your entrance candidate record and starts the examination timer.":"Beginning creates your official candidate record and starts the examination timer.")+' Refreshing the browser does not create a new attempt.</p></div>'+
-          '<div class="detail-list"><div><span>Assessment</span><strong>'+esc(a.type)+'</strong></div><div><span>Time Allowed</span><strong>'+(minutes?minutes+" minutes":"Untimed")+'</strong></div><div><span>Closes</span><strong>'+esc(dateText(a.closesAt))+'</strong></div><div><span>Backtracking</span><strong>'+(a.backtracking!==false?"Permitted":"Restricted")+'</strong></div><div><span>Grading</span><strong>'+(a.anonymousGrading!==false?"Anonymous candidate number":"Named")+'</strong></div></div>'+
+          '<div class="detail-list"><div><span>Assessment</span><strong>'+esc(a.type)+'</strong></div><div><span>Time Allowed</span><strong>'+(minutes?minutes+" minutes":"Untimed")+'</strong></div><div><span>Closes</span><strong>'+esc(dateText(a.closesAt))+'</strong></div><div><span>Backtracking</span><strong>'+(a.backtracking!==false?"Permitted":"Restricted")+'</strong></div><div><span>Grading</span><strong>'+(a.anonymousGrading!==false?"Anonymous candidate number":"Named")+'</strong></div><div><span>Attempt</span><strong>'+(attemptCount+1)+' of '+Math.max(1,Number(security.maxAttempts||1))+'</strong></div></div>'+
+          (security.fullscreenExpectation?'<div class="notice"><strong>Fullscreen expected.</strong><p>Theoria will request fullscreen when the assessment begins and may record focus/fullscreen changes for instructor review.</p></div>':'')+
+          (security.accessCodeConfigured?'<div class="field"><label>Assessment Access Code</label><input id="examAccessCode" type="password" autocomplete="off" required></div>':'')+
           (a.instructions?'<div class="preflight-instructions"><div class="eyebrow">Instructor Instructions</div><p>'+esc(a.instructions).replace(/\n/g,"<br>")+'</p></div>':'')+
           '<div class="accommodation-summary"><div class="eyebrow">Assessment Access</div><span>'+esc(acc.timeMultiplier||1)+'× time</span>'+(acc.breaks?'<span>Breaks permitted</span>':'')+(acc.calculator?'<span>Calculator permitted</span>':'')+(acc.largeText?'<span>Large text</span>':'')+'</div>'+
-          '<label class="checkbox-line preflight-ack"><input id="examAck" type="checkbox"> I have read the instructions and understand that beginning starts my official attempt.</label></div>',
+          '<label class="checkbox-line preflight-ack"><input id="examAck" type="checkbox"> I have read the instructions and understand that beginning starts my official attempt.</label>'+
+          (security.honorAcknowledgement?'<label class="checkbox-line preflight-ack"><input id="honorAck" type="checkbox"> I affirm that I will complete this assessment according to the instructor\'s academic-integrity expectations.</label>':'')+'</div>',
         footer:'<button class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" id="beginExamBtn" disabled>Begin Assessment</button>'
       });
-      const ack=modal.querySelector("#examAck"),begin=modal.querySelector("#beginExamBtn");ack.onchange=()=>begin.disabled=!ack.checked;begin.onclick=()=>{core().closeModal();startExam(id,true);};return;
+      const ack=modal.querySelector("#examAck"),honor=modal.querySelector("#honorAck"),begin=modal.querySelector("#beginExamBtn");
+      const sync=()=>{begin.disabled=!ack.checked||(honor&&!honor.checked);};ack.onchange=sync;if(honor)honor.onchange=sync;sync();
+      begin.onclick=async()=>{
+        if(security.accessCodeConfigured){
+          const code=modal.querySelector("#examAccessCode")?.value||"",hash=await window.TheoriaPlatform?.hashCode?.(code);
+          if(!hash||hash!==security.accessCodeHash)return toast("The assessment access code is incorrect.");
+        }
+        core().closeModal();startExam(id,true);
+      };return;
     }
 
     if(!sub){
       let order=[];
       try{order=buildAttemptQuestionOrder(a);}catch(error){return toast(error.message||"Unable to build your assessment version.");}
       if(!order.length)return toast("This assessment has no published questions.");
+      const nextAttempt=attemptCount+1;
+      await setDoc(doc(db,"assessments",id,"attemptCounters",s.user.uid),{studentId:s.user.uid,count:nextAttempt,lastStartedAt:serverTimestamp(),updatedAt:serverTimestamp()},{merge:true});
       await setDoc(doc(db,"assessments",id,"submissions",s.user.uid),{
-        studentId:s.user.uid,candidateNumber:newCandidateNumber(),status:"in_progress",
+        studentId:s.user.uid,candidateNumber:newCandidateNumber(),status:"in_progress",attemptNumber:nextAttempt,
         startedAt:serverTimestamp(),acknowledgedAt:serverTimestamp(),updatedAt:serverTimestamp(),
         answers:{},marked:[],currentIndex:0,elapsedSeconds:0,questionOrder:order,
         accommodationsApplied:{timeMultiplier:Number(acc.timeMultiplier||1),breaks:!!acc.breaks,calculator:!!acc.calculator,largeText:!!acc.largeText,reducedDistractions:!!acc.reducedDistractions}
@@ -3200,6 +3247,8 @@ document.addEventListener("click",async e=>{
   if(a==="auto-sort-question-bank")return autoSortQuestionBankModal(b.dataset.course);
   if(a==="delete-bank-question")return deleteBankQuestion(b.dataset.course,b.dataset.id);
   if(a==="item-history")return itemHistoryModal(b.dataset.course,b.dataset.id);
+  if(a==="retire-bank-question")return setQuestionQuality(b.dataset.course,b.dataset.id,"Retired");
+  if(a==="restore-bank-question")return setQuestionQuality(b.dataset.course,b.dataset.id,"Published");
   if(a==="edit-item")return itemModal(P3.items.find(x=>x.id===b.dataset.id&&x.courseId===b.dataset.course));
   if(a==="open-assessment")return openAssessment(b.dataset.id);
   if(a==="back-assessments"){clearInterval(P3.timer);P3.exam=null;core().setPage("assessments");return renderAssessments();}
@@ -3234,6 +3283,6 @@ document.addEventListener("click",async e=>{
   if(a==="calculator")return calculator();
 });
 
-window.TheoriaPhase3={renderSectionTab,renderAssessments,renderItemBank,openAssessment,configureEntranceExam,startEntranceExam:(id)=>startExam(id),getCurrent:()=>P3.current,getDetail:()=>P3.detail};
+window.TheoriaPhase3={renderSectionTab,renderAssessments,renderItemBank,openAssessment,configureEntranceExam,startEntranceExam:(id)=>startExam(id),getCurrent:()=>P3.current,getDetail:()=>P3.detail,getExam:()=>P3.exam};
 
 if(window.TheoriaCore)onReady();
