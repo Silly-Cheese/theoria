@@ -13,7 +13,7 @@ const admin=initAdmin();
 
 async function loadFeatureFlags(){
   try{
-    const snap=await getDoc(doc(db,"system","config"));
+    const snap=await getDoc(doc(db,"system","platform"));
     return snap.exists()?(snap.data().features||{}):{};
   }catch(_){return {};}
 }
@@ -44,13 +44,11 @@ async function applyFeatureFlags(){
 
 async function showSystemAnnouncement(){
   try{
-    const snap=await getDocs(collection(db,"systemAnnouncements"));
-    const now=new Date();
-    const rows=snap.docs.map(d=>({id:d.id,...d.data()})).filter(x=>{
-      const exp=x.expiresAt?.toDate?.();return !exp||exp>=now;
-    }).sort((a,b)=>(b.createdAt?.toMillis?.()||0)-(a.createdAt?.toMillis?.()||0));
-    const latest=rows[0];if(!latest)return;
-    const key="theoria-system-announcement:"+latest.id;
+    const snap=await getDoc(doc(db,"system","announcement"));
+    if(!snap.exists())return;
+    const latest={id:"announcement",...snap.data()},now=new Date(),exp=latest.expiresAt?.toDate?.();
+    if(exp&&exp<now)return;
+    const key="theoria-system-announcement:"+(latest.createdAt?.toMillis?.()||latest.title||"current");
     if(sessionStorage.getItem(key))return;
     sessionStorage.setItem(key,"1");
     const home=document.querySelector("#page-home .page-head");
