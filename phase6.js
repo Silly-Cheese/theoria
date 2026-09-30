@@ -2,6 +2,7 @@ import {db,doc,getDoc,setDoc,collection,getDocs,serverTimestamp} from "./firebas
 import {initProductivity} from "./modules/productivity.js";
 import {initTeaching} from "./modules/teaching.js";
 import {initAdmin} from "./modules/admin.js";
+import {initResilience} from "./modules/resilience.js";
 
 const core=()=>window.TheoriaCore;
 const state=()=>core()?.getState?.();
@@ -10,6 +11,7 @@ const $=s=>document.querySelector(s);
 const productivity=initProductivity();
 const teaching=initTeaching();
 const admin=initAdmin();
+const resilience=initResilience();
 
 async function loadFeatureFlags(){
   try{
@@ -131,7 +133,7 @@ window.TheoriaPlatform={
 };
 
 window.TheoriaPhase6={
-  productivity,teaching,admin,
+  productivity,teaching,admin,resilience,
   applyFeatureFlags,
   runAcademicWorkflowChecks,
   preflightSecurity:(assessment)=>teaching.preflightSecurity(assessment),
