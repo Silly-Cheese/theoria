@@ -342,6 +342,11 @@ async function rolloverSection(sectionId){
     e.preventDefault();const fd=new FormData(e.currentTarget),joinCode=await uniqueJoinCode(),ref=doc(collection(db,"sections"));
     try{
       const sectionData={...source};["id","archivedAt","entranceAssessmentId","entranceExamTitle","entranceConfiguredAt","entranceTemplateSourceId"].forEach(k=>delete sectionData[k]);
+      if(sectionData.gradingPolicy){
+        const periods=sectionData.gradingPolicy.gradingPeriods?.length?sectionData.gradingPolicy.gradingPeriods:["Overall"],gradingPeriodSettings={};
+        periods.forEach(period=>gradingPeriodSettings[period]={locked:false,finalizedAt:null,finalizedBy:"",reopenedAt:null,reopenedBy:""});
+        sectionData.gradingPolicy={...sectionData.gradingPolicy,selectionOpen:true,selectionDeadline:null,gradingPeriodSettings};
+      }
       Object.assign(sectionData,{ownerId:state().user.uid,instructorName:state().profile?.displayName||state().user.displayName||source.instructorName,sectionName:String(fd.get("sectionName")).trim(),term:String(fd.get("term")).trim(),startDate:String(fd.get("startDate")||""),endDate:String(fd.get("endDate")||""),joinCode,joinOpen:false,status:"Active",createdAt:serverTimestamp(),updatedAt:serverTimestamp(),rolledOverFrom:source.id});
       await setDoc(ref,sectionData);
       await setDoc(doc(db,"joinCodes",joinCode),{sectionId:ref.id,active:false,courseId:source.courseId,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
