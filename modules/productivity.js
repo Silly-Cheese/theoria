@@ -340,6 +340,7 @@ async function commandItems(){
     {label:"Assessments",detail:"Evaluation",action:()=>core().setPage("assessments")},
     {label:"Progression",detail:"Academic pathways",action:()=>core().setPage("progression")},
     {label:"Academic Profile",detail:"Records and identity",action:()=>core().setPage("academic-profile")},
+    {label:"Recovery Center",detail:"Local autosave history and crash recovery",action:()=>recoveryCenterModal()},
     {label:"Question Bank",detail:"Assessment design",action:()=>core().setPage("itembank")}
   ];
   if(isInstructor()){
@@ -494,6 +495,46 @@ function assignmentDraftHistory(sectionId,assignmentId){
   try{return JSON.parse(localStorage.getItem(assignmentHistoryKey(sectionId,assignmentId))||"[]");}catch{return [];}
 }
 
+/* -------------------- RECOVERY CENTER -------------------- */
+
+function localRecoveryRows(){
+  const uid=state()?.user?.uid;if(!uid)return [];
+  const rows=[];
+  for(let i=0;i<localStorage.length;i++){
+    const key=localStorage.key(i)||"";
+    if(!key.endsWith(":"+uid))continue;
+    if(!key.startsWith("theoria-exam-draft:")&&!key.startsWith("theoria-assignment-draft:"))continue;
+    try{
+      const data=JSON.parse(localStorage.getItem(key)||"{}"),parts=key.split(":");
+      if(key.startsWith("theoria-exam-draft:"))rows.push({type:"Assessment",id:parts[1],key,savedAt:Number(data.savedAt||0),summary:Object.keys(data.answers||{}).length+" response"+(Object.keys(data.answers||{}).length===1?"":"s")+" saved"});
+      else rows.push({type:"Assignment",sectionId:parts[1],id:parts[2],key,savedAt:Number(data.savedAt||0),summary:(data.responseText?.length||0)+" text characters"+(data.responseUrl?" • link saved":"")});
+    }catch(_){}
+  }
+  return rows.sort((a,b)=>b.savedAt-a.savedAt);
+}
+
+function recoveryCenterModal(){
+  const rows=localRecoveryRows(),p3=window.TheoriaPhase3,assessments=p3?.getAssessments?.()||[],current=state()?.sectionData;
+  const label=row=>{
+    if(row.type==="Assessment")return assessments.find(a=>a.id===row.id)?.title||"Assessment "+row.id.slice(0,8);
+    if(current&&state()?.currentSection?.id===row.sectionId)return current.assignments?.find(a=>a.id===row.id)?.title||"Assignment "+row.id.slice(0,8);
+    return "Assignment "+row.id.slice(0,8);
+  };
+  const m=modal({
+    eyebrow:"Recovery Center",
+    title:"Local Autosave Recovery",
+    wide:true,
+    body:'<div class="academic-banner"><div class="kicker">Crash & Connectivity Protection</div><h3>Local recovery snapshots on this browser.</h3><p>Theoria keeps local copies of in-progress assessment and assignment work so a browser crash or interrupted network save does not automatically erase student writing. Cloud academic records remain authoritative after a successful save or submission.</p></div>'+
+      (rows.length?'<div class="recovery-list">'+rows.map(row=>'<div class="recovery-row"><div><span>'+esc(row.type)+'</span><strong>'+esc(label(row))+'</strong><small>'+esc(row.summary)+' • '+esc(new Date(row.savedAt).toLocaleString())+'</small></div><button class="text-btn danger-text" data-productivity-action="clear-recovery-item" data-key="'+esc(row.key)+'">Clear Local Copy</button></div>').join("")+'</div>':'<div class="empty-state compact-empty"><div class="empty-symbol">✓</div><h3>No local recovery copies.</h3><p>Autosave snapshots will appear here when work is in progress.</p></div>')+
+      (rows.length?'<div class="notice" style="margin-top:14px">Recovery copies are device/browser specific. Opening an in-progress item automatically restores a newer local copy when it is safer than the last cloud save.</div>':''),
+    footer:(rows.length?'<button class="danger-btn" id="clearAllRecovery">Clear All Local Copies</button>':'')+'<button class="primary-btn" data-close-modal>Close</button>'
+  });
+  m.querySelector("#clearAllRecovery")?.addEventListener("click",()=>{
+    if(!confirm("Clear every local Theoria recovery copy for this account on this browser? Cloud-saved work is not affected."))return;
+    rows.forEach(row=>localStorage.removeItem(row.key));closeModal();toast("Local recovery copies cleared.");
+  });
+}
+
 /* -------------------- INIT -------------------- */
 
 function bind(){
@@ -511,6 +552,7 @@ function bind(){
     if(a==="create-announcement")return createAnnouncementModal();
     if(a==="ack-announcement")return acknowledgeAnnouncement(b.dataset.section,b.dataset.id);
     if(a==="notification-preferences")return notificationPreferencesModal();
+    if(a==="clear-recovery-item"){localStorage.removeItem(b.dataset.key);closeModal();toast("Local recovery copy cleared.");return recoveryCenterModal();}
     if(a==="mark-all-notifications")return markAllNotifications();
     if(a==="notification-open"){await markNotification(b.dataset.id,true);closeModal();if(b.dataset.section)return core().openSection(b.dataset.section);return core().setPage(b.dataset.page||"home");}
   });
@@ -524,7 +566,7 @@ export function initProductivity(){
     if(e.detail.page==="communications")renderCommunications();
   });
   return {
-    renderPlanner,renderCommunications,openCommandPalette,accessibilityModal,notificationPreferencesModal,
+    renderPlanner,renderCommunications,openCommandPalette,accessibilityModal,notificationPreferencesModal,recoveryCenterModal,
     synthesizeNotifications,updateNotificationBadge,
     saveExamDraft,loadExamDraft,clearExamDraft,examDraftHistory,
     saveAssignmentDraft,loadAssignmentDraft,clearAssignmentDraft,assignmentDraftHistory
