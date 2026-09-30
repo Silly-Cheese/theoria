@@ -183,17 +183,39 @@ function showMaintenance(){
   document.body.insertAdjacentHTML("beforeend",'<div id="maintenanceOverlay" class="maintenance-overlay"><div class="maintenance-card"><div class="brand-mark">Θ</div><div class="eyebrow">Theoria Maintenance</div><h2>Academic platform maintenance is in progress.</h2><p>Your account remains intact. Try again after the System Owner completes the maintenance window.</p><button class="secondary-btn" onclick="location.reload()">Retry</button></div></div>');
 }
 
+async function hashCode(value){
+  const bytes=new TextEncoder().encode(String(value||"").trim());
+  const digest=await crypto.subtle.digest("SHA-256",bytes);
+  return [...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,"0")).join("");
+}
+
 /* -------------------- ASSESSMENT SECURITY -------------------- */
 
 async function renderAssessmentSecurity(detail){
   const root=$("#phase6AssessmentSecurity");if(!root||!detail)return;
   const a=detail.assessment,p=a.securityPolicy||{};
   root.innerHTML='<div class="academic-banner"><div class="kicker">Assessment Security Center</div><h3>Attempt controls and assessment-event expectations.</h3><p>Security settings support instructor review. Browser event signals are evidence for review, not automatic proof of misconduct.</p></div>'+
-    '<form id="assessmentSecurityForm" class="academic-form"><div class="grid-2"><div class="panel"><div class="panel-head"><div class="panel-title">Attempt Access</div></div><div class="panel-body"><div class="field"><label>Optional Access Code</label><input name="accessCode" value="'+esc(p.accessCode||"")+'" autocomplete="off"></div><div class="field"><label>Maximum Attempts</label><input name="maxAttempts" type="number" min="1" max="10" value="'+esc(p.maxAttempts||1)+'"></div><div class="field"><label>Late Entry</label><select name="lateEntryPolicy"><option value="allow">Allow while assessment remains open</option><option value="deny-after-start">Deny after scheduled open time + grace period</option></select></div><div class="field"><label>Late-entry Grace Period</label><div class="input-with-suffix"><input name="lateEntryGraceMinutes" type="number" min="0" value="'+esc(p.lateEntryGraceMinutes||0)+'"><span>min</span></div></div></div></div>'+
+    '<form id="assessmentSecurityForm" class="academic-form"><div class="grid-2"><div class="panel"><div class="panel-head"><div class="panel-title">Attempt Access</div></div><div class="panel-body"><div class="field"><label>Optional Access Code</label><input name="accessCode" value="" placeholder="'+(p.accessCodeConfigured?'Configured — enter a new code to replace':'Leave blank for no access code')+'" autocomplete="new-password"><small class="field-help">'+(p.accessCodeConfigured?'An access code is configured. The stored value is hashed and never shown back to instructors or students.':'Access codes are stored as a one-way SHA-256 hash.')+'</small></div><div class="field"><label>Maximum Attempts</label><input name="maxAttempts" type="number" min="1" max="10" value="'+esc(p.maxAttempts||1)+'"></div><div class="field"><label>Late Entry</label><select name="lateEntryPolicy"><option value="allow">Allow while assessment remains open</option><option value="deny-after-start">Deny after scheduled open time + grace period</option></select></div><div class="field"><label>Late-entry Grace Period</label><div class="input-with-suffix"><input name="lateEntryGraceMinutes" type="number" min="0" value="'+esc(p.lateEntryGraceMinutes||0)+'"><span>min</span></div></div></div></div>'+
     '<div class="panel"><div class="panel-head"><div class="panel-title">Session Expectations</div></div><div class="panel-body"><label class="policy-card"><input type="checkbox" name="fullscreenExpectation" '+(p.fullscreenExpectation?'checked':'')+'><div><strong>Fullscreen expectation</strong><span>Prompt students to use fullscreen during the attempt.</span></div></label><label class="policy-card"><input type="checkbox" name="blockCopyPaste" '+(p.blockCopyPaste?'checked':'')+'><div><strong>Block copy / paste</strong><span>Prevent clipboard actions inside the active exam interface.</span></div></label><label class="policy-card"><input type="checkbox" name="logFocusEvents" '+(p.logFocusEvents!==false?'checked':'')+'><div><strong>Log focus changes</strong><span>Record visibility/focus events for instructor review.</span></div></label><label class="policy-card"><input type="checkbox" name="honorAcknowledgement" '+(p.honorAcknowledgement?'checked':'')+'><div><strong>Honor acknowledgement</strong><span>Add an explicit academic-integrity acknowledgement to preflight.</span></div></label></div></div></div>'+
     '<div class="modal-foot static-form-foot"><button class="primary-btn" type="submit">Save Security Policy</button></div></form>';
   const form=$("#assessmentSecurityForm");form.elements.lateEntryPolicy.value=p.lateEntryPolicy||"allow";
-  form.onsubmit=async e=>{e.preventDefault();const fd=new FormData(form),securityPolicy={accessCode:String(fd.get("accessCode")||"").trim(),maxAttempts:Math.max(1,Number(fd.get("maxAttempts")||1)),lateEntryPolicy:String(fd.get("lateEntryPolicy")),lateEntryGraceMinutes:Math.max(0,Number(fd.get("lateEntryGraceMinutes")||0)),fullscreenExpectation:form.elements.fullscreenExpectation.checked,blockCopyPaste:form.elements.blockCopyPaste.checked,logFocusEvents:form.elements.logFocusEvents.checked,honorAcknowledgement:form.elements.honorAcknowledgement.checked,updatedAt:serverTimestamp()};try{await updateDoc(doc(db,"assessments",a.id),{securityPolicy,updatedAt:serverTimestamp()});a.securityPolicy=securityPolicy;toast("Assessment security policy saved.");}catch(error){toast(error.message||"Unable to save assessment security policy.");}};
+  form.onsubmit=async e=>{
+    e.preventDefault();const fd=new FormData(form),newCode=String(fd.get("accessCode")||"").trim();
+    const securityPolicy={
+      accessCodeConfigured:newCode?true:!!p.accessCodeConfigured,
+      accessCodeHash:newCode?await hashCode(newCode):(p.accessCodeHash||""),
+      maxAttempts:Math.max(1,Number(fd.get("maxAttempts")||1)),
+      lateEntryPolicy:String(fd.get("lateEntryPolicy")),
+      lateEntryGraceMinutes:Math.max(0,Number(fd.get("lateEntryGraceMinutes")||0)),
+      fullscreenExpectation:form.elements.fullscreenExpectation.checked,
+      blockCopyPaste:form.elements.blockCopyPaste.checked,
+      logFocusEvents:form.elements.logFocusEvents.checked,
+      honorAcknowledgement:form.elements.honorAcknowledgement.checked,
+      updatedAt:serverTimestamp()
+    };
+    try{await updateDoc(doc(db,"assessments",a.id),{securityPolicy,updatedAt:serverTimestamp()});a.securityPolicy=securityPolicy;toast("Assessment security policy saved.");}
+    catch(error){toast(error.message||"Unable to save assessment security policy.");}
+  };
 }
 
 function renderBlueprintDesigner(detail){
@@ -267,7 +289,8 @@ window.TheoriaPlatform={
   accessibilityModal,
   draftRecoveryModal,
   clientDiagnosticsModal,
-  getSettings:()=>platformSettings
+  getSettings:()=>platformSettings,
+  hashCode
 };
 
 applyAccessibility();installConnectivity();installUtilityButtons();installExamSecurityListeners();
