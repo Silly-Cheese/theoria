@@ -233,6 +233,25 @@ function csvCell(value){
 }
 function csvFile(rows){return rows.map(row=>row.map(csvCell).join(",")).join("\r\n");}
 
+async function exportQuestionBankCsv(courseId){
+  try{
+    const courseSnap=await getDoc(doc(db,"courses",courseId));if(!courseSnap.exists())throw new Error("Course not found.");
+    const course={id:courseSnap.id,...courseSnap.data()},items=await docs(["courses",courseId,"items"]);
+    const rows=[["ID","Version","Status","Type","Prompt","Unit","Topic","Difficulty","Cognitive Level","Points","Competencies","Tags"]].concat(items.map(item=>[
+      item.id,item.version||1,item.qualityStatus||"Published",item.type||"",item.prompt||"",item.unitTitle||"",item.topicNumber||"",item.difficulty||"",item.cognitiveLevel||"",item.pointsDefault||1,safe(item.competencyCodes).join(" | "),safe(item.tags).join(" | ")
+    ]));
+    download(String(course.code||"course").replace(/[^a-z0-9_-]+/gi,"-").toLowerCase()+"-question-bank.csv",csvFile(rows),"text/csv");
+  }catch(error){toast(error.message||"Unable to export Question Bank.");}
+}
+
+async function exportTranscriptCsv(){
+  try{
+    const rows=await transcriptData(),out=[["Course Code","Course Title","Term","Course Version","Letter Grade","Final Percent","Mastery Percent","Pathway","Status"]];
+    rows.forEach(r=>out.push([r.courseCode||"",r.courseTitle||"",r.term||"",r.courseVersion||"",r.letterGrade||"",r.finalPercent??"",r.masteryPercent??"",r.pathway||"",r.status||""]));
+    download("theoria-transcript-"+new Date().toISOString().slice(0,10)+".csv",csvFile(out),"text/csv");
+  }catch(error){toast(error.message||"Unable to export transcript.");}
+}
+
 async function exportSectionRoster(sectionId){
   try{
     const sectionSnap=await getDoc(doc(db,"sections",sectionId));if(!sectionSnap.exists())throw new Error("Section not found.");
@@ -295,7 +314,7 @@ async function importExportCenter(){
     title:"Import / Export Center",
     wide:true,
     body:'<div class="operations-grid"><button class="operation-card" data-admin-action="export-catalog"><span>↓</span><strong>Export Catalog Backup</strong><small>JSON package containing every catalog course, framework, rubric, and Question Bank.</small></button><button class="operation-card" data-admin-action="import-course"><span>↑</span><strong>Import Course Package</strong><small>Create a new unpublished catalog course from a Theoria package.</small></button><button class="operation-card" data-admin-action="export-academic-config"><span>◎</span><strong>Academic Configuration Backup</strong><small>Courses, section configuration, assessment metadata, and platform settings without student submissions.</small></button></div>'+
-    '<div class="panel" style="margin-top:16px"><div class="panel-head"><div class="panel-title">Individual Course Packages</div></div><div class="panel-body">'+courses.map(course=>'<div class="export-course-row"><div><strong>'+esc(course.code+" — "+course.title)+'</strong><span>'+esc(course.discipline||"")+'</span></div><button class="secondary-btn small-btn" data-admin-action="export-course" data-course="'+course.id+'">Export JSON</button></div>').join("")+'</div></div>'+
+    '<div class="panel" style="margin-top:16px"><div class="panel-head"><div class="panel-title">Individual Course Packages</div></div><div class="panel-body">'+courses.map(course=>'<div class="export-course-row"><div><strong>'+esc(course.code+" — "+course.title)+'</strong><span>'+esc(course.discipline||"")+'</span></div><div class="inline-actions"><button class="secondary-btn small-btn" data-admin-action="export-course" data-course="'+course.id+'">Course JSON</button><button class="secondary-btn small-btn" data-admin-action="export-question-bank" data-course="'+course.id+'">Question Bank CSV</button></div></div>').join("")+'</div></div>'+
     '<div class="panel" style="margin-top:16px"><div class="panel-head"><div><div class="panel-title">Section CSV Exports</div><div class="panel-subtitle">Portable roster and Gradebook files for sections you own.</div></div></div><div class="panel-body">'+(sections.length?sections.map(section=>'<div class="export-course-row"><div><strong>'+esc((section.courseCode||"Course")+" — "+(section.sectionName||section.courseTitle||"Section"))+'</strong><span>'+esc(section.term||"")+'</span></div><div class="inline-actions"><button class="secondary-btn small-btn" data-admin-action="export-roster" data-section="'+section.id+'">Roster CSV</button><button class="secondary-btn small-btn" data-admin-action="export-gradebook" data-section="'+section.id+'">Gradebook CSV</button></div></div>').join(""):'<div class="empty-mini">No owned sections are available for export.</div>')+'</div></div>'+
     '<div class="panel" style="margin-top:16px"><div class="panel-head"><div><div class="panel-title">Assessment Packages</div><div class="panel-subtitle">Portable snapshots of assessment structure and questions. Student submissions are not included.</div></div></div><div class="panel-body">'+(assessments.length?assessments.slice(0,100).map(a=>'<div class="export-course-row"><div><strong>'+esc(a.title||"Assessment")+'</strong><span>'+esc((a.courseCode||"Course")+(a.sectionName?" • "+a.sectionName:" • Template"))+'</span></div><button class="secondary-btn small-btn" data-admin-action="export-assessment" data-assessment="'+a.id+'">Export JSON</button></div>').join(""):'<div class="empty-mini">No assessments are available for export.</div>')+'</div></div>',
     footer:'<button class="primary-btn" data-close-modal>Done</button>'
@@ -403,7 +422,7 @@ async function renderTranscript(){
   recognitions.sort((a,b)=>String(a.term||"").localeCompare(String(b.term||""))||String(a.title||"").localeCompare(String(b.title||"")));
   el.innerHTML='<article class="transcript-sheet" id="theoriaTranscript"><div class="record-seal">Θ</div><div class="transcript-head"><div class="eyebrow">Theoria Multi-Course Academic Record</div><h1>'+esc(name)+'</h1><p>'+esc(state().user.email||"")+'</p></div><div class="data-table-wrap"><table class="data-table"><thead><tr><th>Course</th><th>Term</th><th>Version</th><th>Final Grade</th><th>Mastery</th><th>Pathway</th><th>Status</th></tr></thead><tbody>'+rows.map(r=>'<tr><td><strong>'+esc(r.courseCode||"")+'</strong><span class="grade-sub">'+esc(r.courseTitle||"")+'</span></td><td>'+esc(r.term||"—")+'</td><td>'+esc(r.courseVersion||"—")+'</td><td><strong>'+esc(r.letterGrade||"—")+'</strong> • '+esc(r.finalPercent??"—")+'%</td><td>'+(r.masteryPercent===null||r.masteryPercent===undefined?"—":esc(r.masteryPercent)+"%")+'</td><td>'+esc(r.pathway==="examination"?"Examination":"Composite")+'</td><td><span class="badge live">'+esc(r.status||"Certified")+'</span></td></tr>').join("")+'</tbody></table></div>'+
     (recognitions.length?'<div class="transcript-recognitions"><div class="panel-title">Honors & Academic Recognition</div>'+recognitions.map(r=>'<div class="profile-record-row"><div><strong>'+esc(r.title||"Recognition")+'</strong><span>'+esc(r.description||"")+'</span></div><b>'+esc(r.term||"")+'</b></div>').join("")+'</div>':'')+
-    '<div class="record-footer"><p>This record documents academic work within Theoria and does not independently establish outside accreditation.</p><button class="primary-btn" onclick="window.print()">Print Transcript</button></div></article>';
+    '<div class="record-footer"><p>This record documents academic work within Theoria and does not independently establish outside accreditation.</p><div class="inline-actions"><button class="secondary-btn" data-admin-action="export-transcript">Download CSV</button><button class="primary-btn" onclick="window.print()">Print Transcript</button></div></div></article>';
 }
 
 /* -------------------- EVENT WIRING -------------------- */
@@ -425,6 +444,8 @@ function bind(){
     if(a==="import-export")return importExportCenter();
     if(a==="export-catalog")return exportCatalog();
     if(a==="export-course")return exportCoursePackage(b.dataset.course);
+    if(a==="export-question-bank")return exportQuestionBankCsv(b.dataset.course);
+    if(a==="export-transcript")return exportTranscriptCsv();
     if(a==="export-roster")return exportSectionRoster(b.dataset.section);
     if(a==="export-gradebook")return exportSectionGradebook(b.dataset.section);
     if(a==="export-assessment")return exportAssessmentPackage(b.dataset.assessment);
