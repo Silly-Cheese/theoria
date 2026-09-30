@@ -432,9 +432,38 @@ async function renderInsights(){
   if(section()?.id!==selected.id){try{await core().openSection(selected.id,"overview");core().setPage("insights");}catch(_){}}
   const data=await heatmapData(selected.id),masteryMap=new Map(data.rows.map(x=>[x.id,x]));
   const compCodes=data.competencies.map(c=>c.code);
+  const [assignments,grades,assessmentGrades,attendance,flags]=await Promise.all([
+    docs(["sections",selected.id,"assignments"]),docs(["sections",selected.id,"grades"]),docs(["sections",selected.id,"assessmentGrades"]),
+    docs(["sections",selected.id,"attendance"]),docs(["sections",selected.id,"flags"])
+  ]);
+  const published=assignments.filter(a=>a.status!=="Draft"),now=new Date();
+  const pastDue=published.filter(a=>a.dueDate&&new Date(a.dueDate+"T23:59:59")<now);
+  const gradeMap=new Map(grades.map(g=>[g.assignmentId+"_"+g.studentId,g]));
+  let missingWork=0;
+  data.members.forEach(student=>pastDue.forEach(a=>{const g=gradeMap.get(a.id+"_"+student.id);if(!g||g.gradeStatus==="Missing")missingWork++;}));
+  const gradedCoursework=grades.filter(g=>g.gradeStatus!=="Excused"&&g.score!==null&&g.score!==undefined&&Number(g.maxPoints||0)>0);
+  const courseworkAvg=gradedCoursework.length?Math.round(gradedCoursework.reduce((n,g)=>n+(Number(g.score||0)/Number(g.maxPoints||1)*100),0)/gradedCoursework.length*10)/10:null;
+  const assessed=assessmentGrades.filter(g=>g.percent!==null&&g.percent!==undefined);
+  const assessmentAvg=assessed.length?Math.round(assessed.reduce((n,g)=>n+Number(g.percent||0),0)/assessed.length*10)/10:null;
+  const attendanceRows=attendance.filter(x=>["Present","Remote","Absent","Tardy","Excused"].includes(x.status));
+  const attended=attendanceRows.filter(x=>["Present","Remote","Tardy"].includes(x.status)).length;
+  const attendanceRate=attendanceRows.length?Math.round(attended/attendanceRows.length*1000)/10:null;
+  const activeFlags=flags.filter(x=>x.status!=="Resolved").length;
+  const studentSummary=data.members.map(student=>{
+    const cg=gradedCoursework.filter(g=>g.studentId===student.id),ag=assessed.filter(g=>g.studentId===student.id);
+    const courseAvg=cg.length?Math.round(cg.reduce((n,g)=>n+(Number(g.score||0)/Number(g.maxPoints||1)*100),0)/cg.length*10)/10:null;
+    const assessAvg=ag.length?Math.round(ag.reduce((n,g)=>n+Number(g.percent||0),0)/ag.length*10)/10:null;
+    const missing=pastDue.filter(a=>{const g=gradeMap.get(a.id+"_"+student.id);return !g||g.gradeStatus==="Missing";}).length;
+    return {student,courseAvg,assessAvg,missing};
+  }).sort((a,b)=>Number(a.courseAvg??999)-Number(b.courseAvg??999));
+
   el.innerHTML='<div class="insights-toolbar"><div class="field"><label>Section</label><select id="insightsSectionSelect">'+sections.map(x=>'<option value="'+x.id+'" '+(x.id===selected.id?'selected':'')+'>'+esc((x.courseCode||"Course")+" — "+(x.sectionName||x.courseTitle))+'</option>').join("")+'</select></div><button class="secondary-btn" data-teaching-action="section-tools" data-section="'+selected.id+'">Teaching Tools</button></div>'+
-    '<div class="academic-banner"><div class="kicker">Competency Heatmap</div><h3>'+esc(selected.courseCode||"Course")+' — '+esc(selected.sectionName||selected.courseTitle)+'</h3><p>Students × competencies based on current evidence. Click a student for the full academic profile.</p></div>'+
-    (data.members.length&&compCodes.length?'<div class="heatmap-wrap"><table class="heatmap-table"><thead><tr><th>Student</th>'+compCodes.map(code=>'<th>'+esc(code)+'</th>').join("")+'</tr></thead><tbody>'+data.members.map(student=>{const mastery=masteryMap.get(student.id),byCode=new Map(safe(mastery?.competencies).map(c=>[c.code,c]));return '<tr><td><button class="text-btn" data-teaching-action="student-profile" data-student="'+student.id+'">'+esc(student.displayName||"Student")+'</button></td>'+compCodes.map(code=>{const v=byCode.get(code)?.percent;const cls=v===undefined?"none":v>=85?"high":v>=70?"mid":"low";return '<td class="heat '+cls+'">'+(v===undefined?"—":esc(v)+"%")+'</td>';}).join("")+'</tr>';}).join("")+'</tbody></table></div>':'<div class="empty-mini">Mastery evidence or course competencies are not available yet.</div>');
+    '<div class="academic-banner"><div class="kicker">Instructor Analytics</div><h3>'+esc(selected.courseCode||"Course")+' — '+esc(selected.sectionName||selected.courseTitle)+'</h3><p>Class performance, completion, attendance, academic flags, and competency evidence in one teaching dashboard.</p></div>'+
+    '<div class="insight-metric-grid"><div><span>Coursework Avg</span><strong>'+(courseworkAvg===null?"—":courseworkAvg+"%")+'</strong></div><div><span>Assessment Avg</span><strong>'+(assessmentAvg===null?"—":assessmentAvg+"%")+'</strong></div><div><span>Past-Due Missing</span><strong>'+missingWork+'</strong></div><div><span>Attendance</span><strong>'+(attendanceRate===null?"—":attendanceRate+"%")+'</strong></div><div><span>Active Flags</span><strong>'+activeFlags+'</strong></div></div>'+
+    '<div class="grid-2" style="margin-top:16px"><div class="panel"><div class="panel-head"><div><div class="panel-title">Student Performance Snapshot</div><div class="panel-subtitle">Current graded coursework and formal-assessment averages.</div></div></div><div class="panel-body">'+(studentSummary.length?studentSummary.map(row=>'<button class="student-insight-row" data-teaching-action="student-profile" data-student="'+row.student.id+'"><div><strong>'+esc(row.student.displayName||"Student")+'</strong><span>'+row.missing+' past-due missing item'+(row.missing===1?"":"s")+'</span></div><div><b>'+(row.courseAvg===null?"—":row.courseAvg+"%")+'</b><small>coursework</small></div><div><b>'+(row.assessAvg===null?"—":row.assessAvg+"%")+'</b><small>assessments</small></div></button>').join(""):'<div class="empty-mini">No students enrolled.</div>')+'</div></div>'+
+    '<div class="panel"><div class="panel-head"><div><div class="panel-title">Teaching Attention</div><div class="panel-subtitle">Signals that may merit instructor review.</div></div></div><div class="panel-body"><div class="detail-list"><div><span>Students with missing work</span><strong>'+studentSummary.filter(x=>x.missing>0).length+'</strong></div><div><span>Students below 70% coursework avg</span><strong>'+studentSummary.filter(x=>x.courseAvg!==null&&x.courseAvg<70).length+'</strong></div><div><span>Competencies below 70% class evidence</span><strong>'+compCodes.filter(code=>{const vals=data.rows.map(r=>safe(r.competencies).find(c=>c.code===code)?.percent).filter(v=>v!==undefined);return vals.length&&vals.reduce((n,v)=>n+Number(v),0)/vals.length<70;}).length+'</strong></div><div><span>Active academic flags</span><strong>'+activeFlags+'</strong></div></div></div></div></div>'+
+    '<div class="panel" style="margin-top:18px"><div class="panel-head"><div><div class="panel-title">Competency Heatmap</div><div class="panel-subtitle">Students × competencies based on current evidence.</div></div></div><div class="panel-body">'+
+    (data.members.length&&compCodes.length?'<div class="heatmap-wrap"><table class="heatmap-table"><thead><tr><th>Student</th>'+compCodes.map(code=>'<th>'+esc(code)+'</th>').join("")+'</tr></thead><tbody>'+data.members.map(student=>{const mastery=masteryMap.get(student.id),byCode=new Map(safe(mastery?.competencies).map(c=>[c.code,c]));return '<tr><td><button class="text-btn" data-teaching-action="student-profile" data-student="'+student.id+'">'+esc(student.displayName||"Student")+'</button></td>'+compCodes.map(code=>{const v=byCode.get(code)?.percent;const cls=v===undefined?"none":v>=85?"high":v>=70?"mid":"low";return '<td class="heat '+cls+'">'+(v===undefined?"—":esc(v)+"%")+'</td>';}).join("")+'</tr>';}).join("")+'</tbody></table></div>':'<div class="empty-mini">Mastery evidence or course competencies are not available yet.</div>')+'</div></div>';
   const sel=$("#insightsSectionSelect");if(sel)sel.onchange=()=>{sessionStorage.setItem("theoria-insights-section",sel.value);renderInsights();};
 }
 
