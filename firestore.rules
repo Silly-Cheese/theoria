@@ -695,6 +695,15 @@ service cloud.firestore {
           );
         allow create, update, delete: if sectionAcademicManager(sectionId);
       }
+
+      match /recognitions/{recognitionId} {
+        allow read: if sectionGrader(sectionId)
+          || (
+            sectionMember(sectionId)
+            && resource.data.studentId == uid()
+          );
+        allow create, update, delete: if sectionAcademicManager(sectionId);
+      }
     }
 
     match /joinCodes/{code} {
