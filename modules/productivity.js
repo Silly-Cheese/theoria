@@ -438,6 +438,32 @@ function examDraftHistory(assessmentId){
   try{return JSON.parse(localStorage.getItem(examHistoryKey(assessmentId))||"[]");}catch{return [];}
 }
 
+/* -------------------- ASSIGNMENT DRAFT RECOVERY -------------------- */
+
+function assignmentDraftKey(sectionId,assignmentId,userId=state()?.user?.uid){return "theoria-assignment-draft:"+sectionId+":"+assignmentId+":"+userId;}
+function assignmentHistoryKey(sectionId,assignmentId,userId=state()?.user?.uid){return "theoria-assignment-history:"+sectionId+":"+assignmentId+":"+userId;}
+function saveAssignmentDraft(sectionId,assignmentId,payload){
+  if(!sectionId||!assignmentId||!state()?.user)return;
+  try{
+    const item={...payload,savedAt:Date.now()};
+    localStorage.setItem(assignmentDraftKey(sectionId,assignmentId),JSON.stringify(item));
+    const key=assignmentHistoryKey(sectionId,assignmentId),history=JSON.parse(localStorage.getItem(key)||"[]"),last=history[history.length-1];
+    const changed=JSON.stringify({text:last?.responseText||"",url:last?.responseUrl||""})!==JSON.stringify({text:payload.responseText||"",url:payload.responseUrl||""});
+    if(changed&&(history.length===0||Date.now()-Number(last?.savedAt||0)>15000)){
+      history.push(item);localStorage.setItem(key,JSON.stringify(history.slice(-12)));
+    }
+  }catch(_){}
+}
+function loadAssignmentDraft(sectionId,assignmentId){
+  try{return JSON.parse(localStorage.getItem(assignmentDraftKey(sectionId,assignmentId))||"null");}catch{return null;}
+}
+function clearAssignmentDraft(sectionId,assignmentId){
+  try{localStorage.removeItem(assignmentDraftKey(sectionId,assignmentId));localStorage.removeItem(assignmentHistoryKey(sectionId,assignmentId));}catch(_){}
+}
+function assignmentDraftHistory(sectionId,assignmentId){
+  try{return JSON.parse(localStorage.getItem(assignmentHistoryKey(sectionId,assignmentId))||"[]");}catch{return [];}
+}
+
 /* -------------------- INIT -------------------- */
 
 function bind(){
@@ -470,6 +496,7 @@ export function initProductivity(){
   return {
     renderPlanner,renderCommunications,openCommandPalette,accessibilityModal,notificationPreferencesModal,
     synthesizeNotifications,updateNotificationBadge,
-    saveExamDraft,loadExamDraft,clearExamDraft,examDraftHistory
+    saveExamDraft,loadExamDraft,clearExamDraft,examDraftHistory,
+    saveAssignmentDraft,loadAssignmentDraft,clearAssignmentDraft,assignmentDraftHistory
   };
 }
