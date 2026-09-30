@@ -8,7 +8,7 @@
   <link rel="icon" type="image/svg+xml" href="./favicon.svg">
   <link rel="shortcut icon" href="./favicon.svg">
   <title>Theoria — Advanced Theological Studies</title>
-  <link rel="stylesheet" href="./styles.css?v=20260930-allupgrades1">
+  <link rel="stylesheet" href="./styles.css?v=20260930-platform1">
 </head>
 <body>
   <section id="authShell" class="auth-shell">
@@ -83,11 +83,17 @@
             <button class="nav-item" data-page="mastery"><span class="nav-icon">◇</span>Mastery</button>
             <button class="nav-item" data-page="progression"><span class="nav-icon">↗</span>Progression</button>
             <button class="nav-item" data-page="reports"><span class="nav-icon">▥</span>Reports</button>
+            <button class="nav-item" data-page="program-map"><span class="nav-icon">⌁</span>Program Map</button>
+            <button class="nav-item student-only" data-page="transcript"><span class="nav-icon">T</span>Transcript</button>
             <button class="nav-item" data-page="academic-profile"><span class="nav-icon">◉</span>Academic Profile</button>
           </div>
           <div class="nav-group">
             <div class="nav-label">Scholar</div>
             <button class="nav-item" data-page="library"><span class="nav-icon">≡</span>Library</button>
+          </div>
+          <div class="nav-group owner-platform-only hidden">
+            <div class="nav-label">System</div>
+            <button class="nav-item" data-page="admin-center"><span class="nav-icon">Θ</span>Control Center</button>
           </div>
           <div class="nav-group owner-only hidden">
             <div class="nav-label">Administration</div>
@@ -165,6 +171,21 @@
           <div><div class="eyebrow">System Administration</div><h1 class="page-title">System Owner Control Center</h1><p class="page-subtitle">Catalog governance, data integrity, course lifecycle, diagnostics, imports, exports, and platform configuration.</p></div>
         </div>
         <div id="adminCenterContent"></div>
+      </section>
+
+      <section id="page-planner" class="page">
+        <div class="page-head"><div><div class="eyebrow">Academic Calendar</div><h1 class="page-title">Planner</h1><p class="page-subtitle">Assignments, assessments, course events, announcements, extensions, and deadlines in one schedule.</p></div></div>
+        <div id="plannerContent"></div>
+      </section>
+
+      <section id="page-communications" class="page">
+        <div class="page-head"><div><div class="eyebrow">Communication</div><h1 class="page-title">Announcements & Notifications</h1><p class="page-subtitle">Section announcements, acknowledgements, academic reminders, and workflow notifications.</p></div></div>
+        <div id="communicationsContent"></div>
+      </section>
+
+      <section id="page-insights" class="page">
+        <div class="page-head"><div><div class="eyebrow">Academic Intelligence</div><h1 class="page-title">Insights</h1><p class="page-subtitle">Competency heatmaps, student priorities, instructional signals, and section-level academic evidence.</p></div></div>
+        <div id="insightsContent"></div>
       </section>
 
       <section id="page-courses" class="page">
@@ -254,6 +275,21 @@
         <div id="academicProfileContent"></div>
       </section>
 
+      <section id="page-program-map" class="page">
+        <div class="page-head"><div><div class="eyebrow">Curriculum Architecture</div><h1 class="page-title">Program Map</h1><p class="page-subtitle">Catalog dependencies, prerequisite courses, competency gates, and academic progression pathways.</p></div></div>
+        <div id="programMapContent"></div>
+      </section>
+
+      <section id="page-transcript" class="page">
+        <div class="page-head"><div><div class="eyebrow">Academic Record</div><h1 class="page-title">Transcript</h1><p class="page-subtitle">A multi-course record of certified Theoria academic work.</p></div></div>
+        <div id="transcriptContent"></div>
+      </section>
+
+      <section id="page-admin-center" class="page">
+        <div class="page-head"><div><div class="eyebrow">System Administration</div><h1 class="page-title">Control Center</h1><p class="page-subtitle">Catalog health, diagnostics, migrations, integrity scanning, versioning, and platform configuration.</p></div></div>
+        <div id="adminCenterContent"></div>
+      </section>
+
       <section id="page-library" class="page">
         <div class="page-head">
           <div><div class="eyebrow">Scholar</div><h1 class="page-title">Library</h1><p class="page-subtitle">Readings, primary sources, Scripture references, and research materials from all of your sections.</p></div>
@@ -265,13 +301,13 @@
 
   <div id="modalRoot"></div>
   <div id="toast" class="toast"></div>
-  <script type="module" src="./app.js?v=20260930-allupgrades1"></script>
-  <script type="module" src="./phase3.js?v=20260930-allupgrades1"></script>
-  <script type="module" src="./phase4.js?v=20260930-allupgrades1"></script>
-  <script type="module" src="./phase5.js?v=20260930-allupgrades1"></script>
+  <script type="module" src="./app.js?v=20260930-platform1"></script>
+  <script type="module" src="./phase3.js?v=20260930-platform1"></script>
+  <script type="module" src="./phase4.js?v=20260930-platform1"></script>
+  <script type="module" src="./phase5.js?v=20260930-platform1"></script>
   <script type="module" src="./modules/planner.js?v=20260930-allupgrades1"></script>
   <script type="module" src="./modules/academic-tools.js?v=20260930-allupgrades1"></script>
   <script type="module" src="./modules/admin-tools.js?v=20260930-allupgrades1"></script>
   <script type="module" src="./modules/platform.js?v=20260930-allupgrades1"></script>
-</body>
+  <script type="module" src="./phase6.js?v=20260930-platform1"></script>\n</body>
 </html>
