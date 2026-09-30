@@ -215,11 +215,11 @@ async function notificationRows(){
 }
 async function synthesizeNotifications(){
   const s=state();if(!s?.user)return;
-  const uid=s.user.uid,rows=await plannerItems(),now=new Date();
+  const uid=s.user.uid,rows=await plannerItems(),now=new Date(),prefs=s.profile?.notificationPreferences||{};
   const seeds=[];
   rows.forEach(r=>{
     const diff=(r.sortDate-now)/86400000;
-    if(["Assignment","Assessment Closes"].includes(r.kind)&&diff>=0&&diff<=3){
+    if(prefs.deadlines!==false&&["Assignment","Assessment Closes"].includes(r.kind)&&diff>=0&&diff<=3){
       seeds.push({
         key:"deadline|"+r.sectionId+"|"+r.kind+"|"+r.id+"|"+dateOnly(r.sortDate),
         type:"deadline",title:r.title,body:r.kind+" in "+Math.max(0,Math.ceil(diff))+" day"+(Math.ceil(diff)===1?"":"s")+" • "+r.sectionName,
@@ -228,7 +228,7 @@ async function synthesizeNotifications(){
     }
   });
   const announcements=await announcementsForUser();
-  announcements.slice(0,25).forEach(a=>{
+  if(prefs.announcements!==false)announcements.slice(0,25).forEach(a=>{
     if(a.status==="Draft")return;
     seeds.push({key:"announcement|"+a.sectionId+"|"+a.id,type:"announcement",title:a.title,body:(a.courseCode?a.courseCode+" • ":"")+String(a.body||"").slice(0,180),sectionId:a.sectionId,targetPage:"communications"});
   });
@@ -258,6 +258,34 @@ async function markAllNotifications(){
   updateNotificationBadge();renderCommunications();
 }
 
+function notificationPreferencesModal(){
+  const prefs=state()?.profile?.notificationPreferences||{};
+  const m=modal({
+    eyebrow:"Notifications",
+    title:"Notification Preferences",
+    body:'<form id="notificationPreferencesForm"><div class="policy-grid">'+
+      '<label class="policy-card"><input type="checkbox" name="deadlines" '+(prefs.deadlines===false?"":"checked")+'><div><strong>Deadlines</strong><span>Upcoming assignments and assessment windows.</span></div></label>'+
+      '<label class="policy-card"><input type="checkbox" name="announcements" '+(prefs.announcements===false?"":"checked")+'><div><strong>Announcements</strong><span>Section communication and important notices.</span></div></label>'+
+      '<label class="policy-card"><input type="checkbox" name="grades" '+(prefs.grades===false?"":"checked")+'><div><strong>Grades & Results</strong><span>Returned grades, assessment results, and grade changes.</span></div></label>'+
+      '<label class="policy-card"><input type="checkbox" name="workflows" '+(prefs.workflows===false?"":"checked")+'><div><strong>Academic Workflows</strong><span>Entrance exams, appeals, records, and instructor follow-up.</span></div></label>'+
+      '</div><div class="modal-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Preferences</button></div></form>'
+  });
+  m.querySelector("#notificationPreferencesForm").onsubmit=async e=>{
+    e.preventDefault();
+    const notificationPreferences={
+      deadlines:e.currentTarget.elements.deadlines.checked,
+      announcements:e.currentTarget.elements.announcements.checked,
+      grades:e.currentTarget.elements.grades.checked,
+      workflows:e.currentTarget.elements.workflows.checked
+    };
+    try{
+      await updateDoc(doc(db,"users",state().user.uid),{notificationPreferences,updatedAt:serverTimestamp()});
+      state().profile.notificationPreferences=notificationPreferences;
+      closeModal();toast("Notification preferences saved.");await synthesizeNotifications();renderCommunications();
+    }catch(error){toast(error.message||"Unable to save notification preferences.");}
+  };
+}
+
 async function renderCommunications(){
   const el=$("#communicationsContent");if(!el)return;
   el.innerHTML='<div class="empty-mini">Loading communications…</div>';
@@ -267,7 +295,7 @@ async function renderCommunications(){
     const acks=await getDocs(collection(db,"users",state().user.uid,"announcementAcks"));
     ackSet=new Set(acks.docs.map(d=>d.id));
   }catch(_){}
-  el.innerHTML='<div class="communications-toolbar">'+(isInstructor()?'<button class="primary-btn" data-productivity-action="create-announcement">New Announcement</button>':'')+'<button class="secondary-btn" data-productivity-action="mark-all-notifications">Mark Notifications Read</button></div>'+
+  el.innerHTML='<div class="communications-toolbar">'+(isInstructor()?'<button class="primary-btn" data-productivity-action="create-announcement">New Announcement</button>':'')+'<button class="secondary-btn" data-productivity-action="notification-preferences">Preferences</button><button class="secondary-btn" data-productivity-action="mark-all-notifications">Mark Notifications Read</button></div>'+
     '<div class="grid-2 communications-grid"><section class="panel"><div class="panel-head"><div><div class="panel-title">Announcements</div><div class="panel-subtitle">Pinned, scheduled, and acknowledgement-aware section communication.</div></div></div><div class="panel-body communications-feed">'+(announcements.length?announcements.map(a=>'<article class="announcement-card '+(a.pinned?'pinned':'')+'"><div class="announcement-head"><div><span>'+esc(a.courseCode||"THEORIA")+' • '+esc(a.sectionName||"Section")+'</span><h3>'+esc(a.title||"Announcement")+'</h3></div>'+(a.pinned?'<span class="badge gold">Pinned</span>':'')+'</div><p>'+esc(a.body||"").replace(/\n/g,"<br>")+'</p><div class="announcement-foot"><span>'+esc(dateTime(a.publishAt||a.createdAt))+'</span>'+(a.requiresAcknowledgement&&state().role==="student"?(ackSet.has(a.id)?'<span class="badge live">Acknowledged</span>':'<button class="secondary-btn small-btn" data-productivity-action="ack-announcement" data-section="'+a.sectionId+'" data-id="'+a.id+'">Acknowledge</button>'):'')+'</div></article>').join(""):'<div class="empty-mini">No section announcements.</div>')+'</div></section>'+
     '<section class="panel"><div class="panel-head"><div><div class="panel-title">Notifications</div><div class="panel-subtitle">Deadlines, announcements, grading, and academic workflow reminders.</div></div></div><div class="panel-body notification-feed">'+(notifications.length?notifications.slice(0,60).map(n=>'<button class="notification-row '+(n.read===true?'read':'unread')+'" data-productivity-action="notification-open" data-id="'+n.id+'" data-page="'+esc(n.targetPage||"home")+'" data-section="'+esc(n.sectionId||"")+'"><span class="notification-dot"></span><div><strong>'+esc(n.title||"Notification")+'</strong><p>'+esc(n.body||"")+'</p><small>'+esc(dateTime(n.createdAt))+'</small></div></button>').join(""):'<div class="empty-mini">No notifications.</div>')+'</div></section></div>';
 }
@@ -426,6 +454,7 @@ function bind(){
     if(a==="open-planner-section")return core().openSection(b.dataset.section);
     if(a==="create-announcement")return createAnnouncementModal();
     if(a==="ack-announcement")return acknowledgeAnnouncement(b.dataset.section,b.dataset.id);
+    if(a==="notification-preferences")return notificationPreferencesModal();
     if(a==="mark-all-notifications")return markAllNotifications();
     if(a==="notification-open"){await markNotification(b.dataset.id,true);closeModal();if(b.dataset.section)return core().openSection(b.dataset.section);return core().setPage(b.dataset.page||"home");}
   });
@@ -439,7 +468,7 @@ export function initProductivity(){
     if(e.detail.page==="communications")renderCommunications();
   });
   return {
-    renderPlanner,renderCommunications,openCommandPalette,accessibilityModal,
+    renderPlanner,renderCommunications,openCommandPalette,accessibilityModal,notificationPreferencesModal,
     synthesizeNotifications,updateNotificationBadge,
     saveExamDraft,loadExamDraft,clearExamDraft,examDraftHistory
   };
