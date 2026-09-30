@@ -420,6 +420,27 @@ async function setEnrollmentLifecycle(studentId,status){
   }catch(error){toast(error.message||"Unable to update enrollment status.");}
 }
 
+async function gradeHistoryModal(sectionId){
+  let rows=[];
+  try{
+    const snap=await getDocs(collection(db,"sections",sectionId,"auditLog"));
+    rows=snap.docs.map(d=>({id:d.id,...d.data()}))
+      .filter(row=>["grade_changed","rubric_grade_changed","rubric_grade_created","shared_group_grade_applied","assessment_result_updated","grading_period_finalized","grading_period_reopened"].includes(row.action))
+      .sort((a,b)=>toMillis(b.createdAt)-toMillis(a.createdAt));
+  }catch(error){return toast("Unable to load grade history.");}
+  modal({
+    eyebrow:"Gradebook Audit",
+    title:"Grade Change History",
+    wide:true,
+    body:rows.length?'<div class="audit-timeline grade-history-timeline">'+rows.map(row=>{
+      const d=row.details||{};
+      const score=(d.priorScore!==undefined||d.newScore!==undefined)?'<span>'+esc(d.priorScore??"—")+' → '+esc(d.newScore??"—")+'</span>':d.percent!==undefined?'<span>'+esc(d.percent)+'%</span>':d.score!==undefined?'<span>'+esc(d.score)+'</span>':'';
+      return '<div class="audit-event"><div class="audit-event-mark">G</div><div><strong>'+esc(String(row.action||"grade event").replace(/_/g," "))+'</strong><span>'+esc(d.assignmentTitle||d.assessmentTitle||d.period||"")+(d.reason?' • '+esc(d.reason):'')+'</span>'+score+'<small>'+esc(row.actorName||"System")+' • '+esc(row.createdAt?.toDate?.()?.toLocaleString?.()||"")+'</small></div></div>';
+    }).join("")+'</div>':'<div class="empty-state compact-empty"><div class="empty-symbol">G</div><h3>No grade changes recorded.</h3><p>Grade overrides, rubric changes, shared group grades, assessment results, and grading-period finalization will appear here.</p></div>',
+    footer:'<button class="primary-btn" data-close-modal>Close</button>'
+  });
+}
+
 async function auditLogModal(sectionId){
   let rows=[];
   try{
@@ -701,7 +722,8 @@ function sectionOperationsModal(sectionId){
       '<button class="operation-card" data-phase5-action="staff-management" data-section="'+sectionId+'"><span>01</span><strong>Staff & Permissions</strong><small>Coordinator, Teaching Assistant, and Grader roles.</small></button>'+
       '<button class="operation-card" data-phase5-action="enrollment-history" data-section="'+sectionId+'"><span>02</span><strong>Enrollment Lifecycle</strong><small>Review removals, withdrawals, reinstatements, and completions.</small></button>'+
       '<button class="operation-card" data-phase5-action="audit-log" data-section="'+sectionId+'"><span>03</span><strong>Academic Audit Log</strong><small>Review important administrative and academic changes.</small></button>'+
-      '<button class="operation-card '+(archived?'':'danger-operation')+'" data-phase5-action="'+(archived?'restore-section':'archive-section')+'" data-section="'+sectionId+'"><span>04</span><strong>'+(archived?'Restore Section':'Archive Section')+'</strong><small>'+(archived?'Return this section to active teaching.':'Preserve records while removing the section from active teaching.')+'</small></button>'+
+      '<button class="operation-card" data-phase5-action="grade-history" data-section="'+sectionId+'"><span>04</span><strong>Grade Change History</strong><small>Audit grade overrides, assessment results, rubric changes, and grading-period locks.</small></button>'+
+      '<button class="operation-card '+(archived?'':'danger-operation')+'" data-phase5-action="'+(archived?'restore-section':'archive-section')+'" data-section="'+sectionId+'"><span>05</span><strong>'+(archived?'Restore Section':'Archive Section')+'</strong><small>'+(archived?'Return this section to active teaching.':'Preserve records while removing the section from active teaching.')+'</small></button>'+
     '</div>',
     footer:'<button class="primary-btn" data-close-modal>Close</button>'
   });
@@ -844,6 +866,7 @@ document.addEventListener("click",async e=>{
   if(a==="enrollment-history"){closeModal();return enrollmentHistoryModal(b.dataset.section);}
   if(a==="reinstate-student"){closeModal();return reinstateStudent(b.dataset.section,b.dataset.student);}
   if(a==="audit-log"){closeModal();return auditLogModal(b.dataset.section);}
+  if(a==="grade-history"){closeModal();return gradeHistoryModal(b.dataset.section);}
   if(a==="lifecycle-menu")return lifecycleMenu(b.dataset.student);
   if(a==="set-lifecycle"){closeModal();return setEnrollmentLifecycle(b.dataset.student,b.dataset.status);}
   if(a==="student-approvals"){closeModal();return studentApprovalsModal(b.dataset.student);}
