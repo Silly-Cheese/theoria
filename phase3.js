@@ -1630,9 +1630,14 @@ async function openAssessment(id,tab="overview"){
 }
 
 function assessmentTabs(active){
-  const tabs=P3.current?.sectionId
-    ? [["overview","Overview"],["items","Questions"],["blueprint","Blueprint"],["security","Security"],["candidates","Candidates"],["grading","Grading"],["analytics","Analytics"]]
-    : [["overview","Overview"],["items","Questions"],["blueprint","Blueprint"],["security","Security"]];
+  const securityEnabled=window.TheoriaFeatureFlags?.assessmentSecurity!==false;
+  const analyticsEnabled=window.TheoriaFeatureFlags?.analytics!==false;
+  const tabs=[["overview","Overview"],["items","Questions"],["blueprint","Blueprint"]];
+  if(securityEnabled)tabs.push(["security","Security"]);
+  if(P3.current?.sectionId){
+    tabs.push(["candidates","Candidates"],["grading","Grading"]);
+    if(analyticsEnabled)tabs.push(["analytics","Analytics"]);
+  }
   return '<div class="tabs">'+tabs.map(([id,label])=>'<button class="tab-btn '+(active===id?'active':'')+'" data-phase3-action="assessment-tab" data-tab="'+id+'">'+label+'</button>').join("")+'</div>';
 }
 
