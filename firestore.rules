@@ -251,7 +251,7 @@ service cloud.firestore {
     match /users/{userId} {
       allow create: if isSelf(userId)
         && request.resource.data.role in ['student', 'instructor'];
-      allow read: if isSelf(userId);
+      allow read: if isSelf(userId) || isSystemOwner();
       allow update: if isSelf(userId)
         && (
           request.resource.data.role == resource.data.role
@@ -287,6 +287,10 @@ service cloud.firestore {
       }
 
       match /notifications/{notificationId} {
+        allow read, create, update, delete: if isSelf(userId);
+      }
+
+      match /announcementAcks/{announcementId} {
         allow read, create, update, delete: if isSelf(userId);
       }
     }
@@ -700,7 +704,8 @@ service cloud.firestore {
     }
 
     match /assessments/{assessmentId} {
-      allow read: if (
+      allow read: if isSystemOwner()
+        || (
           signedIn()
           && resource.data.ownerId == uid()
         )
