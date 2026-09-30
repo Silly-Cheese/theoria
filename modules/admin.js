@@ -289,12 +289,15 @@ async function exportAcademicConfigurationBackup(){
 }
 
 async function importExportCenter(){
-  const courses=state()?.courses||[];
-  const m=modal({
+  const courses=state()?.courses||[],sections=(state()?.sections||[]).filter(section=>section.ownerId===state()?.user?.uid),assessments=(await docs(["assessments"])).filter(a=>a.ownerId===state()?.user?.uid);
+  modal({
     eyebrow:"Data Portability",
     title:"Import / Export Center",
     wide:true,
-    body:'<div class="operations-grid"><button class="operation-card" data-admin-action="export-catalog"><span>↓</span><strong>Export Catalog Backup</strong><small>JSON package containing every catalog course, framework, and Question Bank.</small></button><button class="operation-card" data-admin-action="import-course"><span>↑</span><strong>Import Course Package</strong><small>Create a new unpublished catalog course from a Theoria package.</small></button></div><div class="panel" style="margin-top:16px"><div class="panel-head"><div class="panel-title">Individual Course Packages</div></div><div class="panel-body">'+courses.map(c=>'<div class="export-course-row"><div><strong>'+esc(c.code+" — "+c.title)+'</strong><span>'+esc(c.discipline||"")+'</span></div><button class="secondary-btn small-btn" data-admin-action="export-course" data-course="'+c.id+'">Export JSON</button></div>').join("")+'</div></div>',
+    body:'<div class="operations-grid"><button class="operation-card" data-admin-action="export-catalog"><span>↓</span><strong>Export Catalog Backup</strong><small>JSON package containing every catalog course, framework, rubric, and Question Bank.</small></button><button class="operation-card" data-admin-action="import-course"><span>↑</span><strong>Import Course Package</strong><small>Create a new unpublished catalog course from a Theoria package.</small></button><button class="operation-card" data-admin-action="export-academic-config"><span>◎</span><strong>Academic Configuration Backup</strong><small>Courses, section configuration, assessment metadata, and platform settings without student submissions.</small></button></div>'+
+    '<div class="panel" style="margin-top:16px"><div class="panel-head"><div class="panel-title">Individual Course Packages</div></div><div class="panel-body">'+courses.map(course=>'<div class="export-course-row"><div><strong>'+esc(course.code+" — "+course.title)+'</strong><span>'+esc(course.discipline||"")+'</span></div><button class="secondary-btn small-btn" data-admin-action="export-course" data-course="'+course.id+'">Export JSON</button></div>').join("")+'</div></div>'+
+    '<div class="panel" style="margin-top:16px"><div class="panel-head"><div><div class="panel-title">Section CSV Exports</div><div class="panel-subtitle">Portable roster and Gradebook files for sections you own.</div></div></div><div class="panel-body">'+(sections.length?sections.map(section=>'<div class="export-course-row"><div><strong>'+esc((section.courseCode||"Course")+" — "+(section.sectionName||section.courseTitle||"Section"))+'</strong><span>'+esc(section.term||"")+'</span></div><div class="inline-actions"><button class="secondary-btn small-btn" data-admin-action="export-roster" data-section="'+section.id+'">Roster CSV</button><button class="secondary-btn small-btn" data-admin-action="export-gradebook" data-section="'+section.id+'">Gradebook CSV</button></div></div>').join(""):'<div class="empty-mini">No owned sections are available for export.</div>')+'</div></div>'+
+    '<div class="panel" style="margin-top:16px"><div class="panel-head"><div><div class="panel-title">Assessment Packages</div><div class="panel-subtitle">Portable snapshots of assessment structure and questions. Student submissions are not included.</div></div></div><div class="panel-body">'+(assessments.length?assessments.slice(0,100).map(a=>'<div class="export-course-row"><div><strong>'+esc(a.title||"Assessment")+'</strong><span>'+esc((a.courseCode||"Course")+(a.sectionName?" • "+a.sectionName:" • Template"))+'</span></div><button class="secondary-btn small-btn" data-admin-action="export-assessment" data-assessment="'+a.id+'">Export JSON</button></div>').join(""):'<div class="empty-mini">No assessments are available for export.</div>')+'</div></div>',
     footer:'<button class="primary-btn" data-close-modal>Done</button>'
   });
 }
@@ -404,6 +407,10 @@ function bind(){
     if(a==="import-export")return importExportCenter();
     if(a==="export-catalog")return exportCatalog();
     if(a==="export-course")return exportCoursePackage(b.dataset.course);
+    if(a==="export-roster")return exportSectionRoster(b.dataset.section);
+    if(a==="export-gradebook")return exportSectionGradebook(b.dataset.section);
+    if(a==="export-assessment")return exportAssessmentPackage(b.dataset.assessment);
+    if(a==="export-academic-config")return exportAcademicConfigurationBackup();
     if(a==="import-course"){closeModal();return importCoursePackageModal();}
     if(a==="version-course")return courseVersionModal(b.dataset.course);
     if(a==="rollover-section")return rolloverSection(b.dataset.section);
