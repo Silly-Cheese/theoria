@@ -141,5 +141,9 @@ window.TheoriaPhase6={
   saveExamDraft:(assessmentId,payload)=>productivity.saveExamDraft(assessmentId,payload),
   loadExamDraft:(assessmentId)=>productivity.loadExamDraft(assessmentId),
   clearExamDraft:(assessmentId)=>productivity.clearExamDraft(assessmentId),
-  examDraftHistory:(assessmentId)=>productivity.examDraftHistory(assessmentId)
+  examDraftHistory:(assessmentId)=>productivity.examDraftHistory(assessmentId),
+  saveAssignmentDraft:(sectionId,assignmentId,payload)=>productivity.saveAssignmentDraft(sectionId,assignmentId,payload),
+  loadAssignmentDraft:(sectionId,assignmentId)=>productivity.loadAssignmentDraft(sectionId,assignmentId),
+  clearAssignmentDraft:(sectionId,assignmentId)=>productivity.clearAssignmentDraft(sectionId,assignmentId),
+  assignmentDraftHistory:(sectionId,assignmentId)=>productivity.assignmentDraftHistory(sectionId,assignmentId)
 };
