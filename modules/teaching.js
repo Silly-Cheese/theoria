@@ -15,6 +15,7 @@ const p5=()=>window.TheoriaPhase5;
 function section(){return state()?.currentSection||null;}
 function sectionData(){return state()?.sectionData||null;}
 function isInstructor(){return state()?.role==="instructor";}
+function featureOn(name){return window.TheoriaFeatureFlags?.[name]!==false;}
 function dateText(value){
   if(!value)return "—";
   const d=value?.toDate?value.toDate():new Date(value);
@@ -678,6 +679,13 @@ function bind(){
   document.addEventListener("click",async e=>{
     const b=e.target.closest("[data-teaching-action]");if(!b)return;
     const a=b.dataset.teachingAction,sid=b.dataset.section||section()?.id;
+    const featureByAction={
+      rubrics:"rubrics","new-rubric":"rubrics","edit-rubric":"rubrics","delete-rubric":"rubrics","attach-rubric":"rubrics","rubric-analytics":"rubrics",
+      attendance:"attendance",groups:"studentGroups","new-group":"studentGroups","edit-group":"studentGroups","delete-group":"studentGroups","assign-group-work":"studentGroups","grade-group-work":"studentGroups",
+      "assessment-security":"assessmentSecurity","question-quality":"questionQuality"
+    };
+    const requiredFeature=featureByAction[a];
+    if(requiredFeature&&!featureOn(requiredFeature))return toast("This feature is currently disabled by the System Owner.");
     if(a==="section-tools")return sectionToolsModal(sid);
     if(a==="open-section-tools"){await core().openSection(sid,"overview");return sectionToolsModal(sid);}
     if(a==="rubrics"){closeModal();return rubricLibraryModal(sid);}
