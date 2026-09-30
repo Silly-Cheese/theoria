@@ -630,6 +630,17 @@ async function blueprintDesigner(assessmentId){
 }
 
 
+async function renderTeachingToolsPage(){
+  const el=$("#teachingToolsContent"),s=state();if(!el)return;
+  if(s?.role!=="instructor"){
+    el.innerHTML='<div class="empty-state"><div class="empty-symbol">T</div><h3>Instructor workspace.</h3><p>Teaching Tools are available to instructors and delegated academic staff.</p></div>';
+    return;
+  }
+  const sections=(s.sections||[]).filter(sec=>sec.status!=="Archived");
+  el.innerHTML='<div class="academic-banner"><div class="kicker">Instructor Operations</div><h3>Teaching tools across your active sections.</h3><p>Rubrics, attendance, deadline extensions, student groups, academic flags, narrative evaluations, student profiles, and bulk operations are organized by section.</p></div>'+
+    (sections.length?'<div class="teaching-tools-section-grid">'+sections.map(sec=>'<article class="academic-card"><div class="card-kicker">'+esc(sec.courseCode||"Course")+' • '+esc(sec.term||"")+'</div><h3>'+esc(sec.sectionName||sec.courseTitle||"Section")+'</h3><p>'+esc(sec.courseTitle||"")+(sec.staffRole&&sec.staffRole!=="owner"?' • '+esc(String(sec.staffRole).replace(/_/g," ")):'')+'</p><div class="card-actions"><button class="primary-btn small-btn" data-teaching-action="open-section-tools" data-section="'+sec.id+'">Open Teaching Tools</button><button class="secondary-btn small-btn" data-teaching-action="open-section" data-section="'+sec.id+'">Open Section</button></div></article>').join("")+'</div>':'<div class="empty-state compact-empty"><div class="empty-symbol">T</div><h3>No active teaching sections.</h3><p>Create or restore a section to use instructor tools.</p></div>');
+}
+
 /* -------------------- SECTION TOOLS -------------------- */
 
 function sectionToolsModal(sectionId=section()?.id){
@@ -659,11 +670,12 @@ function studentDirectory(){
 
 function bind(){
   bindSecurityEvents();
-  window.addEventListener("theoria:page",e=>{if(e.detail.page==="insights")renderInsights();});
+  window.addEventListener("theoria:page",e=>{if(e.detail.page==="insights")renderInsights();if(e.detail.page==="teaching-tools")renderTeachingToolsPage();});
   document.addEventListener("click",async e=>{
     const b=e.target.closest("[data-teaching-action]");if(!b)return;
     const a=b.dataset.teachingAction,sid=b.dataset.section||section()?.id;
     if(a==="section-tools")return sectionToolsModal(sid);
+    if(a==="open-section-tools"){await core().openSection(sid,"overview");return sectionToolsModal(sid);}
     if(a==="rubrics"){closeModal();return rubricLibraryModal(sid);}
     if(a==="new-rubric"){closeModal();return rubricEditor(sid);}
     if(a==="edit-rubric"){closeModal();return rubricEditor(sid,b.dataset.id);}
@@ -698,7 +710,7 @@ function bind(){
 export function initTeaching(){
   bind();
   return {
-    renderInsights,sectionToolsModal,rubricLibraryModal,openRubricGrade,
+    renderInsights,renderTeachingToolsPage,sectionToolsModal,rubricLibraryModal,openRubricGrade,
     assessmentSecurityModal,preflightSecurity,renderAssessmentSecurity,hashCode,
     questionQualityModal,blueprintDesigner,renderBlueprintDesigner,
     studentProfileModal
