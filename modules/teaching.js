@@ -42,24 +42,29 @@ async function ensureSection(sectionId=section()?.id){
 
 /* -------------------- RUBRICS -------------------- */
 
-async function rubricRows(sectionId=section()?.id){return sectionId?docs(["sections",sectionId,"rubrics"]):[];}
+async function rubricRows(sectionId=section()?.id){
+  const sec=await ensureSection(sectionId);return sec?.courseId?docs(["courses",sec.courseId,"rubrics"]):[];
+}
 
 function rubricTotal(rubric){return safe(rubric.criteria).reduce((n,c)=>n+Number(c.points||0),0);}
 
 async function rubricLibraryModal(sectionId=section()?.id){
   const sec=await ensureSection(sectionId);if(!sec)return;
-  const rubrics=await rubricRows(sectionId);
+  const rubrics=await rubricRows(sectionId),course=state()?.courses?.find(x=>x.id===sec.courseId)||sectionData()?.course;
+  const canEdit=!!course&&core().canManageCourse(course);
   const m=modal({
     eyebrow:"Advanced Rubric Grading",
     title:"Rubric Library",
     wide:true,
-    body:'<div class="page-head compact-head"><div><div class="panel-title">'+esc(sec.sectionName||sec.courseTitle)+'</div><p class="page-subtitle">Reusable criterion-level grading with analytics-ready scoring.</p></div><button class="primary-btn small-btn" data-teaching-action="new-rubric" data-section="'+sectionId+'">Create Rubric</button></div>'+
+    body:'<div class="page-head compact-head"><div><div class="panel-title">'+esc((course?.code||sec.courseCode||"Course")+" Rubric Library")+'</div><p class="page-subtitle">Reusable course-level criterion grading. Official catalog rubrics are managed by the course owner/System Owner and can be attached to section assignments.</p></div>'+(canEdit?'<button class="primary-btn small-btn" data-teaching-action="new-rubric" data-section="'+sectionId+'">Create Rubric</button>':'')+'</div>'+
       (rubrics.length?'<div class="rubric-library-grid">'+rubrics.map(r=>'<article class="rubric-library-card"><div class="card-kicker">'+safe(r.criteria).length+' criteria • '+rubricTotal(r)+' pts</div><h3>'+esc(r.title||"Rubric")+'</h3><p>'+esc(r.description||"")+'</p><div class="card-actions"><button class="secondary-btn small-btn" data-teaching-action="attach-rubric" data-section="'+sectionId+'" data-id="'+r.id+'">Attach to Assignment</button><button class="secondary-btn small-btn" data-teaching-action="edit-rubric" data-section="'+sectionId+'" data-id="'+r.id+'">Edit</button><button class="text-btn danger-text" data-teaching-action="delete-rubric" data-section="'+sectionId+'" data-id="'+r.id+'">Delete</button></div></article>').join("")+'</div>':'<div class="empty-state compact-empty"><div class="empty-symbol">R</div><h3>No rubrics yet.</h3><p>Create a reusable analytic rubric for written work, research, exegesis, argumentation, or seminar preparation.</p></div>'),
     footer:'<button class="primary-btn" data-close-modal>Done</button>'
   });
 }
 
 async function rubricEditor(sectionId,rubricId=""){
+  const sec=await ensureSection(sectionId),course=state()?.courses?.find(x=>x.id===sec?.courseId)||sectionData()?.course;
+  if(!sec||!course||!core().canManageCourse(course))return toast("Only the course owner/System Owner can edit the official rubric library.");
   const existing=rubricId?(await rubricRows(sectionId)).find(x=>x.id===rubricId):null;
   const criteria=existing?.criteria?.length?existing.criteria:[{name:"Thesis / Claim",description:"Clear, defensible academic claim.",points:10},{name:"Evidence",description:"Relevant evidence and source use.",points:10}];
   const m=modal({
@@ -80,9 +85,9 @@ async function rubricEditor(sectionId,rubricId=""){
     if(!rows.length)return toast("Add at least one rubric criterion.");
     const data={title:String(fd.get("title")).trim(),description:String(fd.get("description")||"").trim(),criteria:rows,totalPoints:rows.reduce((n,x)=>n+x.points,0),updatedAt:serverTimestamp()};
     try{
-      if(existing)await updateDoc(doc(db,"sections",sectionId,"rubrics",existing.id),data);
-      else await addDoc(collection(db,"sections",sectionId,"rubrics"),{...data,createdAt:serverTimestamp(),createdBy:state().user.uid});
-      await p5()?.logSectionEvent?.(sectionId,existing?"rubric_updated":"rubric_created","rubric",existing?.id||"",{title:data.title,totalPoints:data.totalPoints});
+      if(existing)await updateDoc(doc(db,"courses",sec.courseId,"rubrics",existing.id),data);
+      else await addDoc(collection(db,"courses",sec.courseId,"rubrics"),{...data,createdAt:serverTimestamp(),createdBy:state().user.uid});
+      await p5()?.logCourseEvent?.(sec.courseId,existing?"rubric_updated":"rubric_created","rubric",existing?.id||"",{title:data.title,totalPoints:data.totalPoints});
       closeModal();toast("Rubric saved.");await rubricLibraryModal(sectionId);
     }catch(error){toast(error.message||"Unable to save rubric.");}
   };
@@ -99,7 +104,7 @@ async function attachRubric(sectionId,rubricId){
   m.querySelector("#attachRubricForm").onsubmit=async e=>{
     e.preventDefault();const id=String(new FormData(e.currentTarget).get("assignmentId"));
     try{
-      await updateDoc(doc(db,"sections",sectionId,"assignments",id),{rubricId:rubric.id,rubricTitle:rubric.title,updatedAt:serverTimestamp()});
+      await updateDoc(doc(db,"sections",sectionId,"assignments",id),{rubricId:rubric.id,rubricTitle:rubric.title,rubricSnapshot:safe(rubric.criteria).map(x=>({...x})),updatedAt:serverTimestamp()});
       await p5()?.logSectionEvent?.(sectionId,"rubric_attached","assignment",id,{rubricId:rubric.id,rubricTitle:rubric.title});
       closeModal();toast("Rubric attached to assignment.");await core().reloadCurrentSection("assignments");
     }catch(error){toast(error.message||"Unable to attach rubric.");}
@@ -108,9 +113,14 @@ async function attachRubric(sectionId,rubricId){
 
 async function openRubricGrade(assignment,student,existing){
   const sec=section();if(!sec||!assignment?.rubricId)return false;
-  const rub=await getDoc(doc(db,"sections",sec.id,"rubrics",assignment.rubricId));
-  if(!rub.exists())return false;
-  const rubric={id:rub.id,...rub.data()},criteria=safe(rubric.criteria),prior=existing?.rubricScores||{};
+  const rubricSnap=safe(assignment.rubricSnapshot);
+  let rubric={id:assignment.rubricId,title:assignment.rubricTitle||"Rubric",criteria:rubricSnap};
+  if(!rubric.criteria.length){
+    const rub=await getDoc(doc(db,"courses",sec.courseId,"rubrics",assignment.rubricId));
+    if(!rub.exists())return false;
+    rubric={id:rub.id,...rub.data()};
+  }
+  const criteria=safe(rubric.criteria),prior=existing?.rubricScores||{};
   const m=modal({
     eyebrow:"Rubric Grading",
     title:(student?.displayName||"Student")+" — "+assignment.title,
@@ -221,7 +231,7 @@ async function studentProfileModal(studentId){
     docs(["sections",sec.id,"assessmentGrades"]),
     getDoc(doc(db,"sections",sec.id,"mastery",studentId)).catch(()=>null),
     getDoc(doc(db,"sections",sec.id,"academicRecords",studentId)).catch(()=>null),
-    docs(["sections",sec.id,"studentFlags"]),
+    docs(["sections",sec.id,"flags"]),
     getDoc(doc(db,"sections",sec.id,"narratives",studentId)).catch(()=>null),
     docs(["sections",sec.id,"attendance"])
   ]);
@@ -233,14 +243,14 @@ async function studentProfileModal(studentId){
     wide:true,
     body:'<div class="student-profile-summary"><div><span>Coursework Grades</span><strong>'+sg.length+'</strong></div><div><span>Formal Assessments</span><strong>'+ag.length+'</strong></div><div><span>Mastery</span><strong>'+(mastery?.overallPercent??"—")+(mastery?.overallPercent!==undefined?"%":"")+'</strong></div><div><span>Attendance</span><strong>'+(attendancePct===null?"—":attendancePct+"%")+'</strong></div></div>'+
       '<div class="grid-2"><div class="panel"><div class="panel-head"><div class="panel-title">Academic Standing</div></div><div class="panel-body"><div class="detail-list"><div><span>Email</span><strong>'+esc(student.email||"—")+'</strong></div><div><span>Enrollment</span><strong>'+esc(student.status||"enrolled")+'</strong></div><div><span>Certified Record</span><strong>'+(record?esc(record.letterGrade+" • "+record.finalPercent+"%"):"Not certified")+'</strong></div></div></div></div><div class="panel"><div class="panel-head"><div class="panel-title">Academic Flags</div><button class="panel-link" data-teaching-action="new-flag" data-student="'+studentId+'">+ Flag</button></div><div class="panel-body">'+(studentFlags.length?studentFlags.map(f=>'<div class="flag-row"><div><strong>'+esc(f.type||"Academic Flag")+'</strong><span>'+esc(f.note||"")+'</span></div><button class="text-btn" data-teaching-action="resolve-flag" data-id="'+f.id+'" data-student="'+studentId+'">Resolve</button></div>').join(""):'<div class="empty-mini">No active academic flags.</div>')+'</div></div></div>'+
-      '<div class="panel" style="margin-top:16px"><div class="panel-head"><div><div class="panel-title">Narrative Evaluation</div><div class="panel-subtitle">Term-level academic commentary separate from numerical grades.</div></div></div><div class="panel-body"><form id="narrativeForm"><div class="field"><label>Strengths</label><textarea name="strengths">'+esc(narrative?.strengths||"")+'</textarea></div><div class="field"><label>Growth / Recommendations</label><textarea name="recommendations">'+esc(narrative?.recommendations||"")+'</textarea></div><label class="checkbox-line"><input type="checkbox" name="visibleToStudent" '+(narrative?.visibleToStudent?'checked':'')+'> Visible to student</label><button class="primary-btn" type="submit">Save Narrative Evaluation</button></form></div></div>',
+      '<div class="panel" style="margin-top:16px"><div class="panel-head"><div><div class="panel-title">Narrative Evaluation</div><div class="panel-subtitle">Term-level academic commentary separate from numerical grades.</div></div></div><div class="panel-body"><form id="narrativeForm"><div class="field"><label>Strengths</label><textarea name="strengths">'+esc(narrative?.strengths||"")+'</textarea></div><div class="field"><label>Growth / Recommendations</label><textarea name="recommendations">'+esc(narrative?.recommendations||"")+'</textarea></div><label class="checkbox-line"><input type="checkbox" name="includeOnRecord" '+(narrative?.includeOnRecord?'checked':'')+'> Include on student academic record</label><button class="primary-btn" type="submit">Save Narrative Evaluation</button></form></div></div>',
     footer:'<button class="primary-btn" data-close-modal>Done</button>'
   });
   m.querySelector("#narrativeForm").onsubmit=async e=>{
     e.preventDefault();const fd=new FormData(e.currentTarget);
     try{
-      await setDoc(doc(db,"sections",sec.id,"narratives",studentId),{studentId,studentName:student.displayName||"Student",strengths:String(fd.get("strengths")||"").trim(),recommendations:String(fd.get("recommendations")||"").trim(),visibleToStudent:e.currentTarget.elements.visibleToStudent.checked,updatedBy:state().user.uid,updatedAt:serverTimestamp()},{merge:true});
-      await p5()?.logSectionEvent?.(sec.id,"narrative_evaluation_updated","student",studentId,{visibleToStudent:e.currentTarget.elements.visibleToStudent.checked});
+      await setDoc(doc(db,"sections",sec.id,"narratives",studentId),{studentId,studentName:student.displayName||"Student",strengths:String(fd.get("strengths")||"").trim(),recommendations:String(fd.get("recommendations")||"").trim(),includeOnRecord:e.currentTarget.elements.includeOnRecord.checked,updatedBy:state().user.uid,updatedAt:serverTimestamp()},{merge:true});
+      await p5()?.logSectionEvent?.(sec.id,"narrative_evaluation_updated","student",studentId,{includeOnRecord:e.currentTarget.elements.includeOnRecord.checked});
       toast("Narrative evaluation saved.");
     }catch(error){toast(error.message||"Unable to save narrative evaluation.");}
   };
@@ -255,7 +265,7 @@ function newFlagModal(studentId){
   });
   m.querySelector("#flagForm").onsubmit=async e=>{
     e.preventDefault();const fd=new FormData(e.currentTarget);
-    try{await addDoc(collection(db,"sections",section().id,"studentFlags"),{studentId,studentName:student.displayName||"Student",type:String(fd.get("type")),note:String(fd.get("note")).trim(),status:"Active",createdBy:state().user.uid,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});await p5()?.logSectionEvent?.(section().id,"student_flag_created","student",studentId,{type:String(fd.get("type"))});closeModal();toast("Academic flag created.");await studentProfileModal(studentId);}catch(error){toast(error.message||"Unable to create flag.");}
+    try{await addDoc(collection(db,"sections",section().id,"flags"),{studentId,studentName:student.displayName||"Student",type:String(fd.get("type")),note:String(fd.get("note")).trim(),status:"Active",createdBy:state().user.uid,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});await p5()?.logSectionEvent?.(section().id,"student_flag_created","student",studentId,{type:String(fd.get("type"))});closeModal();toast("Academic flag created.");await studentProfileModal(studentId);}catch(error){toast(error.message||"Unable to create flag.");}
   };
 }
 
@@ -510,7 +520,7 @@ function bind(){
     if(a==="rubrics"){closeModal();return rubricLibraryModal(sid);}
     if(a==="new-rubric"){closeModal();return rubricEditor(sid);}
     if(a==="edit-rubric"){closeModal();return rubricEditor(sid,b.dataset.id);}
-    if(a==="delete-rubric"){if(confirm("Delete this reusable rubric? Assignments already graded with it keep their stored rubric evidence.")){await deleteDoc(doc(db,"sections",sid,"rubrics",b.dataset.id));closeModal();toast("Rubric deleted.");return rubricLibraryModal(sid);}return;}
+    if(a==="delete-rubric"){if(confirm("Delete this reusable rubric? Assignments already graded with it keep their stored rubric evidence.")){const sec=await ensureSection(sid);if(!sec)return;await deleteDoc(doc(db,"courses",sec.courseId,"rubrics",b.dataset.id));closeModal();toast("Rubric deleted.");return rubricLibraryModal(sid);}return;}
     if(a==="attach-rubric"){closeModal();return attachRubric(sid,b.dataset.id);}
     if(a==="attendance"){closeModal();return attendanceModal(sid);}
     if(a==="extensions"){closeModal();return extensionsModal(sid);}
@@ -522,7 +532,7 @@ function bind(){
     if(a==="student-directory"){closeModal();return studentDirectory();}
     if(a==="student-profile"){closeModal();return studentProfileModal(b.dataset.student);}
     if(a==="new-flag"){closeModal();return newFlagModal(b.dataset.student);}
-    if(a==="resolve-flag"){await updateDoc(doc(db,"sections",section().id,"studentFlags",b.dataset.id),{status:"Resolved",resolvedAt:serverTimestamp(),resolvedBy:state().user.uid,updatedAt:serverTimestamp()});closeModal();toast("Flag resolved.");return studentProfileModal(b.dataset.student);}
+    if(a==="resolve-flag"){await updateDoc(doc(db,"sections",section().id,"flags",b.dataset.id),{status:"Resolved",resolvedAt:serverTimestamp(),resolvedBy:state().user.uid,updatedAt:serverTimestamp()});closeModal();toast("Flag resolved.");return studentProfileModal(b.dataset.student);}
     if(a==="bulk-ops"){closeModal();return bulkOperationsModal(sid);}
     if(a==="bulk-publish"){return bulkStudentAction("publish",sid);}
     if(a==="bulk-missing"){closeModal();return bulkStudentAction("missing",sid);}
