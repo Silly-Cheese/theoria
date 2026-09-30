@@ -60,6 +60,7 @@ async function showSystemAnnouncement(){
 
 async function runAcademicWorkflowChecks(){
   const s=state();if(!s?.user||s.role!=="instructor")return;
+  if(s.profile?.notificationPreferences?.workflows===false)return;
   const uid=s.user.uid;
   const today=new Date();today.setHours(0,0,0,0);
   for(const section of (s.sections||[]).filter(x=>x.ownerId===uid&&x.status!=="Archived")){
@@ -78,6 +79,32 @@ async function runAcademicWorkflowChecks(){
         const id="workflow_appeals_"+section.id;
         const ref=doc(db,"users",uid,"notifications",id),existing=await getDoc(ref);
         if(!existing.exists())await setDoc(ref,{type:"workflow",title:"Grade appeals need attention",body:open.length+" unresolved appeal"+(open.length===1?"":"s")+" in "+(section.sectionName||section.courseTitle)+".",sectionId:section.id,targetPage:"reports",read:false,createdAt:serverTimestamp()});
+      }
+    }catch(_){}
+    try{
+      const assessments=await getDocs(query(collection(db,"assessments"),where("sectionId","==",section.id)));
+      let pendingGrading=0,pendingEntrance=0;
+      for(const assessmentDoc of assessments.docs){
+        const assessment=assessmentDoc.data();
+        const [subs,results]=await Promise.all([
+          getDocs(collection(db,"assessments",assessmentDoc.id,"submissions")),
+          getDocs(collection(db,"assessments",assessmentDoc.id,"results"))
+        ]);
+        const complete=new Set(results.docs.filter(d=>d.data().complete===true).map(d=>d.id));
+        const waiting=subs.docs.filter(d=>["submitted","graded"].includes(d.data().status)&&!complete.has(d.id)).length;
+        pendingGrading+=waiting;if(assessment.entranceExam===true)pendingEntrance+=waiting;
+      }
+      if(pendingGrading){
+        const id="workflow_grading_"+section.id,ref=doc(db,"users",uid,"notifications",id),existing=await getDoc(ref);
+        if(!existing.exists()||existing.data().body!==pendingGrading+" submitted assessment"+(pendingGrading===1?" needs":"s need")+" evaluation in "+(section.sectionName||section.courseTitle)+"."){
+          await setDoc(ref,{type:"workflow",title:"Assessment grading is waiting",body:pendingGrading+" submitted assessment"+(pendingGrading===1?" needs":"s need")+" evaluation in "+(section.sectionName||section.courseTitle)+".",sectionId:section.id,targetPage:"assessments",read:false,createdAt:serverTimestamp()},{merge:true});
+        }
+      }
+      if(pendingEntrance){
+        const id="workflow_entrance_"+section.id,ref=doc(db,"users",uid,"notifications",id),existing=await getDoc(ref);
+        if(!existing.exists()||existing.data().body!==pendingEntrance+" entrance candidate"+(pendingEntrance===1?" is":"s are")+" waiting for evaluation."){
+          await setDoc(ref,{type:"workflow",title:"Entrance candidates are waiting",body:pendingEntrance+" entrance candidate"+(pendingEntrance===1?" is":"s are")+" waiting for evaluation.",sectionId:section.id,targetPage:"assessments",read:false,createdAt:serverTimestamp()},{merge:true});
+        }
       }
     }catch(_){}
   }
@@ -116,6 +143,9 @@ document.addEventListener("click",e=>{
 });
 
 window.addEventListener("theoria:ready",async()=>{
+  if("serviceWorker" in navigator){
+    navigator.serviceWorker.register("./sw.js").catch(error=>console.warn("Theoria offline shell registration failed:",error));
+  }
   addPlatformControls();
   await applyFeatureFlags();
   await showSystemAnnouncement();
