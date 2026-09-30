@@ -393,24 +393,52 @@ async function renderAssessmentSecurity(detail){
       Object.assign(a,{securityPolicy:policy});toast("Assessment security policy saved.");
     }catch(error){toast(error.message||"Unable to save the security policy.");}
   };
+
+  if(a.sectionId){
+    const signalPanel=document.createElement("section");
+    signalPanel.className="form-section security-signal-panel";
+    signalPanel.innerHTML='<div class="form-section-head"><div><span>04</span><h3>Session Signal Summary</h3><p>Browser-session events are context for instructor review, not automatic evidence of misconduct.</p></div></div><div id="securitySignalBody"><div class="empty-mini">Loading attempt signals…</div></div>';
+    root.appendChild(signalPanel);
+    const body=signalPanel.querySelector("#securitySignalBody"),rows=[];
+    const memberMap=new Map(safe(detail.members).map(m=>[m.id,m]));
+    for(const submission of safe(detail.submissions)){
+      try{
+        const eventSnap=await getDocs(collection(db,"assessments",a.id,"submissions",submission.studentId,"events"));
+        const events=eventSnap.docs.map(d=>d.data()),counts={focus:0,copy:0,paste:0,fullscreen:0,other:0};
+        events.forEach(ev=>{
+          const type=String(ev.type||"").toLowerCase();
+          if(type.includes("focus")||type.includes("blur")||type.includes("visibility"))counts.focus++;
+          else if(type.includes("copy"))counts.copy++;
+          else if(type.includes("paste"))counts.paste++;
+          else if(type.includes("fullscreen"))counts.fullscreen++;
+          else counts.other++;
+        });
+        rows.push({studentId:submission.studentId,name:memberMap.get(submission.studentId)?.displayName||submission.candidateNumber||"Candidate",events:events.length,...counts});
+      }catch(_){}
+    }
+    body.innerHTML=rows.length?'<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Candidate</th><th>Total Events</th><th>Focus / Visibility</th><th>Copy</th><th>Paste</th><th>Fullscreen</th></tr></thead><tbody>'+rows.map(row=>'<tr><td><strong>'+esc(row.name)+'</strong></td><td>'+row.events+'</td><td>'+row.focus+'</td><td>'+row.copy+'</td><td>'+row.paste+'</td><td>'+row.fullscreen+'</td></tr>').join("")+'</tbody></table></div>':'<div class="empty-mini">No session events have been recorded for this assessment.</div>';
+  }
 }
 
 async function preflightSecurity(assessment){
   const p=assessment?.securityPolicy||{},uid=state()?.user?.uid;if(!uid)return false;
-  if(p.lateEntryBlocked&&assessment.closesAt){
-    const close=assessment.closesAt.toDate?assessment.closesAt.toDate():new Date(assessment.closesAt);
-    if(new Date()>close){toast("New attempts are blocked after this assessment closes.");return false;}
+  const now=Date.now(),opens=assessment.opensAt?.toMillis?.()||0;
+  if(p.lateEntryPolicy==="deny-after-start"&&opens){
+    const grace=Math.max(0,Number(p.lateEntryGraceMinutes||0))*60000;
+    if(now>opens+grace){toast("Late entry is not permitted for this assessment.");return false;}
   }
   if(p.maxAttempts){
     try{
-      const sub=await getDoc(doc(db,"assessments",assessment.id,"submissions",uid));
-      if(sub.exists()&&Number(sub.data().attemptNumber||1)>Number(p.maxAttempts)){toast("The maximum number of attempts has been reached.");return false;}
+      const counter=await getDoc(doc(db,"assessments",assessment.id,"attemptCounters",uid));
+      const used=counter.exists()?Number(counter.data().count||0):0;
+      if(used>=Math.max(1,Number(p.maxAttempts||1))){toast("The maximum number of attempts has been reached.");return false;}
     }catch(_){}
   }
-  if(p.requireAccessCode){
+  if(p.accessCodeConfigured){
     const entered=prompt("Enter the assessment access code:");
     if(entered===null)return false;
-    if(String(entered).trim()!==String(p.accessCode||"")){toast("Incorrect assessment access code.");return false;}
+    const hash=await hashCode(String(entered).trim());
+    if(!hash||hash!==p.accessCodeHash){toast("The assessment access code is incorrect.");return false;}
   }
   return true;
 }
@@ -429,6 +457,7 @@ function bindSecurityEvents(){
     if(current.securityPolicy?.blockPaste){e.preventDefault();logExamSecurityEvent("paste_blocked");toast("Paste is disabled for this assessment.");}
   },true);
   document.addEventListener("copy",()=>{const current=window.TheoriaPhase3?.getCurrent?.();if(current&&$("#page-exam")?.classList.contains("active"))logExamSecurityEvent("copy_event");},true);
+  document.addEventListener("fullscreenchange",()=>{const current=window.TheoriaPhase3?.getCurrent?.();if(current&&$("#page-exam")?.classList.contains("active"))logExamSecurityEvent("fullscreen_change",{fullscreen:!!document.fullscreenElement});});
 }
 
 /* -------------------- QUESTION QUALITY -------------------- */
