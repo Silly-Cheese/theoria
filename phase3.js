@@ -1048,7 +1048,7 @@ async function renderAssessments(){
       const entrance=group.items.filter(a=>!!a.sectionId&&a.entranceExam===true).sort((a,b)=>String(a.title||"").localeCompare(String(b.title||""),undefined,{numeric:true,sensitivity:"base"}));
       const assigned=group.items.filter(a=>!!a.sectionId&&a.entranceExam!==true).sort((a,b)=>String(a.sectionName||"").localeCompare(String(b.sectionName||""),undefined,{numeric:true,sensitivity:"base"})||String(a.title||"").localeCompare(String(b.title||""),undefined,{numeric:true,sensitivity:"base"}));
       const sectionCount=new Set(group.items.filter(a=>a.sectionId).map(a=>a.sectionId)).size;
-      return '<section class="assessment-library-group assessment-course-group"><div class="detail-hero assessment-course-hero"><div class="eyebrow">Course Assessments</div><h2 class="detail-title">'+esc(group.courseCode)+(group.courseTitle?' — '+esc(group.courseTitle):'')+'</h2><p class="page-subtitle">'+templates.length+' reusable template'+(templates.length===1?"":"s")+' • '+assigned.length+' assigned assessment'+(assigned.length===1?"":"s")+' • '+sectionCount+' section'+(sectionCount===1?"":"s")+'</p></div>'+
+      return '<section class="assessment-library-group assessment-course-group"><div class="detail-hero assessment-course-hero"><div class="detail-top"><div><div class="eyebrow">Course Assessments</div><h2 class="detail-title">'+esc(group.courseCode)+(group.courseTitle?' — '+esc(group.courseTitle):'')+'</h2><p class="page-subtitle">'+templates.length+' reusable template'+(templates.length===1?"":"s")+' • '+assigned.length+' assigned assessment'+(assigned.length===1?"":"s")+' • '+sectionCount+' section'+(sectionCount===1?"":"s")+'</p></div>'+(templates.length?'<div class="inline-actions"><button class="primary-btn small-btn" data-phase3-action="batch-assign-course" data-course="'+esc(group.courseId)+'">Assign Multiple</button></div>':'')+'</div></div>'+
         subgroup("Assessment Templates","Reusable assessments for this course.",templates)+
         subgroup("Entrance Examinations","Enrollment-gating assessments for this course.",entrance)+
         subgroup("Assigned Assessments","Live section copies, sorted by section and title.",assigned)+
@@ -2875,6 +2875,28 @@ async function deleteAssessment(assessmentId){
   };
 }
 
+async function chooseSectionForCourseBatch(courseId){
+  const s=state();
+  const course=s.courses?.find(c=>c.id===courseId);
+  const sections=(s.sections||[]).filter(sec=>sec.courseId===courseId).sort((a,b)=>String(a.sectionName||"").localeCompare(String(b.sectionName||""),undefined,{numeric:true,sensitivity:"base"}));
+  if(!sections.length)return toast("Create a teaching section for "+(course?.code||"this course")+" before assigning assessments.");
+  if(sections.length===1)return chooseAssessmentForSection(sections[0].id);
+
+  const modal=core().openModal({
+    eyebrow:"Batch Assessment Assignment",
+    title:"Choose Destination Section",
+    body:'<form id="batchAssessmentSectionForm"><div class="academic-banner"><div class="kicker">'+esc(course?.code||"Course")+'</div><h3>'+esc(course?.title||"Assign Multiple Assessments")+'</h3><p>Select the section that should receive the assessment copies.</p></div><div class="section-choice-grid">'+sections.map((sec,index)=>'<label class="section-choice '+(index===0?'selected':'')+'"><input type="radio" name="sectionId" value="'+sec.id+'" '+(index===0?'checked':'')+'><div><span>'+esc(sec.courseCode||course?.code||"Course")+'</span><strong>'+esc(sec.sectionName||"Section")+'</strong><small>'+esc(sec.term||"")+'</small></div><div class="section-choice-check">✓</div></label>').join("")+'</div><div class="modal-foot" style="margin:24px -24px -24px"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Choose Assessments</button></div></form>'
+  });
+  modal.querySelectorAll('.section-choice input').forEach(input=>input.addEventListener("change",()=>modal.querySelectorAll(".section-choice").forEach(label=>label.classList.toggle("selected",label.querySelector("input").checked))));
+  modal.querySelector("#batchAssessmentSectionForm").onsubmit=e=>{
+    e.preventDefault();
+    const sectionId=String(new FormData(e.currentTarget).get("sectionId")||"");
+    if(!sectionId)return toast("Choose a section.");
+    core().closeModal();
+    chooseAssessmentForSection(sectionId);
+  };
+}
+
 async function cloneAssessmentTemplateToSection(template,detail,section,{initialStatus="Draft",opensAt=null,closesAt=null}={}){
   const s=state();
   const ref=doc(collection(db,"assessments"));
@@ -4021,6 +4043,7 @@ document.addEventListener("click",async e=>{
   const b=e.target.closest("[data-phase3-action]");if(!b)return;
   const a=b.dataset.phase3Action;
   if(a==="new-assessment")return assessmentModal();
+  if(a==="batch-assign-course")return chooseSectionForCourseBatch(b.dataset.course);
   if(a==="assign-assessment")return assignAssessmentModal(b.dataset.id);
   if(a==="assign-current-section")return chooseAssessmentForSection(b.dataset.section);
   if(a==="configure-entrance-exam")return configureEntranceExam(b.dataset.section);
