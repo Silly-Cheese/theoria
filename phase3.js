@@ -1046,9 +1046,12 @@ async function renderAssessments(){
     try{const x=await getDoc(doc(db,"assessments",a.id,"submissions",s.user.uid));if(x.exists())sub=x.data();}catch(_){}
     try{const x=await getDoc(doc(db,"assessments",a.id,"results",s.user.uid));if(x.exists())result=x.data();}catch(_){}
     try{const x=await getDoc(doc(db,"assessments",a.id,"retakes",s.user.uid));if(x.exists()&&x.data().active===true)retake=x.data();}catch(_){}
-    const status=retake?"Retake Authorized":availability(a),graded=result?.complete===true;
+    const normalStatus=availability(a),status=retake?"Retake Authorized":normalStatus,graded=result?.complete===true;
     let actions='<button class="secondary-btn small-btn" data-phase3-action="student-assessment-details" data-id="'+a.id+'">View Details</button>';
-    if(retake&&!sub){
+    if(retake&&sub?.status==="in_progress"){
+      actions='<button class="primary-btn small-btn" data-phase3-action="start-exam" data-id="'+a.id+'">Resume Retake</button>'+
+        '<button class="secondary-btn small-btn" data-phase3-action="student-assessment-details" data-id="'+a.id+'">Details</button>';
+    }else if(retake&&!sub){
       actions='<button class="primary-btn small-btn" data-phase3-action="start-exam" data-id="'+a.id+'">Begin Retake</button>'+
         '<button class="secondary-btn small-btn" data-phase3-action="student-assessment-details" data-id="'+a.id+'">Details</button>';
     }else if(graded){
@@ -1059,7 +1062,7 @@ async function renderAssessments(){
     }else if(sub?.status==="submitted"||sub?.status==="graded"){
       actions='<button class="secondary-btn small-btn" data-phase3-action="receipt" data-id="'+a.id+'">Submission Receipt</button>'+
         '<button class="secondary-btn small-btn" data-phase3-action="student-assessment-details" data-id="'+a.id+'">Details</button>';
-    }else if(status==="Open"){
+    }else if(normalStatus==="Open"){
       actions='<button class="primary-btn small-btn" data-phase3-action="start-exam" data-id="'+a.id+'">'+(sub?"Resume":"Begin")+'</button>'+
         '<button class="secondary-btn small-btn" data-phase3-action="student-assessment-details" data-id="'+a.id+'">Details</button>';
     }
