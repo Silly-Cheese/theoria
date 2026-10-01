@@ -2934,7 +2934,7 @@ async function startExam(id,confirmed=false){
         wide:true,
         body:'<div class="exam-preflight"><div class="preflight-warning"><strong>Before you begin</strong><p>'+(a.entranceExam?"This examination is required before enrollment. Beginning creates your entrance candidate record and starts the examination timer.":"Beginning creates your official candidate record and starts the examination timer.")+' Refreshing the browser does not create a new attempt.</p></div>'+
           '<div class="detail-list"><div><span>Assessment</span><strong>'+esc(a.type)+'</strong></div><div><span>Time Allowed</span><strong>'+(minutes?minutes+" minutes":"Untimed")+'</strong></div><div><span>Closes</span><strong>'+esc(dateText(a.closesAt))+'</strong></div><div><span>Backtracking</span><strong>'+(a.backtracking!==false?"Permitted":"Restricted")+'</strong></div><div><span>Grading</span><strong>'+(a.anonymousGrading!==false?"Anonymous candidate number":"Named")+'</strong></div><div><span>Attempt</span><strong>'+(attemptCount+1)+' of '+Math.max(1,Number(security.maxAttempts||1))+'</strong></div></div>'+
-          (security.fullscreenExpectation?'<div class="notice"><strong>Fullscreen expected.</strong><p>Theoria will request fullscreen when the assessment begins and may record focus/fullscreen changes for instructor review.</p></div>':'')+
+          ((security.fullscreenRequired||security.fullscreenExpectation)?'<div class="notice"><strong>Fullscreen required.</strong><p>The assessment will lock if fullscreen is exited and will remain hidden until fullscreen is restored.</p></div>':'')+
           (security.accessCodeConfigured?'<div class="field"><label>Assessment Access Code</label><input id="examAccessCode" type="password" autocomplete="off" required></div>':'')+
           (a.instructions?'<div class="preflight-instructions"><div class="eyebrow">Instructor Instructions</div><p>'+esc(a.instructions).replace(/\n/g,"<br>")+'</p></div>':'')+
           '<div class="accommodation-summary"><div class="eyebrow">Assessment Access</div><span>'+esc(acc.timeMultiplier||1)+'× time</span>'+(acc.breaks?'<span>Breaks permitted</span>':'')+(acc.calculator?'<span>Calculator permitted</span>':'')+(acc.largeText?'<span>Large text</span>':'')+'</div>'+
@@ -2945,9 +2945,19 @@ async function startExam(id,confirmed=false){
       const ack=modal.querySelector("#examAck"),honor=modal.querySelector("#honorAck"),begin=modal.querySelector("#beginExamBtn");
       const sync=()=>{begin.disabled=!ack.checked||(honor&&!honor.checked);};ack.onchange=sync;if(honor)honor.onchange=sync;sync();
       begin.onclick=async()=>{
+        begin.disabled=true;begin.textContent="Authorizing…";
         if(security.accessCodeConfigured){
-          const code=modal.querySelector("#examAccessCode")?.value||"",hash=await window.TheoriaPlatform?.hashCode?.(code);
-          if(!hash||hash!==security.accessCodeHash)return toast("The assessment access code is incorrect.");
+          const code=modal.querySelector("#examAccessCode")?.value||"";
+          const authorized=await window.TheoriaPlatform?.authorizeAssessmentAccess?.(a,code);
+          if(!authorized){begin.disabled=false;begin.textContent="Begin Assessment";return;}
+        }
+        if((security.fullscreenRequired||security.fullscreenExpectation)&&!document.fullscreenElement){
+          try{
+            await document.documentElement.requestFullscreen();
+          }catch(error){
+            begin.disabled=false;begin.textContent="Begin Assessment";
+            return toast("Fullscreen is required for this assessment. Allow fullscreen, then begin again.");
+          }
         }
         core().closeModal();startExam(id,true);
       };return;
@@ -2961,8 +2971,24 @@ async function startExam(id,confirmed=false){
       await setDoc(doc(db,"assessments",id,"attemptCounters",s.user.uid),{studentId:s.user.uid,count:nextAttempt,lastStartedAt:serverTimestamp(),updatedAt:serverTimestamp()},{merge:true});
       await setDoc(doc(db,"assessments",id,"submissions",s.user.uid),{
         studentId:s.user.uid,candidateNumber:newCandidateNumber(),status:"in_progress",attemptNumber:nextAttempt,
-        startedAt:serverTimestamp(),acknowledgedAt:serverTimestamp(),updatedAt:serverTimestamp(),
+        startedAt:serverTimestamp(),acknowledgedAt:serverTimestamp(),honorAcknowledged:security.honorAcknowledgement?true:false,updatedAt:serverTimestamp(),
         answers:{},marked:[],currentIndex:0,elapsedSeconds:0,questionOrder:order,
+        securityPolicySnapshot:{
+          maxAttempts:Math.max(1,Number(security.maxAttempts||1)),
+          lateEntryPolicy:String(security.lateEntryPolicy||"allow"),
+          lateEntryGraceMinutes:Math.max(0,Number(security.lateEntryGraceMinutes||0)),
+          honorAcknowledgement:!!security.honorAcknowledgement,
+          fullscreenRequired:!!(security.fullscreenRequired||security.fullscreenExpectation),
+          focusPolicy:String(security.focusPolicy||((security.logFocusLoss===false)?"none":"log")),
+          maxFocusViolations:Math.max(1,Number(security.maxFocusViolations||3)),
+          blockCopy:!!security.blockCopy,
+          blockPaste:!!security.blockPaste,
+          blockCut:!!security.blockCut,
+          blockContextMenu:!!security.blockContextMenu,
+          logCopy:security.logCopy!==false,
+          accessCodeConfigured:!!security.accessCodeConfigured,
+          accessCodeVersion:Number(security.accessCodeVersion||0)
+        },
         accommodationsApplied:{timeMultiplier:Number(acc.timeMultiplier||1),breaks:!!acc.breaks,calculator:!!acc.calculator,largeText:!!acc.largeText,reducedDistractions:!!acc.reducedDistractions}
       });
       if(a.entranceExam===true){
@@ -2997,7 +3023,8 @@ async function startExam(id,confirmed=false){
     }
     if(!questions.length)return toast("No examination questions are available.");
     if(questions.length!==order.length)return toast("Some assessment questions are unavailable. Ask the instructor to republish this assigned assessment.");
-    launchExam(a,questions,sub);
+    const runtimeAssessment={...a,securityPolicy:sub.securityPolicySnapshot||a.securityPolicy||{}};
+    launchExam(runtimeAssessment,questions,sub);
   }catch(err){
     console.error("Unable to start assessment:",err);
     toast(err?.code==="permission-denied"?"Theoria could not authorize this assessment attempt. Confirm that the assessment is published to this exact section and that your account is enrolled, then try again.":(err.message||"This assessment is not available."));
