@@ -16,7 +16,14 @@ const state = {
   currentSection: null,
   sectionData: null,
   isSystemOwner: false,
-  gradebookPeriodFilter: "All"
+  gradebookPeriodFilter: "All",
+  gradebookSearchFilter: "",
+  gradebookUnitFilter: "All",
+  gradebookStatusFilter: "all",
+  gradebookAttentionOnly: false,
+  gradebookThreshold: 70,
+  gradebookCollapsedUnits: [],
+  gradebookSelectedStudents: []
 };
 
 const $ = s => document.querySelector(s);
@@ -1587,6 +1594,41 @@ async function loadSectionData(section){
     }
   }
 
+  let gradingPathways=[],academicRecords=[],appeals=[],mastery=[];
+  if(state.role==="instructor"){
+    try{
+      const [pathwaySnap,recordSnap,appealSnap,masterySnap]=await Promise.all([
+        getDocs(collection(db,"sections",section.id,"gradingPathways")),
+        getDocs(collection(db,"sections",section.id,"academicRecords")),
+        getDocs(collection(db,"sections",section.id,"appeals")),
+        getDocs(collection(db,"sections",section.id,"mastery"))
+      ]);
+      gradingPathways=pathwaySnap.docs.map(d=>({id:d.id,...d.data()}));
+      academicRecords=recordSnap.docs.map(d=>({id:d.id,...d.data()}));
+      appeals=appealSnap.docs.map(d=>({id:d.id,...d.data()}));
+      mastery=masterySnap.docs.map(d=>({id:d.id,...d.data()}));
+    }catch(error){
+      console.warn("Unable to load extended Gradebook academic context:",error);
+    }
+  }else{
+    try{
+      const [pathwaySnap,recordSnap,masterySnap]=await Promise.all([
+        getDoc(doc(db,"sections",section.id,"gradingPathways",state.user.uid)),
+        getDoc(doc(db,"sections",section.id,"academicRecords",state.user.uid)),
+        getDoc(doc(db,"sections",section.id,"mastery",state.user.uid))
+      ]);
+      if(pathwaySnap.exists())gradingPathways=[{id:pathwaySnap.id,...pathwaySnap.data()}];
+      if(recordSnap.exists())academicRecords=[{id:recordSnap.id,...recordSnap.data()}];
+      if(masterySnap.exists())mastery=[{id:masterySnap.id,...masterySnap.data()}];
+      try{
+        const appealSnap=await getDocs(query(collection(db,"sections",section.id,"appeals"),where("studentId","==",state.user.uid)));
+        appeals=appealSnap.docs.map(d=>({id:d.id,...d.data()}));
+      }catch(_){}
+    }catch(error){
+      console.warn("Unable to load student Gradebook academic context:",error);
+    }
+  }
+
   return {
     course, framework, frameworkVersionLabel, frameworkVersionPinned, assignments,
     resources:resourceSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>{
@@ -1595,7 +1637,8 @@ async function loadSectionData(section){
       return au-bu||as-bs||String(a.title||"").localeCompare(String(b.title||""));
     }),
     members:members.sort((a,b)=>String(a.displayName||"").localeCompare(String(b.displayName||""))),
-    grades, assignmentSubmissions, assessmentRefs, assessmentGrades, extensions
+    grades, assignmentSubmissions, assessmentRefs, assessmentGrades, extensions,
+    gradingPathways, academicRecords, appeals, mastery
   };
 }
 
@@ -1608,6 +1651,12 @@ async function openSection(sectionId,tab="overview"){
   }
   state.currentSection=section;
   state.gradebookPeriodFilter="All";
+  state.gradebookSearchFilter="";
+  state.gradebookUnitFilter="All";
+  state.gradebookStatusFilter="all";
+  state.gradebookAttentionOnly=false;
+  state.gradebookCollapsedUnits=[];
+  state.gradebookSelectedStudents=[];
   state.sectionData=await loadSectionData(section);
   renderSectionDetail(tab);
   setPage("section-detail",section.courseCode || "Section");
