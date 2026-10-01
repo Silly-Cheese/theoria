@@ -2324,31 +2324,37 @@ function renderGradebook(){
 }
 
 function renderStudentGrades(){
-  const assignments=state.sectionData.assignments.filter(a=>a.status!=="Draft");
+  const assignments=(state.sectionData.assignments||[]).filter(a=>a.status!=="Draft");
   const assessments=(state.sectionData.assessmentRefs||[]).filter(a=>a.status!=="Draft");
-  const gradeMap=new Map(state.sectionData.grades.map(g=>[g.assignmentId,g]));
-  const assessmentGradeMap=new Map((state.sectionData.assessmentGrades||[]).map(g=>[g.assessmentId,g]));
+  const uid=state.user.uid;
+  const gradeMap=new Map((state.sectionData.grades||[]).map(g=>[g.assignmentId+"_"+uid,g]));
+  const assessmentGradeMap=new Map((state.sectionData.assessmentGrades||[]).map(g=>[g.assessmentId+"_"+uid,g]));
+  const snapshot=gradebookAcademicSnapshot(uid,assignments,gradeMap,assessmentGradeMap);
+  const record=snapshot.record;
+  const missing=assignments.filter(a=>{const g=gradeMap.get(a.id+"_"+uid);return !g||String(g.gradeStatus||"")==="Missing";});
+  const recent=[...(state.sectionData.grades||[])].sort((a,b)=>(b.updatedAt?.toMillis?.()||0)-(a.updatedAt?.toMillis?.()||0)).slice(0,6);
 
-  let courseworkEarned=0,courseworkPossible=0;
   const assignmentRows=assignments.map(a=>{
-    const g=gradeMap.get(a.id);
-    if(g){courseworkEarned+=Number(g.score||0);courseworkPossible+=Number(a.points||0);}
-    return '<tr><td><strong>'+esc(a.title)+'</strong><span class="grade-sub">'+esc(a.type||"Assignment")+'</span></td><td><span class="badge">Coursework</span></td><td>'+esc(a.points||0)+'</td><td>'+(g?esc(g.score):"—")+'</td><td>'+(g&&a.points?Math.round((Number(g.score)/Number(a.points))*1000)/10+"%":"—")+'</td></tr>';
+    const g=gradeMap.get(a.id+"_"+uid);
+    const pct=g&&a.points?gradebookRound(Number(g.score||0)/Number(a.points)*100):null;
+    return '<tr><td><strong>'+esc(a.title)+'</strong><span class="grade-sub">'+esc(a.type||"Assignment")+' • '+esc(a.gradingPeriod||"Overall")+'</span></td><td><span class="badge">Coursework</span></td><td>'+esc(a.points||0)+'</td><td>'+(g?esc(g.score):"—")+'</td><td>'+(pct===null?"—":pct+"%")+'</td><td>'+(g?.gradeStatus&&g.gradeStatus!=="Normal"?'<span class="badge '+(g.gradeStatus==="Missing"?'danger':'')+'">'+esc(g.gradeStatus)+'</span>':'—')+'</td></tr>';
   }).join("");
 
-  const assessmentPercents=[];
   const assessmentRows=assessments.map(a=>{
-    const g=assessmentGradeMap.get(a.id);
-    if(g&&g.percent!==null&&g.percent!==undefined)assessmentPercents.push(Number(g.percent));
-    return '<tr class="assessment-grade-row"><td><strong>'+esc(a.title||"Assessment")+'</strong><span class="grade-sub">'+esc(a.assessmentType||a.type||"Formal Assessment")+'</span></td><td><span class="badge assessment-badge">Assessment</span></td><td>'+(g?esc(g.maxScore??a.totalPoints??"—"):esc(a.totalPoints||"—"))+'</td><td>'+(g?esc(g.score??"—"):"—")+'</td><td>'+(g?'<strong>'+esc(g.percent)+'%</strong>':'<span class="grade-pending">Awaiting grade</span>')+'</td></tr>';
+    const g=assessmentGradeMap.get(a.id+"_"+uid);
+    return '<tr class="assessment-grade-row"><td><strong>'+esc(a.title||"Assessment")+'</strong><span class="grade-sub">'+esc(a.assessmentType||a.type||"Formal Assessment")+'</span></td><td><span class="badge assessment-badge">Assessment</span></td><td>'+(g?esc(g.maxScore??a.totalPoints??"—"):esc(a.totalPoints||"—"))+'</td><td>'+(g?esc(g.score??"—"):"—")+'</td><td>'+(g&&g.percent!==null&&g.percent!==undefined?'<strong>'+esc(g.percent)+'%</strong>':'<span class="grade-pending">Awaiting grade</span>')+'</td><td>'+(g?.released?'<span class="badge live">Released</span>':'—')+'</td></tr>';
   }).join("");
 
-  const courseworkAvg=courseworkPossible?Math.round((courseworkEarned/courseworkPossible)*1000)/10:null;
-  const assessmentAvg=assessmentPercents.length?Math.round((assessmentPercents.reduce((a,b)=>a+b,0)/assessmentPercents.length)*10)/10:null;
-
-  return '<div class="student-grade-summary"><div><span>Coursework Average</span><strong>'+(courseworkAvg===null?"—":courseworkAvg+"%")+'</strong></div><div><span>Assessment Average</span><strong>'+(assessmentAvg===null?"—":assessmentAvg+"%")+'</strong></div></div>'+
-    '<div class="academic-banner"><div class="kicker">Academic Progress</div><h3>Coursework and formal assessments are recorded separately.</h3><p>Your final certified grade is calculated later using the grading pathway you selected, not by simply averaging these two numbers together.</p></div>'+
-    '<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Academic Work</th><th>Category</th><th>Possible</th><th>Score</th><th>Percent</th></tr></thead><tbody>'+assignmentRows+assessmentRows+'</tbody></table></div>';
+  const pathLabel=snapshot.pathway==="examination"?"Examination":snapshot.pathway==="composite"?"Composite":"Not selected";
+  const certificationClass=snapshot.certified?"live":snapshot.ready?"gold":"";
+  return '<div class="student-grade-dashboard">'+
+    '<div class="student-grade-summary advanced-student-grade-summary"><div><span>Coursework</span><strong>'+(snapshot.coursework===null?"—":snapshot.coursework+"%")+'</strong></div><div><span>Semester Exam</span><strong>'+(snapshot.semester===null?"—":snapshot.semester+"%")+'</strong></div><div><span>Comprehensive Final</span><strong>'+(snapshot.comprehensive===null?"—":snapshot.comprehensive+"%")+'</strong></div><div><span>Final Projection</span><strong>'+(snapshot.displayPercent===null?"—":snapshot.displayPercent+"%")+'</strong><small>'+esc(snapshot.letter)+'</small></div><div><span>Grading Pathway</span><strong>'+esc(pathLabel)+'</strong></div><div><span>Certification</span><strong class="badge '+certificationClass+'">'+esc(snapshot.status)+'</strong></div></div>'+
+    '<div class="academic-banner"><div class="kicker">Academic Progress</div><h3>Your current academic picture</h3><p>Coursework and formal examinations remain separate. Your final projection follows your selected grading pathway. <strong>Projected grades are not certified final grades.</strong></p></div>'+
+    (record?.status==="Certified"?'<div class="notice student-certified-record"><strong>Certified Academic Record</strong><span>'+esc(record.letterGrade||"—")+' • '+esc(record.finalPercent??"—")+'% • Version '+esc(record.version||1)+(record.recordType==="Withdrawal"?' • Withdrawal Certification':'')+'</span></div>':'')+
+    '<div class="grid-2"><div class="panel"><div class="panel-head"><div><div class="panel-title">Missing / Ungraded Work</div><div class="panel-subtitle">Items that may need your attention.</div></div></div><div class="panel-body">'+(missing.length?missing.slice(0,8).map(a=>'<div class="profile-record-row"><div><strong>'+esc(a.title)+'</strong><span>'+esc(a.gradingPeriod||"Overall")+(a.dueDate?' • Due '+esc(formatDate(a.dueDate)):'')+'</span></div><b>Needs attention</b></div>').join(""):'<div class="empty-mini">No missing coursework is currently recorded.</div>')+'</div></div>'+
+    '<div class="panel"><div class="panel-head"><div><div class="panel-title">Recent Instructor Feedback</div><div class="panel-subtitle">Most recently updated coursework comments.</div></div></div><div class="panel-body">'+(recent.filter(g=>g.comment).length?recent.filter(g=>g.comment).map(g=>'<div class="profile-record-row"><div><strong>'+esc(g.assignmentTitle||"Assignment")+'</strong><span>'+esc(g.comment||"")+'</span></div><b>'+esc(g.score??"—")+'</b></div>').join(""):'<div class="empty-mini">No recent written feedback.</div>')+'</div></div></div>'+
+    '<div class="panel" style="margin-top:18px"><div class="panel-head"><div><div class="panel-title">Detailed Gradebook</div><div class="panel-subtitle">Recorded coursework and formal assessments.</div></div></div><div class="data-table-wrap"><table class="data-table"><thead><tr><th>Academic Work</th><th>Category</th><th>Possible</th><th>Score</th><th>Percent</th><th>Status</th></tr></thead><tbody>'+assignmentRows+assessmentRows+'</tbody></table></div></div>'+
+  '</div>';
 }
 
 function renderSectionDetail(tab="overview"){
