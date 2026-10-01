@@ -509,59 +509,172 @@ async function assessmentSecurityModal(assessmentId){
 async function renderAssessmentSecurity(detail){
   const root=$("#phase6AssessmentSecurity");if(!root||!detail?.assessment)return;
   const a=detail.assessment,p=a.securityPolicy||{};
+
+  let privateConfig=null;
+  if(a.sectionId){
+    try{
+      const privateSnap=await getDoc(doc(db,"assessments",a.id,"securityPrivate","config"));
+      if(privateSnap.exists())privateConfig=privateSnap.data();
+    }catch(error){console.warn("Unable to load private assessment security configuration:",error);}
+  }
+
+  const fullscreenRequired=p.fullscreenRequired===true||p.fullscreenExpectation===true;
+  const focusPolicy=p.focusPolicy||((p.logFocusLoss===false)?"none":"log");
+  const secureCodeReady=p.accessCodeConfigured===true&&!!privateConfig?.accessCode&&Number(privateConfig?.version||0)===Number(p.accessCodeVersion||0);
+
   root.innerHTML='<form id="phase6SecurityForm" class="academic-form">'+
-    '<div class="academic-banner"><div class="kicker">Assessment Security Center</div><h3>Attempt & Session Policy</h3><p>Use proportionate academic-integrity controls without invasive device surveillance. Security events are recorded in the existing attempt event log.</p></div>'+
-    '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Attempt Controls</h3><p>Control entry timing, retakes, and acknowledgement.</p></div></div><div class="compact-field-grid"><div class="field"><label>Maximum Attempts</label><input name="maxAttempts" type="number" min="1" max="10" value="'+esc(p.maxAttempts||1)+'"></div><div class="field"><label>Late Entry</label><select name="lateEntryPolicy"><option value="allow">Allow while assessment is open</option><option value="deny-after-start">Deny after opening grace period</option></select></div><div class="field"><label>Late Entry Grace</label><div class="input-with-suffix"><input name="lateEntryGraceMinutes" type="number" min="0" max="1440" value="'+esc(p.lateEntryGraceMinutes||0)+'"><span>min</span></div></div></div><label class="policy-card"><input type="checkbox" name="honorAcknowledgement" '+(p.honorAcknowledgement?'checked':'')+'><div><strong>Academic Integrity Acknowledgement</strong><span>Require the student to affirm the instructor’s integrity expectations before the attempt begins.</span></div></label></section>'+
-    '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Session Expectations</h3><p>Configure browser-session signals that Theoria may record for instructor review.</p></div></div><div class="policy-grid"><label class="policy-card"><input type="checkbox" name="fullscreenExpectation" '+(p.fullscreenExpectation?'checked':'')+'><div><strong>Fullscreen Expected</strong><span>Tell students fullscreen is expected and permit fullscreen-change logging.</span></div></label><label class="policy-card"><input type="checkbox" name="logFocusLoss" '+(p.logFocusLoss!==false?'checked':'')+'><div><strong>Log Focus Changes</strong><span>Record focus/visibility changes as attempt events.</span></div></label><label class="policy-card"><input type="checkbox" name="blockPaste" '+(p.blockPaste?'checked':'')+'><div><strong>Block Paste</strong><span>Prevent paste into assessment response fields.</span></div></label><label class="policy-card"><input type="checkbox" name="logCopy" '+(p.logCopy!==false?'checked':'')+'><div><strong>Log Copy Events</strong><span>Record copy actions during the assessment session.</span></div></label></div></section>'+
-    '<section class="form-section"><div class="form-section-head"><div><span>03</span><h3>Access Code</h3><p>Optionally require a code before the official attempt begins.</p></div></div><label class="policy-card"><input type="checkbox" name="accessCodeConfigured" '+(p.accessCodeConfigured?'checked':'')+'><div><strong>Require Access Code</strong><span>The stored value is hashed; instructors can replace it but cannot read the previous code.</span></div></label><div class="field" style="margin-top:12px"><label>'+(p.accessCodeConfigured?'Replace Access Code (leave blank to keep current)':'Access Code')+'</label><input name="accessCode" type="password" autocomplete="new-password"></div></section>'+
-    '<div class="modal-foot form-sticky-foot"><button class="primary-btn" type="submit">Save Security Policy</button></div></form>';
-  const form=root.querySelector("#phase6SecurityForm");form.elements.lateEntryPolicy.value=p.lateEntryPolicy||"allow";
+    '<div class="academic-banner"><div class="kicker">Assessment Security Center</div><h3>Enforced Attempt & Session Policy</h3><p>These settings now control the live assessment session. Browser-level controls are enforced inside Theoria, while access codes, attempt limits, and assessment windows are also validated through Firestore rules.</p></div>'+
+    '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Attempt Controls</h3><p>Control entry timing, retakes, and required acknowledgements.</p></div></div>'+
+      '<div class="compact-field-grid"><div class="field"><label>Maximum Attempts</label><input name="maxAttempts" type="number" min="1" max="10" value="'+esc(p.maxAttempts||1)+'"></div>'+
+      '<div class="field"><label>Late Entry</label><select name="lateEntryPolicy"><option value="allow">Allow while assessment is open</option><option value="deny-after-start">Deny after opening grace period</option></select></div>'+
+      '<div class="field"><label>Late Entry Grace</label><div class="input-with-suffix"><input name="lateEntryGraceMinutes" type="number" min="0" max="1440" value="'+esc(p.lateEntryGraceMinutes||0)+'"><span>min</span></div></div></div>'+
+      '<label class="policy-card"><input type="checkbox" name="honorAcknowledgement" '+(p.honorAcknowledgement?'checked':'')+'><div><strong>Require Academic Integrity Acknowledgement</strong><span>The student must affirm the integrity statement before Theoria creates the official attempt.</span></div></label>'+
+    '</section>'+
+    '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Secure Session Enforcement</h3><p>Choose what Theoria must actively enforce while an attempt is in progress.</p></div></div>'+
+      '<div class="policy-grid">'+
+        '<label class="policy-card"><input type="checkbox" name="fullscreenRequired" '+(fullscreenRequired?'checked':'')+'><div><strong>Require Fullscreen</strong><span>If the student exits fullscreen, Theoria hides the assessment and locks interaction until fullscreen is restored.</span></div></label>'+
+        '<label class="policy-card"><input type="checkbox" name="blockCopy" '+(p.blockCopy?'checked':'')+'><div><strong>Block Copy</strong><span>Prevent copying assessment content while the exam is active.</span></div></label>'+
+        '<label class="policy-card"><input type="checkbox" name="blockPaste" '+(p.blockPaste?'checked':'')+'><div><strong>Block Paste</strong><span>Prevent pasted content from entering assessment response fields.</span></div></label>'+
+        '<label class="policy-card"><input type="checkbox" name="blockCut" '+(p.blockCut?'checked':'')+'><div><strong>Block Cut</strong><span>Prevent cutting text from assessment response fields.</span></div></label>'+
+        '<label class="policy-card"><input type="checkbox" name="blockContextMenu" '+(p.blockContextMenu?'checked':'')+'><div><strong>Block Context Menu</strong><span>Disable the browser context menu inside the active assessment workspace.</span></div></label>'+
+        '<label class="policy-card"><input type="checkbox" name="logCopy" '+(p.logCopy!==false?'checked':'')+'><div><strong>Log Clipboard Attempts</strong><span>Record copy, paste, and cut attempts in the session event log.</span></div></label>'+
+      '</div>'+
+      '<div class="compact-field-grid" style="margin-top:12px">'+
+        '<div class="field"><label>Focus / Visibility Policy</label><select name="focusPolicy"><option value="none">Do not monitor</option><option value="log">Log only</option><option value="pause">Lock until student resumes</option><option value="submit">Submit after violation limit</option></select></div>'+
+        '<div class="field"><label>Violation Limit</label><input name="maxFocusViolations" type="number" min="1" max="20" value="'+esc(p.maxFocusViolations||3)+'"></div>'+
+        '<div class="field"><label>Focus Logging</label><div class="static-field">Visibility and window-focus changes are recorded when monitoring is enabled.</div></div>'+
+      '</div>'+
+    '</section>'+
+    '<section class="form-section"><div class="form-section-head"><div><span>03</span><h3>Server-Enforced Access Code</h3><p>The access secret is stored in an instructor-only document. Firestore will reject a new attempt unless the student has supplied the correct code.</p></div></div>'+
+      '<label class="policy-card"><input type="checkbox" name="accessCodeConfigured" '+(p.accessCodeConfigured?'checked':'')+'><div><strong>Require Access Code</strong><span>The code is validated by Firestore before an attempt can be created.</span></div></label>'+
+      '<div class="field" style="margin-top:12px"><label>'+(secureCodeReady?'Replace Access Code (leave blank to keep current)':'Set / Re-enter Access Code')+'</label><input name="accessCode" type="password" autocomplete="new-password"></div>'+
+      (p.accessCodeConfigured&&!secureCodeReady?'<div class="notice danger-notice"><strong>Access code is not yet server-enforced.</strong><p>This assessment still has a legacy client-only code. Re-enter a code and save this policy to activate enforced access authorization.</p></div>':'')+
+      (secureCodeReady?'<div class="notice"><strong>Server enforcement active.</strong><p>New attempts require a valid authorization matching access-code version '+esc(p.accessCodeVersion||privateConfig?.version||1)+'.</p></div>':'')+
+    '</section>'+
+    '<div class="modal-foot form-sticky-foot"><button class="primary-btn" type="submit">Save Enforced Security Policy</button></div>'+
+  '</form>';
+
+  const form=root.querySelector("#phase6SecurityForm");
+  form.elements.lateEntryPolicy.value=p.lateEntryPolicy||"allow";
+  form.elements.focusPolicy.value=focusPolicy;
+
+  const syncFocusLimit=()=>{
+    form.elements.maxFocusViolations.disabled=form.elements.focusPolicy.value!=="submit";
+  };
+  form.elements.focusPolicy.addEventListener("change",syncFocusLimit);syncFocusLimit();
+
   form.onsubmit=async e=>{
-    e.preventDefault();const fd=new FormData(form),code=String(fd.get("accessCode")||"").trim(),configured=form.elements.accessCodeConfigured.checked;
+    e.preventDefault();
+    const fd=new FormData(form),code=String(fd.get("accessCode")||"").trim(),configured=form.elements.accessCodeConfigured.checked;
+    let accessCodeVersion=Number(p.accessCodeVersion||privateConfig?.version||0);
+
+    if(configured){
+      if(code){
+        accessCodeVersion=Math.max(accessCodeVersion,Number(privateConfig?.version||0))+1;
+      }else if(!privateConfig?.accessCode||Number(privateConfig?.version||0)!==accessCodeVersion){
+        return toast("Re-enter an access code so Theoria can activate server-enforced authorization.");
+      }
+    }
+
     const policy={
       maxAttempts:Math.max(1,Math.floor(Number(fd.get("maxAttempts")||1))),
       lateEntryPolicy:String(fd.get("lateEntryPolicy")||"allow"),
       lateEntryGraceMinutes:Math.max(0,Number(fd.get("lateEntryGraceMinutes")||0)),
       honorAcknowledgement:form.elements.honorAcknowledgement.checked,
-      fullscreenExpectation:form.elements.fullscreenExpectation.checked,
-      logFocusLoss:form.elements.logFocusLoss.checked,
+      fullscreenRequired:form.elements.fullscreenRequired.checked,
+      fullscreenExpectation:form.elements.fullscreenRequired.checked,
+      focusPolicy:String(fd.get("focusPolicy")||"log"),
+      logFocusLoss:String(fd.get("focusPolicy")||"log")!=="none",
+      maxFocusViolations:Math.max(1,Math.floor(Number(fd.get("maxFocusViolations")||3))),
+      blockCopy:form.elements.blockCopy.checked,
       blockPaste:form.elements.blockPaste.checked,
+      blockCut:form.elements.blockCut.checked,
+      blockContextMenu:form.elements.blockContextMenu.checked,
       logCopy:form.elements.logCopy.checked,
       accessCodeConfigured:configured,
-      accessCodeHash:configured?(code?await hashCode(code):(p.accessCodeHash||"")):"",
+      accessCodeEnforced:configured,
+      accessCodeVersion:configured?accessCodeVersion:0,
       updatedAt:serverTimestamp()
     };
-    if(configured&&!policy.accessCodeHash)return toast("Enter an access code.");
+
     try{
+      if(configured&&code){
+        await setDoc(doc(db,"assessments",a.id,"securityPrivate","config"),{
+          accessCode:code,
+          version:accessCodeVersion,
+          updatedBy:state().user.uid,
+          updatedAt:serverTimestamp()
+        });
+        privateConfig={accessCode:code,version:accessCodeVersion};
+      }else if(!configured&&privateConfig){
+        await deleteDoc(doc(db,"assessments",a.id,"securityPrivate","config"));
+        privateConfig=null;
+      }
+
       await updateDoc(doc(db,"assessments",a.id),{securityPolicy:policy,updatedAt:serverTimestamp()});
-      if(a.sectionId)await p5()?.logSectionEvent?.(a.sectionId,"assessment_security_updated","assessment",a.id,{maxAttempts:policy.maxAttempts,lateEntryPolicy:policy.lateEntryPolicy,fullscreenExpectation:policy.fullscreenExpectation,accessCodeConfigured:policy.accessCodeConfigured});
-      Object.assign(a,{securityPolicy:policy});toast("Assessment security policy saved.");
-    }catch(error){toast(error.message||"Unable to save the security policy.");}
+      if(a.sectionId)await p5()?.logSectionEvent?.(a.sectionId,"assessment_security_updated","assessment",a.id,{
+        maxAttempts:policy.maxAttempts,
+        lateEntryPolicy:policy.lateEntryPolicy,
+        fullscreenRequired:policy.fullscreenRequired,
+        focusPolicy:policy.focusPolicy,
+        maxFocusViolations:policy.maxFocusViolations,
+        blockCopy:policy.blockCopy,
+        blockPaste:policy.blockPaste,
+        accessCodeConfigured:policy.accessCodeConfigured,
+        accessCodeEnforced:policy.accessCodeEnforced
+      });
+      Object.assign(a,{securityPolicy:policy});
+      toast("Enforced assessment security policy saved.");
+      await renderAssessmentSecurity(detail);
+    }catch(error){toast(error.message||"Unable to save the enforced security policy.");}
   };
 
   if(a.sectionId){
     const signalPanel=document.createElement("section");
     signalPanel.className="form-section security-signal-panel";
-    signalPanel.innerHTML='<div class="form-section-head"><div><span>04</span><h3>Session Signal Summary</h3><p>Browser-session events are context for instructor review, not automatic evidence of misconduct.</p></div></div><div id="securitySignalBody"><div class="empty-mini">Loading attempt signals…</div></div>';
+    signalPanel.innerHTML='<div class="form-section-head"><div><span>04</span><h3>Session Enforcement Summary</h3><p>Review actual runtime events: focus violations, locked sessions, clipboard blocks, fullscreen exits, and automatic security submissions.</p></div></div><div id="securitySignalBody"><div class="empty-mini">Loading attempt signals…</div></div>';
     root.appendChild(signalPanel);
     const body=signalPanel.querySelector("#securitySignalBody"),rows=[];
     const memberMap=new Map(safe(detail.members).map(m=>[m.id,m]));
     for(const submission of safe(detail.submissions)){
       try{
         const eventSnap=await getDocs(collection(db,"assessments",a.id,"submissions",submission.studentId,"events"));
-        const events=eventSnap.docs.map(d=>d.data()),counts={focus:0,copy:0,paste:0,fullscreen:0,other:0};
+        const events=eventSnap.docs.map(d=>d.data()),counts={focus:0,copy:0,paste:0,fullscreen:0,locks:0,autoSubmit:0,other:0};
         events.forEach(ev=>{
           const type=String(ev.type||"").toLowerCase();
           if(type.includes("focus")||type.includes("blur")||type.includes("visibility"))counts.focus++;
-          else if(type.includes("copy"))counts.copy++;
+          else if(type.includes("copy")||type.includes("cut"))counts.copy++;
           else if(type.includes("paste"))counts.paste++;
           else if(type.includes("fullscreen"))counts.fullscreen++;
+          else if(type.includes("security_lock"))counts.locks++;
+          else if(type.includes("security_auto_submit"))counts.autoSubmit++;
           else counts.other++;
         });
         rows.push({studentId:submission.studentId,name:memberMap.get(submission.studentId)?.displayName||submission.candidateNumber||"Candidate",events:events.length,...counts});
       }catch(_){}
     }
-    body.innerHTML=rows.length?'<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Candidate</th><th>Total Events</th><th>Focus / Visibility</th><th>Copy</th><th>Paste</th><th>Fullscreen</th></tr></thead><tbody>'+rows.map(row=>'<tr><td><strong>'+esc(row.name)+'</strong></td><td>'+row.events+'</td><td>'+row.focus+'</td><td>'+row.copy+'</td><td>'+row.paste+'</td><td>'+row.fullscreen+'</td></tr>').join("")+'</tbody></table></div>':'<div class="empty-mini">No session events have been recorded for this assessment.</div>';
+    body.innerHTML=rows.length?'<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Candidate</th><th>Total</th><th>Focus</th><th>Clipboard</th><th>Fullscreen</th><th>Locks</th><th>Auto Submit</th></tr></thead><tbody>'+rows.map(row=>'<tr><td><strong>'+esc(row.name)+'</strong></td><td>'+row.events+'</td><td>'+row.focus+'</td><td>'+(row.copy+row.paste)+'</td><td>'+row.fullscreen+'</td><td>'+row.locks+'</td><td>'+row.autoSubmit+'</td></tr>').join("")+'</tbody></table></div>':'<div class="empty-mini">No enforced-session events have been recorded for this assessment.</div>';
+  }
+}
+
+async function authorizeAssessmentAccess(assessment,code){
+  if(!assessment?.securityPolicy?.accessCodeConfigured)return true;
+  const uid=state()?.user?.uid;if(!uid)return false;
+  const version=Number(assessment.securityPolicy.accessCodeVersion||0);
+  if(!version){toast("This assessment uses a legacy access code. Ask the instructor to re-save the Security policy.");return false;}
+  try{
+    await setDoc(doc(db,"assessments",assessment.id,"accessAuthorizations",uid),{
+      studentId:uid,
+      accessCode:String(code||""),
+      version,
+      authorizedAt:serverTimestamp(),
+      updatedAt:serverTimestamp()
+    });
+    return true;
+  }catch(error){
+    console.warn("Assessment access authorization rejected:",error);
+    toast(error?.code==="permission-denied"?"The assessment access code is incorrect.":"Theoria could not authorize this assessment access code.");
+    return false;
   }
 }
 
@@ -579,31 +692,20 @@ async function preflightSecurity(assessment){
       if(used>=Math.max(1,Number(p.maxAttempts||1))){toast("The maximum number of attempts has been reached.");return false;}
     }catch(_){}
   }
-  if(p.accessCodeConfigured){
-    const entered=prompt("Enter the assessment access code:");
-    if(entered===null)return false;
-    const hash=await hashCode(String(entered).trim());
-    if(!hash||hash!==p.accessCodeHash){toast("The assessment access code is incorrect.");return false;}
-  }
   return true;
 }
+
 async function logExamSecurityEvent(type,details={}){
   const p3=window.TheoriaPhase3,current=p3?.getCurrent?.(),exam=current&&$("#page-exam")?.classList.contains("active");
   if(!exam||state()?.role!=="student")return;
-  const policy=current.securityPolicy||{};
-  if(type==="focus_loss"&&policy.logFocusLoss===false)return;
   try{await addDoc(collection(db,"assessments",current.id,"submissions",state().user.uid,"events"),{studentId:state().user.uid,type,details,at:serverTimestamp()});}catch(_){}
 }
-function bindSecurityEvents(){
-  document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")logExamSecurityEvent("focus_loss",{visibility:"hidden"});});
-  window.addEventListener("blur",()=>logExamSecurityEvent("window_blur"));
-  document.addEventListener("paste",e=>{
-    const current=window.TheoriaPhase3?.getCurrent?.();if(!current||!$("#page-exam")?.classList.contains("active"))return;
-    if(current.securityPolicy?.blockPaste){e.preventDefault();logExamSecurityEvent("paste_blocked");toast("Paste is disabled for this assessment.");}
-  },true);
-  document.addEventListener("copy",()=>{const current=window.TheoriaPhase3?.getCurrent?.();if(current&&$("#page-exam")?.classList.contains("active"))logExamSecurityEvent("copy_event");},true);
-  document.addEventListener("fullscreenchange",()=>{const current=window.TheoriaPhase3?.getCurrent?.();if(current&&$("#page-exam")?.classList.contains("active"))logExamSecurityEvent("fullscreen_change",{fullscreen:!!document.fullscreenElement});});
-}
+
+// Active enforcement is intentionally bound per attempt in phase3.js.
+// A global listener here previously caused duplicate logging and could not
+// actually lock the assessment session.
+function bindSecurityEvents(){}
+
 
 /* -------------------- QUESTION QUALITY -------------------- */
 
@@ -750,7 +852,7 @@ export function initTeaching(){
   bind();
   return {
     renderInsights,renderTeachingToolsPage,sectionToolsModal,rubricLibraryModal,openRubricGrade,
-    assessmentSecurityModal,preflightSecurity,renderAssessmentSecurity,hashCode,
+    assessmentSecurityModal,preflightSecurity,renderAssessmentSecurity,authorizeAssessmentAccess,hashCode,
     questionQualityModal,blueprintDesigner,renderBlueprintDesigner,
     studentProfileModal
   };
