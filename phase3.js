@@ -1876,12 +1876,21 @@ async function revokeRetake(studentId){
   const d=P3.detail,a=d?.assessment,auth=d?.retakes?.find(x=>x.id===studentId||x.studentId===studentId);
   if(!a||!auth?.active)return toast("No pending retake authorization was found.");
   if(d.submissions.some(x=>x.studentId===studentId&&x.status==="in_progress"))return toast("The retake has already started and can no longer be revoked from this control.");
-  if(!confirm("Revoke this pending retake authorization? The archived prior attempt will remain preserved."))return;
+  if(!confirm("Revoke this pending retake authorization and restore the student's most recent completed attempt?"))return;
   try{
-    await updateDoc(doc(db,"assessments",a.id,"retakes",studentId),{active:false,revokedAt:serverTimestamp(),revokedBy:state().user.uid,updatedAt:serverTimestamp()});
-    await updateDoc(doc(db,"sections",a.sectionId,"assessmentGrades",a.id+"_"+studentId),{retakePending:false,updatedAt:serverTimestamp()});
-    if(window.TheoriaPhase5?.logSectionEvent)await window.TheoriaPhase5.logSectionEvent(a.sectionId,"assessment_retake_revoked","student",studentId,{assessmentId:a.id,attemptNumber:auth.authorizedAttemptNumber});
-    await openAssessment(a.id,"candidates");toast("Retake authorization revoked.");
+    const archived=safeArray(d.attemptHistory)
+      .filter(x=>x.studentId===studentId)
+      .sort((x,y)=>Number(y.attemptNumber||0)-Number(x.attemptNumber||0))[0];
+    const batch=writeBatch(db);
+    batch.set(doc(db,"assessments",a.id,"retakes",studentId),{
+      active:false,revokedAt:serverTimestamp(),revokedBy:state().user.uid,updatedAt:serverTimestamp()
+    },{merge:true});
+    batch.set(doc(db,"sections",a.sectionId,"assessmentGrades",a.id+"_"+studentId),{retakePending:false,updatedAt:serverTimestamp()},{merge:true});
+    if(archived?.submission)batch.set(doc(db,"assessments",a.id,"submissions",studentId),{...archived.submission,updatedAt:serverTimestamp()},{merge:false});
+    if(archived?.result)batch.set(doc(db,"assessments",a.id,"results",studentId),{...archived.result,updatedAt:serverTimestamp()},{merge:false});
+    await batch.commit();
+    if(window.TheoriaPhase5?.logSectionEvent)await window.TheoriaPhase5.logSectionEvent(a.sectionId,"assessment_retake_revoked","student",studentId,{assessmentId:a.id,attemptNumber:auth.authorizedAttemptNumber,restoredAttempt:archived?.attemptNumber||null});
+    await openAssessment(a.id,"candidates");toast("Retake authorization revoked and the prior attempt restored.");
   }catch(error){toast(error.message||"Unable to revoke the retake.");}
 }
 
@@ -2739,8 +2748,16 @@ async function deleteAssessment(assessmentId){
         events.docs.forEach(x=>refs.push(x.ref));
         refs.push(sub.ref);
       }
-      const results=await getDocs(collection(db,"assessments",a.id,"results"));
+      const [results,retakes,attemptHistory,attemptCounters]=await Promise.all([
+        getDocs(collection(db,"assessments",a.id,"results")),
+        getDocs(collection(db,"assessments",a.id,"retakes")),
+        getDocs(collection(db,"assessments",a.id,"attemptHistory")),
+        getDocs(collection(db,"assessments",a.id,"attemptCounters"))
+      ]);
       results.docs.forEach(x=>refs.push(x.ref));
+      retakes.docs.forEach(x=>refs.push(x.ref));
+      attemptHistory.docs.forEach(x=>refs.push(x.ref));
+      attemptCounters.docs.forEach(x=>refs.push(x.ref));
       await deleteRefsInBatches(refs);
 
       if(assigned){
