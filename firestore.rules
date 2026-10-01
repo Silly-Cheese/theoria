@@ -619,72 +619,7 @@ service cloud.firestore {
           || (sectionMember(sectionId) && resource.data.status == 'Published');
         allow create, update, delete: if sectionCourseworkManager(sectionId);
 
-        match /retakes/{studentId} {
-        allow read: if isSelf(studentId)
-          || assessmentOwner(assessmentId)
-          || (
-            assessmentData(assessmentId).sectionId != ''
-            && sectionGrader(assessmentData(assessmentId).sectionId)
-          );
-        allow create, update, delete: if assessmentOwner(assessmentId)
-          || (
-            assessmentData(assessmentId).sectionId != ''
-            && sectionAcademicManager(assessmentData(assessmentId).sectionId)
-          );
-      }
-
-      match /attemptHistory/{historyId} {
-        allow read: if assessmentOwner(assessmentId)
-          || (
-            assessmentData(assessmentId).sectionId != ''
-            && sectionGrader(assessmentData(assessmentId).sectionId)
-          )
-          || (
-            signedIn()
-            && resource.data.studentId == uid()
-          );
-        allow create, update, delete: if assessmentOwner(assessmentId)
-          || (
-            assessmentData(assessmentId).sectionId != ''
-            && sectionAcademicManager(assessmentData(assessmentId).sectionId)
-          );
-      }
-
-      match /attemptSubmissions/{historyId} {
-        allow read: if assessmentOwner(assessmentId)
-          || (
-            assessmentData(assessmentId).sectionId != ''
-            && sectionGrader(assessmentData(assessmentId).sectionId)
-          )
-          || (
-            signedIn()
-            && resource.data.studentId == uid()
-          );
-        allow create, update, delete: if assessmentOwner(assessmentId)
-          || (
-            assessmentData(assessmentId).sectionId != ''
-            && sectionAcademicManager(assessmentData(assessmentId).sectionId)
-          );
-      }
-
-      match /attemptResults/{historyId} {
-        allow read: if assessmentOwner(assessmentId)
-          || (
-            assessmentData(assessmentId).sectionId != ''
-            && sectionGrader(assessmentData(assessmentId).sectionId)
-          )
-          || (
-            signedIn()
-            && resource.data.studentId == uid()
-          );
-        allow create, update, delete: if assessmentOwner(assessmentId)
-          || (
-            assessmentData(assessmentId).sectionId != ''
-            && sectionAcademicManager(assessmentData(assessmentId).sectionId)
-          );
-      }
-
-      match /submissions/{studentId} {
+        match /submissions/{studentId} {
           allow read: if sectionGrader(sectionId) || isSelf(studentId);
           allow create: if isSelf(studentId)
             && sectionMember(sectionId)
@@ -973,6 +908,71 @@ service cloud.firestore {
           && request.resource.data.version
             == assessmentData(assessmentId).securityPolicy.accessCodeVersion;
         allow delete: if assessmentOwner(assessmentId)
+          || (
+            assessmentData(assessmentId).sectionId != ''
+            && sectionAcademicManager(assessmentData(assessmentId).sectionId)
+          );
+      }
+
+      match /retakes/{studentId} {
+        allow read: if isSelf(studentId)
+          || assessmentOwner(assessmentId)
+          || (
+            assessmentData(assessmentId).sectionId != ''
+            && sectionGrader(assessmentData(assessmentId).sectionId)
+          );
+        allow create, update, delete: if assessmentOwner(assessmentId)
+          || (
+            assessmentData(assessmentId).sectionId != ''
+            && sectionAcademicManager(assessmentData(assessmentId).sectionId)
+          );
+      }
+
+      match /attemptHistory/{historyId} {
+        allow read: if assessmentOwner(assessmentId)
+          || (
+            assessmentData(assessmentId).sectionId != ''
+            && sectionGrader(assessmentData(assessmentId).sectionId)
+          )
+          || (
+            signedIn()
+            && resource.data.studentId == uid()
+          );
+        allow create, update, delete: if assessmentOwner(assessmentId)
+          || (
+            assessmentData(assessmentId).sectionId != ''
+            && sectionAcademicManager(assessmentData(assessmentId).sectionId)
+          );
+      }
+
+      match /attemptSubmissions/{historyId} {
+        allow read: if assessmentOwner(assessmentId)
+          || (
+            assessmentData(assessmentId).sectionId != ''
+            && sectionGrader(assessmentData(assessmentId).sectionId)
+          )
+          || (
+            signedIn()
+            && resource.data.studentId == uid()
+          );
+        allow create, update, delete: if assessmentOwner(assessmentId)
+          || (
+            assessmentData(assessmentId).sectionId != ''
+            && sectionAcademicManager(assessmentData(assessmentId).sectionId)
+          );
+      }
+
+      match /attemptResults/{historyId} {
+        allow read: if assessmentOwner(assessmentId)
+          || (
+            assessmentData(assessmentId).sectionId != ''
+            && sectionGrader(assessmentData(assessmentId).sectionId)
+          )
+          || (
+            signedIn()
+            && resource.data.studentId == uid()
+          );
+        allow create, update, delete: if assessmentOwner(assessmentId)
           || (
             assessmentData(assessmentId).sectionId != ''
             && sectionAcademicManager(assessmentData(assessmentId).sectionId)
