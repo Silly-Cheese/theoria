@@ -1107,34 +1107,52 @@ service cloud.firestore {
             assessmentData(assessmentId).sectionId != ''
             && sectionGrader(assessmentData(assessmentId).sectionId)
           );
-        allow create: if isSelf(studentId)
-          && assessmentOpen(assessmentId)
-          && assessmentLateEntryAllowed(assessmentId)
-          && assessmentAccessAuthorized(assessmentId)
-          && request.resource.data.keys().hasOnly([
-            'studentId',
-            'count',
-            'lastStartedAt',
-            'updatedAt'
-          ])
-          && request.resource.data.studentId == uid()
-          && request.resource.data.count is int
-          && request.resource.data.count == 1
-          && assessmentAttemptCountAllowed(assessmentId, request.resource.data.count);
-        allow update: if isSelf(studentId)
-          && assessmentOpen(assessmentId)
-          && assessmentLateEntryAllowed(assessmentId)
-          && assessmentAccessAuthorized(assessmentId)
-          && request.resource.data.keys().hasOnly([
-            'studentId',
-            'count',
-            'lastStartedAt',
-            'updatedAt'
-          ])
-          && request.resource.data.studentId == uid()
-          && request.resource.data.count is int
-          && request.resource.data.count == resource.data.count + 1
-          && assessmentAttemptCountAllowed(assessmentId, request.resource.data.count);
+        allow create: if (
+            assessmentOwner(assessmentId)
+            || (
+              assessmentData(assessmentId).sectionId != ''
+              && sectionAcademicManager(assessmentData(assessmentId).sectionId)
+            )
+          )
+          || (
+            isSelf(studentId)
+            && assessmentOpen(assessmentId)
+            && assessmentLateEntryAllowed(assessmentId)
+            && assessmentAccessAuthorized(assessmentId)
+            && request.resource.data.keys().hasOnly([
+              'studentId',
+              'count',
+              'lastStartedAt',
+              'updatedAt'
+            ])
+            && request.resource.data.studentId == uid()
+            && request.resource.data.count is int
+            && request.resource.data.count == 1
+            && assessmentAttemptCountAllowed(assessmentId, request.resource.data.count)
+          );
+        allow update: if (
+            assessmentOwner(assessmentId)
+            || (
+              assessmentData(assessmentId).sectionId != ''
+              && sectionAcademicManager(assessmentData(assessmentId).sectionId)
+            )
+          )
+          || (
+            isSelf(studentId)
+            && assessmentOpen(assessmentId)
+            && assessmentLateEntryAllowed(assessmentId)
+            && assessmentAccessAuthorized(assessmentId)
+            && request.resource.data.keys().hasOnly([
+              'studentId',
+              'count',
+              'lastStartedAt',
+              'updatedAt'
+            ])
+            && request.resource.data.studentId == uid()
+            && request.resource.data.count is int
+            && request.resource.data.count == resource.data.count + 1
+            && assessmentAttemptCountAllowed(assessmentId, request.resource.data.count)
+          );
         allow delete: if assessmentOwner(assessmentId)
           || (
             assessmentData(assessmentId).sectionId != ''
