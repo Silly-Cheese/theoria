@@ -3031,8 +3031,173 @@ async function startExam(id,confirmed=false){
   }
 }
 
+function examSecurityPolicy(){
+  return P3.exam?.assessment?.securityPolicy||{};
+}
+
+async function logEvent(type,details={}){
+  if(!P3.exam)return;
+  try{
+    await addDoc(collection(db,"assessments",P3.exam.assessment.id,"submissions",state().user.uid,"events"),{
+      studentId:state().user.uid,
+      type,
+      details,
+      at:serverTimestamp()
+    });
+  }catch(error){console.warn("Unable to write assessment security event:",error);}
+}
+
+function lockExamSecurity(reason,eventType="security_lock"){
+  if(!P3.exam)return;
+  P3.exam.securityState.locked=true;
+  P3.exam.securityState.lockReason=reason||"The secure assessment session is paused.";
+  logEvent(eventType,{reason:P3.exam.securityState.lockReason,violationCount:P3.exam.securityState.violationCount});
+  renderSecurityOverlay();
+}
+
+async function recordSecurityViolation(type,details={}){
+  if(!P3.exam)return;
+  const policy=examSecurityPolicy();
+  const now=Date.now(),security=P3.exam.securityState;
+  if(now-Number(security.lastViolationAt||0)<1000&&type!=="fullscreen_exit"){
+    await logEvent(type,{...details,debounced:true,violationCount:security.violationCount});
+    return;
+  }
+  security.lastViolationAt=now;
+  security.violationCount=Number(security.violationCount||0)+1;
+  await logEvent(type,{...details,violationCount:security.violationCount});
+  try{
+    await updateDoc(doc(db,"assessments",P3.exam.assessment.id,"submissions",state().user.uid),{
+      securityViolationCount:security.violationCount,
+      updatedAt:serverTimestamp()
+    });
+  }catch(error){console.warn("Unable to persist security violation count:",error);}
+
+  const policyMode=String(policy.focusPolicy||((policy.logFocusLoss===false)?"none":"log"));
+  if(policyMode==="pause"){
+    lockExamSecurity("The assessment was paused because the secure session lost focus. Return to the assessment and explicitly resume.","security_lock_focus");
+  }else if(policyMode==="submit"&&security.violationCount>=Math.max(1,Number(policy.maxFocusViolations||3))){
+    if(!security.autoSubmitting){
+      security.autoSubmitting=true;
+      await logEvent("security_auto_submit",{reason:type,violationCount:security.violationCount});
+      setTimeout(()=>submitExam(true),0);
+    }
+  }
+}
+
+function renderSecurityOverlay(){
+  const ex=P3.exam,root=$("#examRoot");if(!ex||!root)return;
+  root.querySelector("#examSecurityLock")?.remove();
+  if(!ex.securityState?.locked)return;
+  const policy=examSecurityPolicy(),fullscreenRequired=policy.fullscreenRequired===true||policy.fullscreenExpectation===true;
+  root.insertAdjacentHTML("beforeend",
+    '<div id="examSecurityLock" class="exam-security-lock" role="dialog" aria-modal="true">'+
+      '<div class="exam-security-lock-card"><div class="security-lock-mark">Θ</div><div class="eyebrow">Secure Session Paused</div>'+
+      '<h2>Assessment interaction is locked.</h2><p>'+esc(ex.securityState.lockReason||"Restore the secure session to continue.")+'</p>'+
+      '<div class="security-lock-status"><span>Violations recorded</span><strong>'+esc(ex.securityState.violationCount||0)+'</strong></div>'+
+      '<button class="primary-btn" data-phase3-action="security-resume">'+(fullscreenRequired&&!document.fullscreenElement?"Re-enter Fullscreen & Continue":"Resume Secure Assessment")+'</button>'+
+      '<small>The assessment timer continues while the secure session is locked.</small></div>'+
+    '</div>'
+  );
+}
+
+async function resumeSecureExam(){
+  if(!P3.exam)return;
+  const policy=examSecurityPolicy(),fullscreenRequired=policy.fullscreenRequired===true||policy.fullscreenExpectation===true;
+  if(fullscreenRequired&&!document.fullscreenElement){
+    try{await document.documentElement.requestFullscreen();}
+    catch(error){return toast("Fullscreen is required. Allow fullscreen before continuing the assessment.");}
+  }
+  P3.exam.securityState.locked=false;
+  P3.exam.securityState.lockReason="";
+  await logEvent("security_resumed",{violationCount:P3.exam.securityState.violationCount});
+  renderExam();
+}
+
+function visibilityEvent(){
+  if(!P3.exam)return;
+  const policy=examSecurityPolicy(),mode=String(policy.focusPolicy||((policy.logFocusLoss===false)?"none":"log"));
+  if(document.visibilityState==="hidden"&&mode!=="none")recordSecurityViolation("visibility_hidden",{visibility:"hidden"});
+  if(document.visibilityState==="visible"&&P3.exam?.securityState?.locked)renderSecurityOverlay();
+}
+function blurEvent(){
+  if(!P3.exam)return;
+  const policy=examSecurityPolicy(),mode=String(policy.focusPolicy||((policy.logFocusLoss===false)?"none":"log"));
+  if(mode!=="none")recordSecurityViolation("window_blur",{});
+}
+function fullscreenEvent(){
+  if(!P3.exam)return;
+  const policy=examSecurityPolicy(),required=policy.fullscreenRequired===true||policy.fullscreenExpectation===true;
+  if(required&&!document.fullscreenElement){
+    recordSecurityViolation("fullscreen_exit",{});
+    lockExamSecurity("Fullscreen is required for this assessment. Re-enter fullscreen to restore the secure session.","security_lock_fullscreen");
+  }else{
+    logEvent("fullscreen_change",{fullscreen:!!document.fullscreenElement});
+  }
+}
+function copyEvent(e){
+  if(!P3.exam)return;
+  const p=examSecurityPolicy();
+  if(p.blockCopy){e.preventDefault();logEvent("copy_blocked",{});toast("Copy is disabled for this assessment.");}
+  else if(p.logCopy!==false)logEvent("copy_event",{});
+}
+function pasteEvent(e){
+  if(!P3.exam)return;
+  const p=examSecurityPolicy();
+  if(p.blockPaste){e.preventDefault();logEvent("paste_blocked",{});toast("Paste is disabled for this assessment.");}
+  else if(p.logCopy!==false)logEvent("paste_event",{});
+}
+function cutEvent(e){
+  if(!P3.exam)return;
+  const p=examSecurityPolicy();
+  if(p.blockCut){e.preventDefault();logEvent("cut_blocked",{});toast("Cut is disabled for this assessment.");}
+  else if(p.logCopy!==false)logEvent("cut_event",{});
+}
+function contextMenuEvent(e){
+  if(!P3.exam)return;
+  const p=examSecurityPolicy();
+  if(p.blockContextMenu){e.preventDefault();logEvent("context_menu_blocked",{});}
+}
+function examNavigationGuard(e){
+  if(!P3.exam)return;
+  const target=e.target.closest?.("[data-page],[data-page-shortcut],.nav-item");
+  if(!target)return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  toast("Submit the assessment before leaving the secure exam workspace.");
+}
+function unloadEvent(e){
+  if(!P3.exam)return;
+  e.preventDefault();
+  e.returnValue="";
+}
+
+function bindRuntimeSecurity(){
+  document.addEventListener("visibilitychange",visibilityEvent);
+  document.addEventListener("fullscreenchange",fullscreenEvent);
+  window.addEventListener("blur",blurEvent);
+  document.addEventListener("copy",copyEvent,true);
+  document.addEventListener("paste",pasteEvent,true);
+  document.addEventListener("cut",cutEvent,true);
+  document.addEventListener("contextmenu",contextMenuEvent,true);
+  document.addEventListener("click",examNavigationGuard,true);
+  window.addEventListener("beforeunload",unloadEvent);
+}
+function unbindRuntimeSecurity(){
+  document.removeEventListener("visibilitychange",visibilityEvent);
+  document.removeEventListener("fullscreenchange",fullscreenEvent);
+  window.removeEventListener("blur",blurEvent);
+  document.removeEventListener("copy",copyEvent,true);
+  document.removeEventListener("paste",pasteEvent,true);
+  document.removeEventListener("cut",cutEvent,true);
+  document.removeEventListener("contextmenu",contextMenuEvent,true);
+  document.removeEventListener("click",examNavigationGuard,true);
+  window.removeEventListener("beforeunload",unloadEvent);
+}
+
 function launchExam(assessment,questions,submission){
   clearInterval(P3.timer);
+  unbindRuntimeSecurity();
   const localDraft=window.TheoriaPhase6?.loadExamDraft?.(assessment.id);
   const serverUpdated=submission.updatedAt?.toMillis?.()||0;
   const recoverLocal=!!(localDraft&&Number(localDraft.savedAt||0)>serverUpdated&&submission.status==="in_progress");
@@ -3040,12 +3205,20 @@ function launchExam(assessment,questions,submission){
     assessment,questions,submission,
     index:recoverLocal?Number(localDraft.currentIndex||0):Number(submission.currentIndex||0),
     answers:recoverLocal?{...(localDraft.answers||{})}:{...(submission.answers||{})},
-    marked:recoverLocal?[...(localDraft.marked||[])]:[...(submission.marked||[])]
+    marked:recoverLocal?[...(localDraft.marked||[])]:[...(submission.marked||[])],
+    securityState:{
+      violationCount:Number(submission.securityViolationCount||0),
+      lastViolationAt:0,
+      locked:false,
+      lockReason:"",
+      autoSubmitting:false
+    }
   };
   if(recoverLocal)setTimeout(()=>toast("Recovered a newer local assessment draft after an interrupted save."),80);
   core().setPage("exam",assessment.title);
   $("#examRoot").classList.toggle("large-text-exam",!!submission.accommodationsApplied?.largeText);
   renderExam();
+
   const start=submission.startedAt?.toMillis?.()||Date.now(),duration=Math.round(Number(assessment.durationMinutes||0)*Number(submission.accommodationsApplied?.timeMultiplier||1)*60);
   const tick=()=>{
     if(!P3.exam)return;
@@ -3054,11 +3227,11 @@ function launchExam(assessment,questions,submission){
     if(duration&&remaining<=0){clearInterval(P3.timer);submitExam(true);}
   };
   tick();P3.timer=setInterval(tick,1000);
-  document.addEventListener("visibilitychange",visibilityEvent);
-  document.addEventListener("fullscreenchange",fullscreenEvent);
-  window.addEventListener("beforeunload",unloadEvent);
-  if(assessment.securityPolicy?.fullscreenExpectation&&document.documentElement.requestFullscreen){
-    document.documentElement.requestFullscreen().catch(()=>{});
+  bindRuntimeSecurity();
+
+  const policy=assessment.securityPolicy||{},fullscreenRequired=policy.fullscreenRequired===true||policy.fullscreenExpectation===true;
+  if(fullscreenRequired&&!document.fullscreenElement){
+    lockExamSecurity("Fullscreen is required before assessment interaction can continue.","security_lock_fullscreen");
   }
 }
 
@@ -3067,18 +3240,6 @@ function clock(sec){
   return (h?h+":":"")+String(m).padStart(2,"0")+":"+String(s).padStart(2,"0");
 }
 
-function visibilityEvent(){
-  if(P3.exam&&document.visibilityState==="hidden")logEvent("visibility_hidden");
-}
-function fullscreenEvent(){
-  if(P3.exam?.assessment?.securityPolicy?.fullscreenExpectation&&!document.fullscreenElement)logEvent("fullscreen_exit");
-}
-function unloadEvent(e){
-  if(!P3.exam)return;e.preventDefault();e.returnValue="";
-}
-async function logEvent(type){
-  try{await addDoc(collection(db,"assessments",P3.exam.assessment.id,"submissions",state().user.uid,"events"),{studentId:state().user.uid,type,at:serverTimestamp()});}catch(_){}
-}
 
 function renderExam(){
   const ex=P3.exam;if(!ex)return;
