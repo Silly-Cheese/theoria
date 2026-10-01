@@ -1,8 +1,8 @@
 import {db,doc,getDoc,setDoc,collection,getDocs,query,where,serverTimestamp} from "./firebase.js";
-import {initProductivity} from "./modules/productivity.js";
-import {initTeaching} from "./modules/teaching.js";
-import {initAdmin} from "./modules/admin.js";
-import {initResilience} from "./modules/resilience.js";
+import {initProductivity} from "./modules/productivity.js?v=20260930-allupgrades5";
+import {initTeaching} from "./modules/teaching.js?v=20260930-allupgrades5";
+import {initAdmin} from "./modules/admin.js?v=20260930-allupgrades5";
+import {initResilience} from "./modules/resilience.js?v=20260930-allupgrades5";
 
 const core=()=>window.TheoriaCore;
 const state=()=>core()?.getState?.();
