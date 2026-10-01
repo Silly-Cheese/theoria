@@ -3129,8 +3129,10 @@ function fullscreenEvent(){
   if(!P3.exam)return;
   const policy=examSecurityPolicy(),required=policy.fullscreenRequired===true||policy.fullscreenExpectation===true;
   if(required&&!document.fullscreenElement){
-    recordSecurityViolation("fullscreen_exit",{});
-    lockExamSecurity("Fullscreen is required for this assessment. Re-enter fullscreen to restore the secure session.","security_lock_fullscreen");
+    recordSecurityViolation("fullscreen_exit",{}).finally(()=>{
+      if(P3.exam&&!P3.exam.securityState.locked)lockExamSecurity("Fullscreen is required for this assessment. Re-enter fullscreen to restore the secure session.","security_lock_fullscreen");
+      else if(P3.exam)renderSecurityOverlay();
+    });
   }else{
     logEvent("fullscreen_change",{fullscreen:!!document.fullscreenElement});
   }
@@ -3158,6 +3160,18 @@ function contextMenuEvent(e){
   const p=examSecurityPolicy();
   if(p.blockContextMenu){e.preventDefault();logEvent("context_menu_blocked",{});}
 }
+function securityKeydownEvent(e){
+  if(!P3.exam)return;
+  const p=examSecurityPolicy(),key=String(e.key||"").toLowerCase(),mod=e.ctrlKey||e.metaKey;
+  if(mod&&key==="c"&&p.blockCopy){e.preventDefault();logEvent("copy_shortcut_blocked",{});return;}
+  if(mod&&key==="v"&&p.blockPaste){e.preventDefault();logEvent("paste_shortcut_blocked",{});return;}
+  if(mod&&key==="x"&&p.blockCut){e.preventDefault();logEvent("cut_shortcut_blocked",{});return;}
+  if(mod&&["p","s","k","u"].includes(key)){
+    e.preventDefault();
+    logEvent("browser_shortcut_blocked",{key});
+    toast("That browser shortcut is disabled during the secure assessment.");
+  }
+}
 function examNavigationGuard(e){
   if(!P3.exam)return;
   const target=e.target.closest?.("[data-page],[data-page-shortcut],.nav-item");
@@ -3180,6 +3194,7 @@ function bindRuntimeSecurity(){
   document.addEventListener("paste",pasteEvent,true);
   document.addEventListener("cut",cutEvent,true);
   document.addEventListener("contextmenu",contextMenuEvent,true);
+  document.addEventListener("keydown",securityKeydownEvent,true);
   document.addEventListener("click",examNavigationGuard,true);
   window.addEventListener("beforeunload",unloadEvent);
 }
@@ -3191,6 +3206,7 @@ function unbindRuntimeSecurity(){
   document.removeEventListener("paste",pasteEvent,true);
   document.removeEventListener("cut",cutEvent,true);
   document.removeEventListener("contextmenu",contextMenuEvent,true);
+  document.removeEventListener("keydown",securityKeydownEvent,true);
   document.removeEventListener("click",examNavigationGuard,true);
   window.removeEventListener("beforeunload",unloadEvent);
 }
@@ -3255,6 +3271,7 @@ function renderExam(){
     '<main class="exam-question"><div class="exam-question-meta"><span>'+esc((a.parts||[]).find(p=>p.id===q.partId)?.title||"Assessment")+'</span><span>'+esc(q.points)+' points</span></div>'+(q.sourceTitle?'<div class="source-title">'+esc(q.sourceTitle)+'</div>':'')+(q.stimulus?'<div class="exam-stimulus">'+esc(q.stimulus).replace(/\n/g,"<br>")+'</div>':'')+'<h2>'+esc(q.prompt)+'</h2>'+response+
     '<div class="exam-controls"><button class="secondary-btn" data-phase3-action="mark-question">'+(marked?"Unmark":"Mark for Review")+'</button><div><button class="secondary-btn" data-phase3-action="exam-prev" '+(ex.index===0?'disabled':'')+'>Previous</button><button class="primary-btn" data-phase3-action="'+(ex.index===ex.questions.length-1?"review-exam":"exam-next")+'">'+(ex.index===ex.questions.length-1?"Review & Submit":"Next")+'</button></div></div></main></div></div>';
   bindExamInputs();
+  renderSecurityOverlay();
 }
 
 function bindExamInputs(){
@@ -3309,9 +3326,7 @@ async function submitExam(auto=false){
     const id=P3.exam.assessment.id;
     window.TheoriaPhase6?.clearExamDraft?.(id);
     clearInterval(P3.timer);
-    document.removeEventListener("visibilitychange",visibilityEvent);
-    document.removeEventListener("fullscreenchange",fullscreenEvent);
-    window.removeEventListener("beforeunload",unloadEvent);
+    unbindRuntimeSecurity();
     if(document.fullscreenElement&&document.exitFullscreen)document.exitFullscreen().catch(()=>{});
     P3.exam=null;receipt(id,auto);
   }catch(err){toast(err.message||"Unable to submit assessment.");}
@@ -3566,7 +3581,15 @@ document.addEventListener("click",async e=>{
   if(a==="exam-jump"){if(P3.exam&&(P3.exam.assessment.backtracking!==false||Number(b.dataset.index)>P3.exam.index)){P3.exam.index=Number(b.dataset.index);scheduleSave();renderExam();}return;}
   if(a==="exam-prev"){if(P3.exam&&P3.exam.index>0&&P3.exam.assessment.backtracking!==false){P3.exam.index--;scheduleSave();renderExam();}return;}
   if(a==="review-exam"){reviewExam();return;}
-  if(a==="review-jump"){if(P3.exam){P3.exam.index=Number(b.dataset.index);core().closeModal();scheduleSave();renderExam();}return;}
+  if(a==="review-jump"){
+    if(P3.exam){
+      const target=Number(b.dataset.index);
+      if(P3.exam.assessment.backtracking===false&&target<P3.exam.index)return toast("Backtracking is disabled for this assessment.");
+      P3.exam.index=target;core().closeModal();scheduleSave();renderExam();
+    }
+    return;
+  }
+  if(a==="security-resume")return resumeSecureExam();
   if(a==="confirm-submit-exam"){core().closeModal();submitExam(false);return;}
   if(a==="exam-next"){if(!P3.exam)return;P3.exam.index=Math.min(P3.exam.index+1,P3.exam.questions.length-1);scheduleSave();renderExam();return;}
   if(a==="mark-question"){if(!P3.exam)return;const id=P3.exam.questions[P3.exam.index].id;P3.exam.marked=P3.exam.marked.includes(id)?P3.exam.marked.filter(x=>x!==id):[...P3.exam.marked,id];scheduleSave();renderExam();return;}
