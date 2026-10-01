@@ -1,4 +1,4 @@
-const CACHE="theoria-shell-v20260930-1";
+const CACHE="theoria-shell-v20260930-2";
 const SHELL=[
   "./",
   "./index.html",
@@ -12,7 +12,8 @@ const SHELL=[
   "./firebase.js",
   "./modules/productivity.js",
   "./modules/teaching.js",
-  "./modules/admin.js"
+  "./modules/admin.js",
+  "./modules/resilience.js"
 ];
 
 self.addEventListener("install",event=>{
