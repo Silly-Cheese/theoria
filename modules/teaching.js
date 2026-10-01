@@ -701,8 +701,12 @@ function bind(){
     const a=b.dataset.teachingAction,sid=b.dataset.section||section()?.id;
     const featureByAction={
       rubrics:"rubrics","new-rubric":"rubrics","edit-rubric":"rubrics","delete-rubric":"rubrics","attach-rubric":"rubrics","rubric-analytics":"rubrics",
-      attendance:"attendance",groups:"studentGroups","new-group":"studentGroups","edit-group":"studentGroups","delete-group":"studentGroups","assign-group-work":"studentGroups","grade-group-work":"studentGroups",
-      "assessment-security":"assessmentSecurity","question-quality":"questionQuality"
+      attendance:"attendance",
+      extensions:"extensions","delete-extension":"extensions",
+      groups:"studentGroups","new-group":"studentGroups","edit-group":"studentGroups","delete-group":"studentGroups","assign-group-work":"studentGroups","grade-group-work":"studentGroups",
+      "bulk-ops":"bulkOperations","bulk-publish":"bulkOperations","bulk-missing":"bulkOperations","bulk-excuse":"bulkOperations","bulk-extend":"bulkOperations",
+      "student-directory":"studentProfiles","student-profile":"studentProfiles","new-recognition":"studentProfiles","new-flag":"studentProfiles","resolve-flag":"studentProfiles",
+      "assessment-security":"assessmentSecurity","question-quality":"questionQuality","blueprint-designer":"analytics"
     };
     const requiredFeature=featureByAction[a];
     if(requiredFeature&&!featureOn(requiredFeature))return toast("This feature is currently disabled by the System Owner.");
