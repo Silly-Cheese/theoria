@@ -1,4 +1,4 @@
-const CACHE="theoria-shell-v20260930-security-enforced-1";
+const CACHE="theoria-shell-v20260930-security-enforced-2";
 const SHELL=[
   "./",
   "./index.html",
