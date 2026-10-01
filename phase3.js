@@ -1793,7 +1793,7 @@ async function authorizeRetakeModal(studentId){
   }catch(_){}
 
   const previousPercents=[
-    ...history.map(x=>Number(x.result?.attemptPercent??x.result?.percent)).filter(Number.isFinite),
+    ...history.map(x=>Number(x.attemptPercent??x.result?.attemptPercent??x.result?.percent)).filter(Number.isFinite),
     Number(res.attemptPercent??res.percent)
   ].filter(Number.isFinite);
   const baselineOfficial=Number(res.officialPercent??res.percent??0);
