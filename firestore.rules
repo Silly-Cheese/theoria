@@ -905,8 +905,8 @@ service cloud.firestore {
             ])
             && assessmentHonorSatisfied(assessmentId)
             && request.resource.data.securityViolationCount == 0
-            && exists(/databases/$(database)/documents/assessments/$(assessmentId)/attemptCounters/$(uid()))
-            && get(/databases/$(database)/documents/assessments/$(assessmentId)/attemptCounters/$(uid())).data.count
+            && existsAfter(/databases/$(database)/documents/assessments/$(assessmentId)/attemptCounters/$(uid()))
+            && getAfter(/databases/$(database)/documents/assessments/$(assessmentId)/attemptCounters/$(uid())).data.count
               == request.resource.data.attemptNumber
             && assessmentAttemptCountAllowed(assessmentId, request.resource.data.attemptNumber)
           );
