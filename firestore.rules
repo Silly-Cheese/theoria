@@ -258,9 +258,18 @@ service cloud.firestore {
     }
 
     function assessmentAttemptCountAllowed(assessmentId, count) {
-      return !('securityPolicy' in assessmentData(assessmentId))
-        || !('maxAttempts' in assessmentData(assessmentId).securityPolicy)
-        || count <= assessmentData(assessmentId).securityPolicy.maxAttempts;
+      return (
+          (
+            !('securityPolicy' in assessmentData(assessmentId))
+            || !('maxAttempts' in assessmentData(assessmentId).securityPolicy)
+          )
+          && count <= 1
+        )
+        || (
+          ('securityPolicy' in assessmentData(assessmentId))
+          && ('maxAttempts' in assessmentData(assessmentId).securityPolicy)
+          && count <= assessmentData(assessmentId).securityPolicy.maxAttempts
+        );
     }
 
     function assessmentLateEntryAllowed(assessmentId) {
@@ -846,7 +855,7 @@ service cloud.firestore {
         allow read: if assessmentOwner(assessmentId)
           || (
             assessmentData(assessmentId).sectionId != ''
-            && sectionGrader(assessmentData(assessmentId).sectionId)
+            && sectionAcademicManager(assessmentData(assessmentId).sectionId)
           );
         allow create, update: if isSelf(studentId)
           && assessmentOpen(assessmentId)
@@ -1005,14 +1014,28 @@ service cloud.firestore {
           && assessmentOpen(assessmentId)
           && assessmentLateEntryAllowed(assessmentId)
           && assessmentAccessAuthorized(assessmentId)
+          && request.resource.data.keys().hasOnly([
+            'studentId',
+            'count',
+            'lastStartedAt',
+            'updatedAt'
+          ])
           && request.resource.data.studentId == uid()
+          && request.resource.data.count is int
           && request.resource.data.count == 1
           && assessmentAttemptCountAllowed(assessmentId, request.resource.data.count);
         allow update: if isSelf(studentId)
           && assessmentOpen(assessmentId)
           && assessmentLateEntryAllowed(assessmentId)
           && assessmentAccessAuthorized(assessmentId)
+          && request.resource.data.keys().hasOnly([
+            'studentId',
+            'count',
+            'lastStartedAt',
+            'updatedAt'
+          ])
           && request.resource.data.studentId == uid()
+          && request.resource.data.count is int
           && request.resource.data.count == resource.data.count + 1
           && assessmentAttemptCountAllowed(assessmentId, request.resource.data.count);
         allow delete: if assessmentOwner(assessmentId)
