@@ -1574,16 +1574,20 @@ async function loadAssessment(id){
   const assessment={id:a.id,...a.data()};
   const q=await getDocs(collection(db,"assessments",id,"questions"));
   const questions=q.docs.map(d=>({id:d.id,...d.data()})).sort((x,y)=>Number(x.order||99)-Number(y.order||99));
-  let keys=[],submissions=[],results=[],members=[];
+  let keys=[],submissions=[],results=[],members=[],retakes=[],attemptHistory=[];
   if(state().role==="instructor"){
-    const [k,s,r]=await Promise.all([
+    const [k,s,r,rt,h]=await Promise.all([
       getDocs(collection(db,"assessments",id,"keys")),
       assessment.sectionId?getDocs(collection(db,"assessments",id,"submissions")):Promise.resolve({docs:[]}),
-      assessment.sectionId?getDocs(collection(db,"assessments",id,"results")):Promise.resolve({docs:[]})
+      assessment.sectionId?getDocs(collection(db,"assessments",id,"results")):Promise.resolve({docs:[]}),
+      assessment.sectionId?getDocs(collection(db,"assessments",id,"retakes")):Promise.resolve({docs:[]}),
+      assessment.sectionId?getDocs(collection(db,"assessments",id,"attemptHistory")):Promise.resolve({docs:[]})
     ]);
     keys=k.docs.map(d=>({id:d.id,...d.data()}));
     submissions=s.docs.map(d=>({id:d.id,...d.data()}));
     results=r.docs.map(d=>({id:d.id,...d.data()}));
+    retakes=rt.docs.map(d=>({id:d.id,...d.data()}));
+    attemptHistory=h.docs.map(d=>({id:d.id,...d.data()}));
     if(assessment.sectionId){
       const m=assessment.entranceExam
         ? await getDocs(collection(db,"sections",assessment.sectionId,"entranceCandidates"))
@@ -1591,7 +1595,7 @@ async function loadAssessment(id){
       members=m.docs.map(d=>({id:d.id,...d.data()})).sort((x,y)=>String(x.displayName||"").localeCompare(String(y.displayName||"")));
     }
   }
-  return {assessment,questions,keys,submissions,results,members};
+  return {assessment,questions,keys,submissions,results,members,retakes,attemptHistory};
 }
 
 async function openAssessment(id,tab="overview"){
@@ -1736,21 +1740,204 @@ function configureRandomDrawModal(){
   };
 }
 
+
+function retakePolicyLabel(policy,weight=50){
+  if(policy==="replace")return "Retake replaces prior score";
+  if(policy==="highest")return "Highest attempt counts";
+  if(policy==="average")return "Average of all graded attempts";
+  if(policy==="keep-original")return "Original score remains";
+  if(policy==="weighted")return "Weighted blend • retake "+Number(weight||50)+"%";
+  return "Retake score policy";
+}
+
+function retakeOfficialPercent(attemptPercent,authorization){
+  const attempt=Math.max(0,Math.min(100,Number(attemptPercent||0)));
+  if(!authorization)return attempt;
+  const previous=safeArray(authorization.previousAttemptPercents).map(Number).filter(Number.isFinite);
+  const baseline=Number.isFinite(Number(authorization.baselineOfficialPercent))?Number(authorization.baselineOfficialPercent):(previous.length?previous[previous.length-1]:attempt);
+  const policy=String(authorization.scorePolicy||"replace");
+  let official=attempt;
+  if(policy==="highest")official=Math.max(attempt,...(previous.length?previous:[baseline]));
+  else if(policy==="average"){
+    const all=[...previous,attempt];
+    official=all.reduce((n,x)=>n+x,0)/Math.max(1,all.length);
+  }else if(policy==="keep-original")official=baseline;
+  else if(policy==="weighted"){
+    const weight=Math.max(0,Math.min(100,Number(authorization.retakeWeightPercent||50)))/100;
+    official=baseline*(1-weight)+attempt*weight;
+  }
+  return Math.round(official*10)/10;
+}
+
+async function authorizeRetakeModal(studentId){
+  const d=P3.detail,a=d?.assessment;
+  if(!a?.sectionId||a.entranceExam)return toast("Use the entrance-exam reset workflow for entrance examinations.");
+  const student=d.members.find(x=>x.id===studentId),sub=d.submissions.find(x=>x.studentId===studentId),res=d.results.find(x=>x.studentId===studentId);
+  if(!student)return toast("Student not found.");
+  if(!res?.complete)return toast("The current attempt must be fully graded before a retake can be authorized.");
+  if(sub?.status==="in_progress")return toast("This student already has an active attempt.");
+
+  let counterCount=Number(sub?.attemptNumber||1),history=[];
+  try{
+    const counter=await getDoc(doc(db,"assessments",a.id,"attemptCounters",studentId));
+    if(counter.exists())counterCount=Math.max(counterCount,Number(counter.data().count||0));
+  }catch(_){}
+  try{
+    const snap=await getDocs(collection(db,"assessments",a.id,"attemptHistory"));
+    history=snap.docs.map(x=>({id:x.id,...x.data()})).filter(x=>x.studentId===studentId).sort((x,y)=>Number(x.attemptNumber||0)-Number(y.attemptNumber||0));
+  }catch(_){}
+
+  const previousPercents=[
+    ...history.map(x=>Number(x.result?.attemptPercent??x.result?.percent)).filter(Number.isFinite),
+    Number(res.attemptPercent??res.percent)
+  ].filter(Number.isFinite);
+  const baselineOfficial=Number(res.officialPercent??res.percent??0);
+  const nextAttempt=Math.max(1,counterCount+1);
+  const modal=core().openModal({
+    eyebrow:"Assessment Retake",
+    title:"Authorize Retake — "+(student.displayName||"Student"),
+    wide:true,
+    body:'<form id="retakeAuthorizationForm" class="academic-form">'+
+      '<div class="academic-banner"><div class="kicker">'+esc(a.courseCode||"Assessment")+' • '+esc(a.title||"Assessment")+'</div><h3>Attempt '+nextAttempt+'</h3><p>The current official grade remains in the section Gradebook while the retake is pending. Once the retake is graded, Theoria applies the scoring rule selected below.</p></div>'+
+      '<div class="section-summary"><div class="summary-block"><div class="summary-label">Current Official Score</div><div class="summary-value">'+esc(baselineOfficial)+'%</div></div><div class="summary-block"><div class="summary-label">Completed Attempts</div><div class="summary-value">'+previousPercents.length+'</div></div><div class="summary-block"><div class="summary-label">Next Attempt</div><div class="summary-value">'+nextAttempt+'</div></div></div>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>How should the retake affect the grade?</h3><p>The raw score for every attempt is preserved in attempt history regardless of the official-grade rule.</p></div></div>'+
+        '<div class="retake-policy-grid">'+
+          '<label class="policy-card"><input type="radio" name="scorePolicy" value="replace" checked><div><strong>Replace Previous Score</strong><span>The retake becomes the official assessment grade, even if it is lower.</span></div></label>'+
+          '<label class="policy-card"><input type="radio" name="scorePolicy" value="highest"><div><strong>Highest Attempt</strong><span>The highest raw attempt score becomes the official grade.</span></div></label>'+
+          '<label class="policy-card"><input type="radio" name="scorePolicy" value="average"><div><strong>Average All Attempts</strong><span>The official grade is the arithmetic mean of all graded attempts.</span></div></label>'+
+          '<label class="policy-card"><input type="radio" name="scorePolicy" value="keep-original"><div><strong>Keep Original Grade</strong><span>The retake is recorded for evidence/practice but does not change the official grade.</span></div></label>'+
+          '<label class="policy-card span-2"><input type="radio" name="scorePolicy" value="weighted"><div><strong>Weighted Blend</strong><span>Blend the current official grade with the new retake score using a custom retake weight.</span></div></label>'+
+        '</div>'+
+        '<div class="field hidden" id="retakeWeightField" style="margin-top:12px"><label>Retake Weight</label><div class="input-with-suffix"><input type="number" name="retakeWeightPercent" min="0" max="100" step="1" value="50"><span>%</span></div><small>The previous official grade receives the remaining weight.</small></div>'+
+      '</section>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Retake Window</h3><p>Optional dates let this authorization work even if the original assessment window has closed.</p></div></div>'+
+        '<div class="compact-field-grid"><div class="field"><label>Available From</label><input type="datetime-local" name="opensAt"></div><div class="field"><label>Retake Deadline</label><input type="datetime-local" name="closesAt"></div></div>'+
+      '</section>'+
+      '<section class="form-section"><div class="field"><label>Instructor Note</label><textarea name="note" placeholder="Reason for retake, remediation completed, special condition, etc."></textarea></div></section>'+
+      '<div class="notice danger-notice">Authorizing the retake archives the current attempt and result as immutable attempt history, then clears the active submission so the student can begin the new authorized attempt. The current Gradebook score remains in place until the new attempt is graded.</div>'+
+      '<div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Authorize Retake</button></div>'+
+    '</form>'
+  });
+  const form=modal.querySelector("#retakeAuthorizationForm"),weightField=modal.querySelector("#retakeWeightField");
+  const syncPolicy=()=>weightField.classList.toggle("hidden",form.querySelector('input[name="scorePolicy"]:checked')?.value!=="weighted");
+  form.querySelectorAll('input[name="scorePolicy"]').forEach(x=>x.addEventListener("change",syncPolicy));syncPolicy();
+
+  form.onsubmit=async e=>{
+    e.preventDefault();
+    const fd=new FormData(form),scorePolicy=String(fd.get("scorePolicy")||"replace"),retakeWeightPercent=Math.max(0,Math.min(100,Number(fd.get("retakeWeightPercent")||50)));
+    const opensAt=timestampFrom(fd.get("opensAt")),closesAt=timestampFrom(fd.get("closesAt"));
+    if(opensAt&&closesAt&&opensAt.toMillis()>=closesAt.toMillis())return toast("The retake deadline must be after the retake start time.");
+    const button=form.querySelector('button[type="submit"]');button.disabled=true;button.textContent="Authorizing…";
+    try{
+      const attemptNumber=Math.max(1,Number(sub?.attemptNumber||counterCount||1));
+      const historyRef=doc(db,"assessments",a.id,"attemptHistory",studentId+"_attempt_"+attemptNumber);
+      const batch=writeBatch(db);
+      batch.set(historyRef,{
+        studentId,attemptNumber,
+        submission:sub||{},
+        result:res||{},
+        archivedReason:"retake_authorized",
+        archivedAt:serverTimestamp(),
+        archivedBy:state().user.uid
+      },{merge:true});
+      batch.set(doc(db,"assessments",a.id,"retakes",studentId),{
+        studentId,active:true,authorizedAttemptNumber:nextAttempt,
+        scorePolicy,retakeWeightPercent,
+        baselineOfficialPercent:baselineOfficial,
+        previousAttemptPercents:previousPercents,
+        opensAt,closesAt,
+        note:String(fd.get("note")||"").trim(),
+        authorizedAt:serverTimestamp(),authorizedBy:state().user.uid,
+        completedAt:null,lastAttemptPercent:null,lastOfficialPercent:null,
+        updatedAt:serverTimestamp()
+      },{merge:true});
+      if(sub)batch.delete(doc(db,"assessments",a.id,"submissions",studentId));
+      batch.delete(doc(db,"assessments",a.id,"results",studentId));
+      batch.set(doc(db,"sections",a.sectionId,"assessmentGrades",a.id+"_"+studentId),{
+        retakePending:true,retakeAttemptNumber:nextAttempt,retakePolicy:scorePolicy,
+        previousOfficialPercent:baselineOfficial,updatedAt:serverTimestamp()
+      },{merge:true});
+      await batch.commit();
+      if(window.TheoriaPhase5?.logSectionEvent)await window.TheoriaPhase5.logSectionEvent(a.sectionId,"assessment_retake_authorized","student",studentId,{assessmentId:a.id,attemptNumber:nextAttempt,scorePolicy,retakeWeightPercent,baselineOfficialPercent:baselineOfficial});
+      core().closeModal();await openAssessment(a.id,"candidates");toast("Retake authorized for "+(student.displayName||"student")+".");
+    }catch(error){
+      button.disabled=false;button.textContent="Authorize Retake";
+      toast(error.message||"Unable to authorize the retake.");
+    }
+  };
+}
+
+async function revokeRetake(studentId){
+  const d=P3.detail,a=d?.assessment,auth=d?.retakes?.find(x=>x.id===studentId||x.studentId===studentId);
+  if(!a||!auth?.active)return toast("No pending retake authorization was found.");
+  if(d.submissions.some(x=>x.studentId===studentId&&x.status==="in_progress"))return toast("The retake has already started and can no longer be revoked from this control.");
+  if(!confirm("Revoke this pending retake authorization? The archived prior attempt will remain preserved."))return;
+  try{
+    await updateDoc(doc(db,"assessments",a.id,"retakes",studentId),{active:false,revokedAt:serverTimestamp(),revokedBy:state().user.uid,updatedAt:serverTimestamp()});
+    await updateDoc(doc(db,"sections",a.sectionId,"assessmentGrades",a.id+"_"+studentId),{retakePending:false,updatedAt:serverTimestamp()});
+    if(window.TheoriaPhase5?.logSectionEvent)await window.TheoriaPhase5.logSectionEvent(a.sectionId,"assessment_retake_revoked","student",studentId,{assessmentId:a.id,attemptNumber:auth.authorizedAttemptNumber});
+    await openAssessment(a.id,"candidates");toast("Retake authorization revoked.");
+  }catch(error){toast(error.message||"Unable to revoke the retake.");}
+}
+
+async function attemptHistoryModal(studentId){
+  const d=P3.detail,a=d?.assessment,student=d?.members?.find(x=>x.id===studentId);
+  if(!a)return;
+  let rows=safeArray(d.attemptHistory).filter(x=>x.studentId===studentId).map(x=>({
+    attemptNumber:Number(x.attemptNumber||x.submission?.attemptNumber||1),
+    result:x.result||{},submission:x.submission||{},archived:true
+  }));
+  const currentSub=d.submissions.find(x=>x.studentId===studentId),currentResult=d.results.find(x=>x.studentId===studentId);
+  if(currentSub||currentResult)rows.push({attemptNumber:Number(currentSub?.attemptNumber||currentResult?.attemptNumber||rows.length+1),result:currentResult||{},submission:currentSub||{},archived:false});
+  rows.sort((x,y)=>x.attemptNumber-y.attemptNumber);
+  const auth=d.retakes.find(x=>x.id===studentId||x.studentId===studentId);
+  core().openModal({
+    eyebrow:"Assessment Attempt History",
+    title:(student?.displayName||"Student")+" — "+a.title,
+    wide:true,
+    body:(auth?.active?'<div class="notice"><strong>Retake '+esc(auth.authorizedAttemptNumber)+' authorized.</strong><p>'+esc(retakePolicyLabel(auth.scorePolicy,auth.retakeWeightPercent))+(auth.note?' • '+esc(auth.note):'')+'</p></div>':'')+
+      (rows.length?'<div class="attempt-history-list">'+rows.map(row=>{
+        const r=row.result||{},raw=r.attemptPercent??r.percent,official=r.officialPercent??r.percent;
+        return '<div class="attempt-history-row"><div class="attempt-number">Attempt '+esc(row.attemptNumber)+'</div><div><strong>'+(raw!==undefined&&raw!==null?esc(raw)+'% raw score':'Awaiting result')+'</strong><span>'+(official!==undefined&&official!==null?'Official after attempt: '+esc(official)+'%':'')+'</span><small>'+esc(row.submission?.status||"Archived")+' • '+esc(dateText(row.submission?.submittedAt||r.gradedAt))+'</small></div>'+(r.retakePolicy?'<span class="badge">'+esc(retakePolicyLabel(r.retakePolicy,r.retakeWeightPercent))+'</span>':'')+'</div>';
+      }).join("")+'</div>':'<div class="empty-mini">No attempt history is available yet.</div>'),
+    footer:'<button class="primary-btn" data-close-modal>Close</button>'
+  });
+}
+
 function candidatesView(){
-  const d=P3.detail,a=d.assessment,subMap=new Map(d.submissions.map(x=>[x.studentId,x])),resMap=new Map(d.results.map(x=>[x.studentId,x]));
+  const d=P3.detail,a=d.assessment,subMap=new Map(d.submissions.map(x=>[x.studentId,x])),resMap=new Map(d.results.map(x=>[x.studentId,x])),retakeMap=new Map((d.retakes||[]).map(x=>[x.studentId||x.id,x]));
   if(!d.members.length)return '<div class="empty-state"><div class="empty-symbol">C</div><h3>No enrolled candidates.</h3></div>';
   return '<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Candidate</th><th>Status</th><th>Result</th><th>Student Visibility</th><th>Action</th></tr></thead><tbody>'+d.members.map(m=>{
-    const sub=subMap.get(m.id),res=resMap.get(m.id),name=a.anonymousGrading!==false?(sub?.candidateNumber||"Not assigned"):m.displayName;
+    const sub=subMap.get(m.id),res=resMap.get(m.id),retake=retakeMap.get(m.id),history=(d.attemptHistory||[]).filter(x=>x.studentId===m.id),name=a.anonymousGrading!==false?(sub?.candidateNumber||m.displayName||"Candidate"):m.displayName;
     let action="—";
     if(!sub&&(a.mode==="oral"))action='<button class="secondary-btn small-btn" data-phase3-action="create-evaluation" data-student="'+m.id+'">Begin Evaluation</button>';
     else if(sub)action='<button class="secondary-btn small-btn" data-phase3-action="grade-candidate" data-student="'+m.id+'">Grade</button>';
+
     if(a.entranceExam&&(sub||res))action='<div class="inline-actions">'+(sub?'<button class="secondary-btn small-btn" data-phase3-action="grade-candidate" data-student="'+m.id+'">Grade</button>':'')+'<button class="text-btn danger-text" data-phase3-action="reset-entrance-attempt" data-student="'+m.id+'">Reset Attempt</button></div>';
+    else if(!a.entranceExam){
+      const controls=[];
+      if(sub)controls.push('<button class="secondary-btn small-btn" data-phase3-action="grade-candidate" data-student="'+m.id+'">Grade</button>');
+      if(res?.complete)controls.push('<button class="secondary-btn small-btn" data-phase3-action="authorize-retake" data-student="'+m.id+'">Authorize Retake</button>');
+      if(retake?.active)controls.push('<button class="text-btn danger-text" data-phase3-action="revoke-retake" data-student="'+m.id+'">Revoke Retake</button>');
+      if(history.length||res||retake)controls.push('<button class="text-btn" data-phase3-action="attempt-history" data-student="'+m.id+'">Attempts</button>');
+      action=controls.length?'<div class="inline-actions">'+controls.join("")+'</div>':action;
+    }
+
     const visibility=a.entranceExam
       ? (res?.complete?'<span class="badge '+(Number(res.percent||0)>=Number(a.entrancePassPercent||70)?'live':'gold')+'">'+(Number(res.percent||0)>=Number(a.entrancePassPercent||70)?'Passed':'Not Passed')+'</span>':sub?'<span class="badge gold">'+esc(sub.status||"In progress")+'</span>':'<span class="badge">Waiting</span>')
-      : (res?(res.complete===false?'<span class="badge gold">Private while grading</span>':'<span class="badge live">Visible to student</span>'):"—");
-    return '<tr><td><strong>'+esc(name)+'</strong></td><td><span class="badge">'+esc(sub?.status||"Not started")+'</span></td><td>'+(res?'<strong>'+esc(res.percent)+'%</strong>':'—')+'</td><td>'+visibility+'</td><td>'+action+'</td></tr>';
+      : retake?.active?'<span class="badge gold">Retake Authorized</span>' : (res?(res.complete===false?'<span class="badge gold">Private while grading</span>':'<span class="badge live">Visible to student</span>'):"—");
+
+    const resultText=res
+      ? (res.attemptPercent!==undefined&&res.attemptPercent!==null&&Number(res.attemptPercent)!==Number(res.percent)
+          ? '<strong>'+esc(res.percent)+'%</strong><span class="grade-sub">Official • attempt '+esc(res.attemptPercent)+'%</span>'
+          : '<strong>'+esc(res.percent)+'%</strong>')
+      : retake?.active?'<span class="grade-sub">Prior grade retained in Gradebook</span>':'—';
+
+    const status=sub?.status|| (retake?.active?"Retake pending":"Not started");
+    return '<tr><td><strong>'+esc(name)+'</strong></td><td><span class="badge">'+esc(status)+'</span></td><td>'+resultText+'</td><td>'+visibility+'</td><td>'+action+'</td></tr>';
   }).join("")+'</tbody></table></div>';
 }
+
 
 function gradingView(){
   const d=P3.detail;
@@ -3589,6 +3776,9 @@ document.addEventListener("click",async e=>{
   if(a==="accommodations")return accommodationsModal(b.dataset.student);
   if(a==="create-evaluation")return createEvaluation(b.dataset.student);
   if(a==="grade-candidate")return gradeCandidate(b.dataset.student);
+  if(a==="authorize-retake")return authorizeRetakeModal(b.dataset.student);
+  if(a==="revoke-retake")return revokeRetake(b.dataset.student);
+  if(a==="attempt-history")return attemptHistoryModal(b.dataset.student);
   if(a==="reset-entrance-attempt")return resetEntranceAttempt(b.dataset.student);
   if(a==="auto-score")return autoScore();
   if(a==="horizontal-grade")return horizontalGrade(b.dataset.question);
