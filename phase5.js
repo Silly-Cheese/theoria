@@ -427,7 +427,7 @@ async function gradeHistoryModal(sectionId){
   try{
     const snap=await getDocs(collection(db,"sections",sectionId,"auditLog"));
     rows=snap.docs.map(d=>({id:d.id,...d.data()}))
-      .filter(row=>["grade_changed","rubric_grade_changed","rubric_grade_created","shared_group_grade_applied","assessment_result_updated","grading_period_finalized","grading_period_reopened"].includes(row.action))
+      .filter(row=>["grade_changed","grade_created","bulk_grade_changed","spreadsheet_grades_pasted","rubric_grade_changed","rubric_grade_created","shared_group_grade_applied","assessment_result_updated","grading_period_finalized","grading_period_reopened"].includes(row.action))
       .sort((a,b)=>toMillis(b.createdAt)-toMillis(a.createdAt));
   }catch(error){return toast("Unable to load grade history.");}
   modal({
