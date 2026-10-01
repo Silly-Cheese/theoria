@@ -868,7 +868,7 @@ document.addEventListener("click",async e=>{
   if(a==="audit-log"){closeModal();return auditLogModal(b.dataset.section);}
   if(a==="grade-history"){closeModal();return gradeHistoryModal(b.dataset.section);}
   if(a==="lifecycle-menu")return lifecycleMenu(b.dataset.student);
-  if(a==="withdraw-certify"){closeModal();return window.TheoriaPhase4?.withdrawalCertificationModal?.(section.id,b.dataset.student);}
+  if(a==="withdraw-certify"){closeModal();const sectionId=state()?.currentSection?.id;if(!sectionId)return toast("Open the section before certifying a withdrawal.");return window.TheoriaPhase4?.withdrawalCertificationModal?.(sectionId,b.dataset.student);}
   if(a==="set-lifecycle"){closeModal();return setEnrollmentLifecycle(b.dataset.student,b.dataset.status);}
   if(a==="student-approvals"){closeModal();return studentApprovalsModal(b.dataset.student);}
   if(a==="approve-progression"){closeModal();await approveProgression(b.dataset.course,b.dataset.student);return studentApprovalsModal(b.dataset.student);}
