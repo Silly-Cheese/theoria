@@ -2040,148 +2040,287 @@ function gradebookCourseworkPolicyAverage(assignments,gradeMap,studentId,policy)
   return possible?Math.round((earned/possible)*1000)/10:null;
 }
 
+
+const GRADEBOOK_DEFAULT_SCALE=[
+  {min:93,letter:"A"},{min:90,letter:"A-"},{min:87,letter:"B+"},{min:83,letter:"B"},
+  {min:80,letter:"B-"},{min:77,letter:"C+"},{min:73,letter:"C"},{min:70,letter:"C-"},
+  {min:67,letter:"D+"},{min:63,letter:"D"},{min:60,letter:"D-"},{min:0,letter:"F"}
+];
+
+function gradebookRound(value){
+  return Math.round(Number(value||0)*10)/10;
+}
+function gradebookAverage(values){
+  const clean=values.filter(v=>v!==null&&v!==undefined&&!Number.isNaN(Number(v))).map(Number);
+  return clean.length?gradebookRound(clean.reduce((a,b)=>a+b,0)/clean.length):null;
+}
+function gradebookLetter(percent){
+  if(percent===null||percent===undefined)return "—";
+  const scale=state.currentSection?.gradingPolicy?.gradeScale||GRADEBOOK_DEFAULT_SCALE;
+  return (scale||GRADEBOOK_DEFAULT_SCALE).find(row=>Number(percent)>=Number(row.min))?.letter||"F";
+}
+function gradebookAssessmentComponent(studentId,kind,assessmentGradeMap=null){
+  const refs=state.sectionData?.assessmentRefs||[];
+  const grades=assessmentGradeMap
+    ? refs.map(ref=>assessmentGradeMap.get(ref.id+"_"+studentId)).filter(Boolean)
+    : (state.sectionData?.assessmentGrades||[]).filter(g=>g.studentId===studentId);
+  const refMap=new Map(refs.map(ref=>[ref.id,ref]));
+  const rows=grades.filter(g=>{
+    const ref=refMap.get(g.assessmentId)||{};
+    const type=String(g.assessmentType||ref.assessmentType||ref.type||"").toLowerCase();
+    return kind==="semester"?type.includes("semester"):type.includes("comprehensive");
+  }).filter(g=>g.percent!==null&&g.percent!==undefined);
+  return {percent:gradebookAverage(rows.map(g=>g.percent)),rows};
+}
+function gradebookAcademicSnapshot(studentId,allAssignments,gradeMap,assessmentGradeMap){
+  const coursework=gradebookCourseworkPolicyAverage(allAssignments,gradeMap,studentId,state.currentSection?.gradingPolicy||{});
+  const semester=gradebookAssessmentComponent(studentId,"semester",assessmentGradeMap);
+  const comprehensive=gradebookAssessmentComponent(studentId,"comprehensive",assessmentGradeMap);
+  const pathwayRow=(state.sectionData?.gradingPathways||[]).find(x=>(x.studentId||x.id)===studentId);
+  const pathway=pathwayRow?.pathway||null;
+  const record=(state.sectionData?.academicRecords||[]).find(x=>(x.studentId||x.id)===studentId)||null;
+  const appeals=(state.sectionData?.appeals||[]).filter(x=>x.studentId===studentId&&!["Resolved","Denied","Withdrawn"].includes(String(x.status||"")));
+  const policy=state.currentSection?.gradingPolicy||{};
+  const weights=pathway==="examination"
+    ? (policy.examination||{semester:35,comprehensive:65})
+    : (policy.composite||{coursework:60,semester:15,comprehensive:25});
+  const components=pathway==="examination"
+    ? [{key:"semester",value:semester.percent,weight:Number(weights.semester||0)},{key:"comprehensive",value:comprehensive.percent,weight:Number(weights.comprehensive||0)}]
+    : [{key:"coursework",value:coursework,weight:Number(weights.coursework||0)},{key:"semester",value:semester.percent,weight:Number(weights.semester||0)},{key:"comprehensive",value:comprehensive.percent,weight:Number(weights.comprehensive||0)}];
+
+  let weighted=0,availableWeight=0;
+  components.forEach(c=>{if(c.value!==null&&c.value!==undefined){weighted+=Number(c.value)*c.weight;availableWeight+=c.weight;}});
+  const complete=!!pathway&&components.every(c=>c.value!==null&&c.value!==undefined);
+  const projection=pathway&&availableWeight?gradebookRound(weighted/availableWeight):null;
+  const calculatedFinal=complete?gradebookRound(weighted/100):null;
+  const certified=record?.status==="Certified";
+  let status="Not Ready";
+  if(certified&&(record.recordType==="Withdrawal"||record.enrollmentOutcome==="Withdrawn"))status="Withdrawal Certified";
+  else if(certified)status="Certified";
+  else if(record?.status==="Incomplete")status="Incomplete";
+  else if(appeals.length)status="Appeal Open";
+  else if(!pathway)status="Missing Pathway";
+  else if(semester.percent===null)status="Semester Exam Required";
+  else if(comprehensive.percent===null)status="Final Exam Required";
+  else if(pathway==="composite"&&coursework===null)status="Coursework Required";
+  else status="Ready to Certify";
+
+  const displayPercent=certified&&record?.finalPercent!==undefined&&record?.finalPercent!==null?Number(record.finalPercent):projection;
+  return {
+    coursework,semester:semester.percent,comprehensive:comprehensive.percent,pathway,pathwayRow,
+    record,appeals,projection,calculatedFinal,displayPercent,letter:gradebookLetter(displayPercent),
+    ready:status==="Ready to Certify",certified,status,components
+  };
+}
+function gradebookDistribution(values){
+  const nums=values.filter(v=>v!==null&&v!==undefined&&!Number.isNaN(Number(v))).map(Number).sort((a,b)=>a-b);
+  if(!nums.length)return {count:0,mean:null,median:null,high:null,low:null,sd:null};
+  const mean=nums.reduce((a,b)=>a+b,0)/nums.length;
+  const median=nums.length%2?nums[(nums.length-1)/2]:(nums[nums.length/2-1]+nums[nums.length/2])/2;
+  const variance=nums.reduce((n,v)=>n+Math.pow(v-mean,2),0)/nums.length;
+  return {count:nums.length,mean:gradebookRound(mean),median:gradebookRound(median),high:gradebookRound(nums[nums.length-1]),low:gradebookRound(nums[0]),sd:gradebookRound(Math.sqrt(variance))};
+}
+function gradebookStudentFlags(studentId,visibleAssignments,assessments,gradeMap,assessmentGradeMap,snapshot){
+  const grades=visibleAssignments.map(a=>gradeMap.get(a.id+"_"+studentId));
+  const hasUngraded=visibleAssignments.some((a,i)=>!grades[i]||grades[i].score===null||grades[i].score===undefined)
+    || assessments.some(a=>{const g=assessmentGradeMap.get(a.id+"_"+studentId);return !g||g.percent===null||g.percent===undefined;});
+  const missing=grades.some(g=>String(g?.gradeStatus||"")==="Missing");
+  const late=grades.some(g=>String(g?.gradeStatus||"")==="Late");
+  const excused=grades.some(g=>String(g?.gradeStatus||"")==="Excused");
+  const below=(snapshot.displayPercent??snapshot.coursework)!==null&&Number(snapshot.displayPercent??snapshot.coursework)<Number(state.gradebookThreshold||70);
+  const attention=missing||snapshot.appeals.length>0||below||hasUngraded||(snapshot.pathway&& !snapshot.certified && !snapshot.ready);
+  return {hasUngraded,missing,late,excused,below,attention};
+}
+function gradebookFeedbackPresets(){
+  const defaults=["Excellent argumentation","Needs stronger textual support","Citation issue","Incomplete response","Strong exegesis","Revise and resubmit"];
+  try{
+    const custom=JSON.parse(localStorage.getItem("theoriaGradebookFeedback")||"[]");
+    return [...new Set([...defaults,...(Array.isArray(custom)?custom:[])])].slice(0,18);
+  }catch(_){return defaults;}
+}
+function saveGradebookFeedbackPreset(text){
+  const value=String(text||"").trim();if(!value)return;
+  const defaults=new Set(["Excellent argumentation","Needs stronger textual support","Citation issue","Incomplete response","Strong exegesis","Revise and resubmit"]);
+  try{
+    const current=JSON.parse(localStorage.getItem("theoriaGradebookFeedback")||"[]");
+    const custom=[...new Set([...(Array.isArray(current)?current:[]),value])].filter(x=>!defaults.has(x)).slice(-12);
+    localStorage.setItem("theoriaGradebookFeedback",JSON.stringify(custom));
+  }catch(_){}
+}
+
 function renderGradebook(){
-  const students=state.sectionData.members;
+  const allStudents=state.sectionData.members||[];
   const framework=state.sectionData.framework||{units:[]};
-  const allAssignments=state.sectionData.assignments.filter(a=>a.status!=="Draft");
+  const allAssignments=(state.sectionData.assignments||[]).filter(a=>a.status!=="Draft");
   const configuredPeriods=state.currentSection?.gradingPolicy?.gradingPeriods?.length?state.currentSection.gradingPolicy.gradingPeriods:["Overall"];
   const periodOptions=["All",...configuredPeriods];
   const selectedPeriod=periodOptions.includes(state.gradebookPeriodFilter)?state.gradebookPeriodFilter:"All";
-  const rawAssignments=selectedPeriod==="All"?allAssignments:allAssignments.filter(a=>(a.gradingPeriod||"Overall")===selectedPeriod);
+  const periodAssignments=selectedPeriod==="All"?allAssignments:allAssignments.filter(a=>(a.gradingPeriod||"Overall")===selectedPeriod);
   const assessments=(state.sectionData.assessmentRefs||[]).filter(a=>a.status!=="Draft");
-  if(!students.length || (!rawAssignments.length&&!assessments.length)) return '<div class="empty-state"><div class="empty-symbol">G</div><h3>Gradebook waiting for data.</h3><p>Enroll at least one student and publish an assignment or assessment.</p></div>';
+  if(!allStudents.length || (!periodAssignments.length&&!assessments.length))return '<div class="empty-state"><div class="empty-symbol">G</div><h3>Gradebook waiting for data.</h3><p>Enroll at least one student and publish an assignment or assessment.</p></div>';
 
-  const gradeMap=new Map(state.sectionData.grades.map(g=>[g.assignmentId+"_"+g.studentId,g]));
+  const gradeMap=new Map((state.sectionData.grades||[]).map(g=>[g.assignmentId+"_"+g.studentId,g]));
   const assessmentGradeMap=new Map((state.sectionData.assessmentGrades||[]).map(g=>[g.assessmentId+"_"+g.studentId,g]));
-
-  const assignmentGroups=unitFolderGroups(rawAssignments,framework);
-  const assignments=assignmentGroups.flatMap(group=>group.items);
+  const allGroups=unitFolderGroups(periodAssignments,framework);
+  const collapsed=new Set(state.gradebookCollapsedUnits||[]);
+  const selectedUnit=state.gradebookUnitFilter||"All";
+  const displayGroups=allGroups.filter(group=>(selectedUnit==="All"||group.id===selectedUnit)&&!collapsed.has(group.id));
+  const assignments=displayGroups.flatMap(group=>group.items);
   const assignmentGroupMap=new Map();
-  assignmentGroups.forEach(group=>group.items.forEach((item,index)=>assignmentGroupMap.set(item.id,{group,index})));
+  displayGroups.forEach(group=>group.items.forEach((item,index)=>assignmentGroupMap.set(item.id,{group,index})));
 
-  const studentCourseworkAverages=[];
-  const studentAssessmentAverages=[];
+  const queryText=String(state.gradebookSearchFilter||"").trim().toLowerCase();
+  const statusFilter=String(state.gradebookStatusFilter||"all");
+  const contexts=allStudents.map(student=>{
+    const snapshot=gradebookAcademicSnapshot(student.id,allAssignments,gradeMap,assessmentGradeMap);
+    const flags=gradebookStudentFlags(student.id,assignments,assessments,gradeMap,assessmentGradeMap,snapshot);
+    return {student,snapshot,flags};
+  });
+  const visibleContexts=contexts.filter(({student,snapshot,flags})=>{
+    if(queryText&&!String(student.displayName||"").toLowerCase().includes(queryText)&&!String(student.email||"").toLowerCase().includes(queryText))return false;
+    if(state.gradebookAttentionOnly&&!flags.attention)return false;
+    if(statusFilter==="ungraded"&&!flags.hasUngraded)return false;
+    if(statusFilter==="missing"&&!flags.missing)return false;
+    if(statusFilter==="late"&&!flags.late)return false;
+    if(statusFilter==="excused"&&!flags.excused)return false;
+    if(statusFilter==="below"&&!flags.below)return false;
+    if(statusFilter==="appeals"&&!snapshot.appeals.length)return false;
+    if(statusFilter==="not-ready"&&(snapshot.ready||snapshot.certified))return false;
+    if(statusFilter==="ready"&&!snapshot.ready)return false;
+    if(statusFilter==="certified"&&!snapshot.certified)return false;
+    return true;
+  });
+  const students=visibleContexts.map(x=>x.student);
+  const selectedStudents=new Set(state.gradebookSelectedStudents||[]);
+  const attentionCount=contexts.filter(x=>x.flags.attention).length;
+
   let completedGradeCells=0;
-  const totalGradeCells=students.length*(assignments.length+assessments.length);
+  const totalGradeCells=Math.max(1,allStudents.length*(periodAssignments.length+assessments.length));
+  allStudents.forEach(student=>{
+    periodAssignments.forEach(a=>{const g=gradeMap.get(a.id+"_"+student.id);if(g&&g.score!==null&&g.score!==undefined)completedGradeCells++;});
+    assessments.forEach(a=>{const g=assessmentGradeMap.get(a.id+"_"+student.id);if(g&&g.percent!==null&&g.percent!==undefined)completedGradeCells++;});
+  });
+  const completion=Math.round((completedGradeCells/totalGradeCells)*100);
 
-  const unitJumpButtons=assignmentGroups.map(group=>
-    '<button class="gradebook-jump" data-action="gradebook-jump" data-target="unit-'+esc(group.id)+'">'+
-      '<span>'+(group.id==="unsorted"?"?":"U"+esc(group.unit?.order||""))+'</span>'+esc(group.id==="unsorted"?"Unsorted":group.unit?.title||group.label)+
-      '<small>'+group.items.length+'</small></button>'
-  ).join("");
+  const unitChoices=allGroups.map(group=>'<option value="'+esc(group.id)+'" '+(selectedUnit===group.id?'selected':'')+'>'+esc(group.id==="unsorted"?"Unsorted":("Unit "+(group.unit?.order||"")+" — "+(group.unit?.title||group.label)))+'</option>').join("");
+  const unitJumpButtons=allGroups.map(group=>{
+    const isCollapsed=collapsed.has(group.id);
+    return '<button class="gradebook-jump '+(isCollapsed?'collapsed':'')+'" data-action="gradebook-toggle-unit" data-unit="'+esc(group.id)+'"><span>'+(group.id==="unsorted"?"?":"U"+esc(group.unit?.order||""))+'</span>'+esc(group.id==="unsorted"?"Unsorted":group.unit?.title||group.label)+'<small>'+(isCollapsed?"Expand":group.items.length)+'</small></button>';
+  }).join("");
 
-  const assignmentGroupHeaders=assignmentGroups.map(group=>
-    '<th colspan="'+group.items.length+'" class="gradebook-unit-group '+(group.id==="unsorted"?'unsorted':'')+'" data-gradebook-group="'+esc(group.id)+'">'+
-      '<span>'+(group.id==="unsorted"?"Unsorted Coursework":"Unit "+esc(group.unit?.order||"")+' — '+esc(group.unit?.title||"Unit"))+'</span>'+
-      '<small>'+group.items.length+' item'+(group.items.length===1?"":"s")+'</small></th>'
+  const assignmentGroupHeaders=displayGroups.map(group=>
+    '<th colspan="'+group.items.length+'" class="gradebook-unit-group '+(group.id==="unsorted"?'unsorted':'')+'" data-gradebook-group="'+esc(group.id)+'"><span>'+(group.id==="unsorted"?"Unsorted Coursework":"Unit "+esc(group.unit?.order||"")+' — '+esc(group.unit?.title||"Unit"))+'</span><small>'+group.items.length+' item'+(group.items.length===1?"":"s")+' • click unit chip above to collapse</small></th>'
   ).join("");
 
   const assignmentHeaders=assignments.map(a=>{
-    const meta=assignmentGroupMap.get(a.id);
-    const isStart=meta?.index===0;
+    const meta=assignmentGroupMap.get(a.id),isStart=meta?.index===0;
+    const values=allStudents.map(student=>{const g=gradeMap.get(a.id+"_"+student.id);return g&&g.score!==null&&g.score!==undefined&&Number(a.points||0)>0?Number(g.score)/Number(a.points)*100:null;});
+    const stats=gradebookDistribution(values);
     return '<th class="gradebook-item-head '+(isStart?'unit-start':'')+'" '+(isStart?'data-gradebook-anchor="unit-'+esc(meta.group.id)+'"':'')+' title="'+esc(a.title||"Assignment")+'">'+
       '<span class="gradebook-kind">'+esc(a.type||"Assignment")+'</span>'+
-      '<span class="gradebook-item-title">'+esc(a.title||"Assignment")+'</span>'+
-      '<span class="gradebook-item-meta">'+esc(a.points||0)+' pts'+(a.topicNumber?' • '+esc(a.topicNumber):'')+'</span></th>';
+      '<button class="gradebook-column-title" data-action="gradebook-column-menu" data-assignment="'+a.id+'">'+esc(a.title||"Assignment")+'</button>'+
+      '<span class="gradebook-item-meta">'+esc(a.points||0)+' pts'+(a.topicNumber?' • '+esc(a.topicNumber):'')+(stats.mean!==null?' • μ '+stats.mean+'%':'')+'</span></th>';
   }).join("");
 
-  const assessmentHeaders=assessments.map((a,index)=>
-    '<th class="gradebook-item-head assessment-grade-head '+(index===0?'assessment-start':'')+'" '+(index===0?'data-gradebook-anchor="assessments"':'')+' title="'+esc(a.title||"Assessment")+'">'+
-      '<span class="gradebook-kind assessment-kind">'+esc(a.assessmentType||a.type||"Assessment")+'</span>'+
-      '<span class="gradebook-item-title">'+esc(a.title||"Assessment")+'</span>'+
-      '<span class="gradebook-item-meta">'+(Number(a.totalPoints||0)?esc(a.totalPoints)+" pts":"Formal assessment")+'</span></th>'
-  ).join("");
+  const assessmentHeaders=assessments.map((a,index)=>{
+    const vals=allStudents.map(student=>assessmentGradeMap.get(a.id+"_"+student.id)?.percent).filter(v=>v!==undefined);
+    const stats=gradebookDistribution(vals);
+    return '<th class="gradebook-item-head assessment-grade-head '+(index===0?'assessment-start':'')+'" '+(index===0?'data-gradebook-anchor="assessments"':'')+' title="'+esc(a.title||"Assessment")+'"><span class="gradebook-kind assessment-kind">'+esc(a.assessmentType||a.type||"Assessment")+'</span><button class="gradebook-column-title" data-action="open-gradebook-assessment" data-assessment="'+a.id+'">'+esc(a.title||"Assessment")+'</button><span class="gradebook-item-meta">'+(Number(a.totalPoints||0)?esc(a.totalPoints)+" pts":"Formal assessment")+(stats.mean!==null?' • μ '+stats.mean+'%':'')+'</span></th>';
+  }).join("");
 
   const header='<thead>'+
-    '<tr class="gradebook-category-row"><th class="student-sticky gradebook-student-head" rowspan="3">Student</th>'+
+    '<tr class="gradebook-category-row"><th class="gradebook-select-col" rowspan="3"><input type="checkbox" id="gradebookSelectAll" '+(students.length&&students.every(s=>selectedStudents.has(s.id))?'checked':'')+' aria-label="Select all visible students"></th><th class="student-sticky gradebook-student-head" rowspan="3">Student</th>'+
       (assignments.length?'<th colspan="'+assignments.length+'" class="gradebook-category coursework-category">Coursework</th>':'')+
       (assessments.length?'<th colspan="'+assessments.length+'" class="gradebook-category assessment-category">Formal Assessments</th>':'')+
-      '<th class="avg-sticky coursework-avg-col" rowspan="3">Coursework<br>Avg</th><th class="avg-sticky assessment-avg-col" rowspan="3">Assessment<br>Avg</th></tr>'+
+      '<th class="grade-summary-sticky coursework-summary-col" rowspan="3">Coursework</th><th class="grade-summary-sticky semester-summary-col" rowspan="3">Semester<br>Exam</th><th class="grade-summary-sticky comprehensive-summary-col" rowspan="3">Comprehensive<br>Final</th><th class="grade-summary-sticky final-summary-col" rowspan="3">Final<br>Projection</th><th class="grade-summary-sticky status-summary-col" rowspan="3">Certification</th></tr>'+
     '<tr class="gradebook-group-row">'+assignmentGroupHeaders+(assessments.length?'<th colspan="'+assessments.length+'" class="gradebook-unit-group assessment-group">Assessments</th>':'')+'</tr>'+
-    '<tr>'+assignmentHeaders+assessmentHeaders+'</tr>'+
-    '</thead>';
+    '<tr>'+assignmentHeaders+assessmentHeaders+'</tr></thead>';
 
-  const body=students.map(student=>{
-    let courseworkEarned=0,courseworkPossible=0,courseworkGraded=0;
-    const assignmentCells=assignments.map(a=>{
-      const g=gradeMap.get(a.id+"_"+student.id);
-      const hasGrade=g&&g.score!==null&&g.score!==undefined;
-      if(hasGrade){
-        courseworkEarned+=Number(g.score);courseworkPossible+=Number(a.points||0);courseworkGraded++;completedGradeCells++;
-      }
-      const pct=hasGrade&&Number(a.points||0)>0?Math.round((Number(g.score)/Number(a.points))*1000)/10:null;
-      return '<td class="score-cell coursework-score-cell '+(hasGrade?'has-grade':'no-grade')+'" data-action="set-grade" data-assignment="'+a.id+'" data-student="'+student.id+'">'+
-        (hasGrade?'<span class="grade-main">'+esc(g.score)+'</span><span class="grade-sub">/ '+esc(a.points)+'</span><span class="grade-cell-percent">'+pct+'%</span>'+(g.gradeStatus&&g.gradeStatus!=="Normal"?'<small class="grade-status-note">'+esc(g.gradeStatus)+'</small>':''):'<span class="grade-empty">—<small>No grade</small></span>')+
+  const body=visibleContexts.map(({student,snapshot})=>{
+    let courseworkGraded=0,assessmentGraded=0;
+    const assignmentCells=assignments.map((a,colIndex)=>{
+      const g=gradeMap.get(a.id+"_"+student.id),hasGrade=g&&g.score!==null&&g.score!==undefined;
+      if(hasGrade)courseworkGraded++;
+      const pct=hasGrade&&Number(a.points||0)>0?gradebookRound(Number(g.score)/Number(a.points)*100):null;
+      const locked=state.currentSection?.gradingPolicy?.gradingPeriodSettings?.[a.gradingPeriod||"Overall"]?.locked===true;
+      return '<td class="score-cell coursework-score-cell gradebook-inline-cell '+(hasGrade?'has-grade':'no-grade')+'" data-assignment="'+a.id+'" data-student="'+student.id+'">'+
+        '<input class="gradebook-inline-score" data-assignment="'+a.id+'" data-student="'+student.id+'" data-row="'+students.indexOf(student)+'" data-col="'+colIndex+'" type="number" step="0.1" min="0" max="'+esc(a.points||0)+'" value="'+(hasGrade?esc(g.score):'')+'" placeholder="—" '+(locked?'disabled title="Grading period locked"':'')+'>'+
+        '<span class="grade-sub">/ '+esc(a.points||0)+'</span><span class="grade-cell-percent">'+(pct===null?'—':pct+'%')+'</span>'+(g?.gradeStatus&&g.gradeStatus!=="Normal"?'<small class="grade-status-note">'+esc(g.gradeStatus)+'</small>':'')+
       '</td>';
     }).join("");
-
-    const assessmentPercents=[];
-    let assessmentGraded=0;
     const assessmentCells=assessments.map(a=>{
-      const g=assessmentGradeMap.get(a.id+"_"+student.id);
-      const hasGrade=g&&g.percent!==null&&g.percent!==undefined;
-      if(hasGrade){assessmentPercents.push(Number(g.percent));assessmentGraded++;completedGradeCells++;}
-      const score=(g&&g.score!==undefined&&g.score!==null)?esc(g.score):"";
-      const max=(g&&g.maxScore!==undefined&&g.maxScore!==null)?esc(g.maxScore):esc(a.totalPoints||"");
+      const g=assessmentGradeMap.get(a.id+"_"+student.id),hasGrade=g&&g.percent!==null&&g.percent!==undefined;
+      if(hasGrade)assessmentGraded++;
       return '<td class="score-cell assessment-score-cell '+(hasGrade?'has-grade':'no-grade')+'" data-action="open-gradebook-assessment" data-assessment="'+a.id+'" data-student="'+student.id+'">'+
-        (hasGrade?'<span class="grade-main">'+(score&&max?score+" / "+max:esc(g.percent)+"%")+'</span><span class="grade-cell-percent">'+esc(g.percent)+'%</span><span class="grade-sub">'+(g.released?'Released':'Private')+'</span>':'<span class="grade-empty">—<small>Not graded</small></span>')+
+        (hasGrade?'<span class="grade-main">'+esc(g.percent)+'%</span><span class="grade-sub">'+(g.released?'Released':'Private')+'</span>':'<span class="grade-empty">—<small>Not graded</small></span>')+
       '</td>';
     }).join("");
-
-    const courseworkAvg=gradebookCourseworkPolicyAverage(assignments,gradeMap,student.id,state.currentSection?.gradingPolicy||{});
-    const assessmentAvg=assessmentPercents.length?Math.round((assessmentPercents.reduce((a,b)=>a+b,0)/assessmentPercents.length)*10)/10:null;
-    if(courseworkAvg!==null)studentCourseworkAverages.push(courseworkAvg);
-    if(assessmentAvg!==null)studentAssessmentAverages.push(assessmentAvg);
-
-    return '<tr><td class="student-sticky gradebook-student-cell"><strong>'+esc(student.displayName||"Student")+'</strong>'+
-      '<span>'+courseworkGraded+'/'+assignments.length+' coursework'+(assessments.length?' • '+assessmentGraded+'/'+assessments.length+' assessments':'')+'</span></td>'+
+    const pathLabel=snapshot.pathway==="examination"?"Examination":snapshot.pathway==="composite"?"Composite":"Not selected";
+    const statusClass=snapshot.certified?"live":snapshot.ready?"gold":snapshot.status==="Appeal Open"?"danger":"";
+    return '<tr data-gradebook-student-row="'+student.id+'"><td class="gradebook-select-col"><input class="gradebook-student-select" type="checkbox" value="'+student.id+'" '+(selectedStudents.has(student.id)?'checked':'')+' aria-label="Select '+esc(student.displayName||"student")+'"></td>'+
+      '<td class="student-sticky gradebook-student-cell"><button class="gradebook-student-link" data-action="gradebook-student-drawer" data-student="'+student.id+'">'+esc(student.displayName||"Student")+'</button><span>'+courseworkGraded+'/'+assignments.length+' coursework'+(assessments.length?' • '+assessmentGraded+'/'+assessments.length+' assessments':'')+'</span></td>'+
       assignmentCells+assessmentCells+
-      '<td class="avg-sticky coursework-avg-col gradebook-average '+(courseworkAvg===null?'empty':'')+'"><strong>'+(courseworkAvg===null?"—":courseworkAvg+"%")+'</strong><span>'+courseworkGraded+' graded</span></td>'+
-      '<td class="avg-sticky assessment-avg-col gradebook-average '+(assessmentAvg===null?'empty':'')+'"><strong>'+(assessmentAvg===null?"—":assessmentAvg+"%")+'</strong><span>'+assessmentGraded+' graded</span></td></tr>';
+      '<td class="grade-summary-sticky coursework-summary-col gradebook-summary-cell"><strong>'+(snapshot.coursework===null?"—":snapshot.coursework+"%")+'</strong><span>Coursework</span></td>'+
+      '<td class="grade-summary-sticky semester-summary-col gradebook-summary-cell"><strong>'+(snapshot.semester===null?"—":snapshot.semester+"%")+'</strong><span>'+(snapshot.semester===null?"Required":"Recorded")+'</span></td>'+
+      '<td class="grade-summary-sticky comprehensive-summary-col gradebook-summary-cell"><strong>'+(snapshot.comprehensive===null?"—":snapshot.comprehensive+"%")+'</strong><span>'+(snapshot.comprehensive===null?"Required":"Recorded")+'</span></td>'+
+      '<td class="grade-summary-sticky final-summary-col gradebook-summary-cell final-projection-cell"><strong>'+(snapshot.displayPercent===null?"—":snapshot.displayPercent+"%")+'</strong><b>'+esc(snapshot.letter)+'</b><span>'+esc(pathLabel)+(snapshot.certified?" • Certified":" • Projection")+'</span></td>'+
+      '<td class="grade-summary-sticky status-summary-col gradebook-status-cell"><button class="badge '+statusClass+'" data-phase4-action="record-audit" data-section="'+state.currentSection.id+'" data-student="'+student.id+'">'+esc(snapshot.status)+'</button></td></tr>';
   }).join("");
 
   const assignmentClassCells=assignments.map(a=>{
-    const grades=students.map(student=>gradeMap.get(a.id+"_"+student.id)).filter(g=>g&&g.score!==null&&g.score!==undefined);
-    const avg=grades.length?grades.reduce((n,g)=>n+Number(g.score||0),0)/grades.length:null;
-    const pct=avg!==null&&Number(a.points||0)>0?Math.round((avg/Number(a.points))*1000)/10:null;
-    return '<td class="class-average-cell">'+(avg===null?'—':'<strong>'+Math.round(avg*10)/10+'</strong><span>/ '+esc(a.points)+'</span><small>'+pct+'%</small>')+'</td>';
+    const vals=allStudents.map(student=>{const g=gradeMap.get(a.id+"_"+student.id);return g&&g.score!==null&&g.score!==undefined&&Number(a.points||0)>0?Number(g.score)/Number(a.points)*100:null;});
+    const stats=gradebookDistribution(vals);
+    return '<td class="class-average-cell">'+(stats.mean===null?'—':'<strong>'+stats.mean+'%</strong><small>Med '+stats.median+' • '+stats.count+' graded</small>')+'</td>';
   }).join("");
-
   const assessmentClassCells=assessments.map(a=>{
-    const grades=students.map(student=>assessmentGradeMap.get(a.id+"_"+student.id)).filter(g=>g&&g.percent!==null&&g.percent!==undefined);
-    const pct=grades.length?Math.round((grades.reduce((n,g)=>n+Number(g.percent||0),0)/grades.length)*10)/10:null;
-    return '<td class="class-average-cell assessment-class-average">'+(pct===null?'—':'<strong>'+pct+'%</strong><small>'+grades.length+' graded</small>')+'</td>';
+    const stats=gradebookDistribution(allStudents.map(student=>assessmentGradeMap.get(a.id+"_"+student.id)?.percent));
+    return '<td class="class-average-cell assessment-class-average">'+(stats.mean===null?'—':'<strong>'+stats.mean+'%</strong><small>Med '+stats.median+' • '+stats.count+' graded</small>')+'</td>';
   }).join("");
 
-  const classCourseworkAvg=studentCourseworkAverages.length?Math.round((studentCourseworkAverages.reduce((a,b)=>a+b,0)/studentCourseworkAverages.length)*10)/10:null;
-  const classAssessmentAvg=studentAssessmentAverages.length?Math.round((studentAssessmentAverages.reduce((a,b)=>a+b,0)/studentAssessmentAverages.length)*10)/10:null;
-  const completion=totalGradeCells?Math.round((completedGradeCells/totalGradeCells)*100):0;
+  const classCoursework=gradebookAverage(contexts.map(x=>x.snapshot.coursework));
+  const classSemester=gradebookAverage(contexts.map(x=>x.snapshot.semester));
+  const classComprehensive=gradebookAverage(contexts.map(x=>x.snapshot.comprehensive));
+  const classFinal=gradebookAverage(contexts.map(x=>x.snapshot.displayPercent));
+  const readyCount=contexts.filter(x=>x.snapshot.ready).length;
+  const certifiedCount=contexts.filter(x=>x.snapshot.certified).length;
+  const footer='<tfoot><tr><td class="gradebook-select-col"></td><td class="student-sticky gradebook-class-label"><strong>Class Summary</strong><span>'+allStudents.length+' students</span></td>'+assignmentClassCells+assessmentClassCells+
+    '<td class="grade-summary-sticky coursework-summary-col gradebook-summary-cell"><strong>'+(classCoursework===null?'—':classCoursework+'%')+'</strong><span>Class avg</span></td>'+
+    '<td class="grade-summary-sticky semester-summary-col gradebook-summary-cell"><strong>'+(classSemester===null?'—':classSemester+'%')+'</strong><span>Class avg</span></td>'+
+    '<td class="grade-summary-sticky comprehensive-summary-col gradebook-summary-cell"><strong>'+(classComprehensive===null?'—':classComprehensive+'%')+'</strong><span>Class avg</span></td>'+
+    '<td class="grade-summary-sticky final-summary-col gradebook-summary-cell"><strong>'+(classFinal===null?'—':classFinal+'%')+'</strong><span>Projected avg</span></td>'+
+    '<td class="grade-summary-sticky status-summary-col gradebook-status-cell"><strong>'+readyCount+'</strong><span>ready • '+certifiedCount+' certified</span></td></tr></tfoot>';
 
-  const footer='<tfoot><tr><td class="student-sticky gradebook-class-label"><strong>Class Average</strong><span>'+students.length+' student'+(students.length===1?"":"s")+'</span></td>'+
-    assignmentClassCells+assessmentClassCells+
-    '<td class="avg-sticky coursework-avg-col gradebook-average class-summary"><strong>'+(classCourseworkAvg===null?'—':classCourseworkAvg+'%')+'</strong><span>Class</span></td>'+
-    '<td class="avg-sticky assessment-avg-col gradebook-average class-summary"><strong>'+(classAssessmentAvg===null?'—':classAssessmentAvg+'%')+'</strong><span>Class</span></td></tr></tfoot>';
-
-  const summary='<div class="gradebook-summary-strip">'+
-    '<div><span>Students</span><strong>'+students.length+'</strong></div>'+
-    '<div><span>Coursework</span><strong>'+assignments.length+'</strong></div>'+
-    '<div><span>Assessments</span><strong>'+assessments.length+'</strong></div>'+
+  const summary='<div class="gradebook-summary-strip advanced-gradebook-summary">'+
+    '<div><span>Students Shown</span><strong>'+visibleContexts.length+' / '+allStudents.length+'</strong></div>'+
     '<div><span>Grading Complete</span><strong>'+completion+'%</strong></div>'+
-    '<div><span>Class Coursework</span><strong>'+(classCourseworkAvg===null?'—':classCourseworkAvg+'%')+'</strong></div>'+
-    '<div><span>Class Assessment</span><strong>'+(classAssessmentAvg===null?'—':classAssessmentAvg+'%')+'</strong></div>'+
+    '<div><span>Needs Attention</span><strong>'+attentionCount+'</strong></div>'+
+    '<div><span>Ready to Certify</span><strong>'+readyCount+'</strong></div>'+
+    '<div><span>Certified</span><strong>'+certifiedCount+'</strong></div>'+
+    '<div><span>Class Projection</span><strong>'+(classFinal===null?'—':classFinal+'%')+'</strong></div>'+
   '</div>';
 
-  const nav='<div class="gradebook-toolbar"><div class="gradebook-jumps"><span>Jump to</span>'+unitJumpButtons+
-    (assessments.length?'<button class="gradebook-jump assessment-jump" data-action="gradebook-jump" data-target="assessments"><span>✓</span>Assessments<small>'+assessments.length+'</small></button>':'')+
-    '</div><div class="gradebook-help">Student names and averages stay pinned while you scroll.</div></div>';
+  const periodSetting=selectedPeriod!=="All"?(state.currentSection?.gradingPolicy?.gradingPeriodSettings?.[selectedPeriod]||{}):null;
+  const periodToolbar='<div class="gradebook-period-toolbar advanced-period-toolbar"><div><span>Grading Period</span><strong>'+esc(selectedPeriod)+'</strong>'+(periodSetting?'<small>'+(periodSetting.locked?'Finalized & Locked':'Open for grading')+'</small>':'')+'</div><select id="gradebookPeriodFilter">'+periodOptions.map(period=>'<option value="'+esc(period)+'" '+(period===selectedPeriod?'selected':'')+'>'+esc(period)+(period==="All"?"":' ('+allAssignments.filter(a=>(a.gradingPeriod||"Overall")===period).length+')')+'</option>').join("")+'</select>'+(selectedPeriod!=="All"?'<button class="'+(periodSetting?.locked?'secondary-btn':'danger-btn')+' small-btn" data-phase3-action="toggle-grading-period" data-period="'+esc(selectedPeriod)+'">'+(periodSetting?.locked?'Reopen Period':'Finalize & Lock')+'</button>':'<button class="secondary-btn small-btn" data-action="section-tab" data-tab="grading">Manage Periods</button>')+'</div>';
 
-  const periodToolbar='<div class="gradebook-period-toolbar"><div><span>Grading Period</span><strong>'+esc(selectedPeriod)+'</strong></div><select id="gradebookPeriodFilter">'+periodOptions.map(period=>'<option value="'+esc(period)+'" '+(period===selectedPeriod?'selected':'')+'>'+esc(period)+(period==="All"?"":' ('+allAssignments.filter(a=>(a.gradingPeriod||"Overall")===period).length+')')+'</option>').join("")+'</select></div>';
-  return summary+
-    periodToolbar+
-    '<div class="notice gradebook-notice">Coursework and formal assessments share this gradebook, but their averages remain separate because the certified final grade follows each student’s grading pathway.'+(selectedPeriod!=="All"?' Coursework columns are filtered to '+esc(selectedPeriod)+'.':'')+'</div>'+
+  const filters='<div class="gradebook-control-panel">'+
+    '<div class="field"><label>Student Search</label><input id="gradebookSearchFilter" value="'+esc(state.gradebookSearchFilter||"")+'" placeholder="Name or email"></div>'+
+    '<div class="field"><label>Unit</label><select id="gradebookUnitFilter"><option value="All">All visible units</option>'+unitChoices+'</select></div>'+
+    '<div class="field"><label>Show</label><select id="gradebookStatusFilter">'+[
+      ["all","All students"],["ungraded","Has ungraded work"],["missing","Missing work"],["late","Late work"],["excused","Excused work"],["below","Below threshold"],["appeals","Open appeals"],["not-ready","Not certification-ready"],["ready","Ready to certify"],["certified","Certified"]
+    ].map(([value,label])=>'<option value="'+value+'" '+(statusFilter===value?'selected':'')+'>'+label+'</option>').join("")+'</select></div>'+
+    '<div class="field compact-threshold"><label>At-Risk Threshold</label><div class="input-with-suffix"><input id="gradebookThreshold" type="number" min="0" max="100" value="'+esc(state.gradebookThreshold||70)+'"><span>%</span></div></div>'+
+    '<div class="gradebook-control-actions"><button class="'+(state.gradebookAttentionOnly?'primary-btn':'secondary-btn')+' small-btn" data-action="gradebook-attention">'+(state.gradebookAttentionOnly?'Showing Needs Attention':'Needs Attention')+'</button><button class="secondary-btn small-btn" data-action="gradebook-bulk-actions">Bulk Actions'+(selectedStudents.size?' ('+selectedStudents.size+')':'')+'</button><button class="secondary-btn small-btn" data-action="gradebook-paste">Paste Grades</button></div>'+
+  '</div>';
+
+  const nav='<div class="gradebook-toolbar"><div class="gradebook-jumps"><span>Units</span>'+unitJumpButtons+(assessments.length?'<button class="gradebook-jump assessment-jump" data-action="gradebook-jump" data-target="assessments"><span>✓</span>Assessments<small>'+assessments.length+'</small></button>':'')+'</div><div class="gradebook-help">Unit chips collapse columns. Double-click a coursework cell for the full rubric/comment editor.</div></div>';
+
+  const emptyFiltered=!visibleContexts.length?'<div class="empty-state compact-empty"><div class="empty-symbol">G</div><h3>No students match these Gradebook filters.</h3><p>Change the search, status filter, threshold, or Needs Attention mode.</p></div>':'';
+  return summary+periodToolbar+filters+
+    '<div class="notice gradebook-notice"><strong>Final projections use each student’s selected grading pathway.</strong> Coursework, Semester Examination, and Comprehensive Final remain separate academic components. Projection values are not certified final grades.</div>'+
     nav+
-    '<div class="gradebook-legend"><span><i class="legend-dot coursework-dot"></i> Click coursework cells to grade</span><span><i class="legend-dot assessment-dot"></i> Assessment cells open formal grading</span><span><i class="legend-dot empty-dot"></i> No grade recorded</span></div>'+
-    '<div class="data-table-wrap gradebook-wrap"><table class="data-table gradebook-table">'+header+'<tbody>'+body+'</tbody>'+footer+'</table></div>';
+    '<div class="gradebook-legend"><span><i class="legend-dot coursework-dot"></i> Type directly into coursework cells</span><span><i class="legend-dot assessment-dot"></i> Assessment cells open formal grading</span><span><i class="legend-dot empty-dot"></i> No grade recorded</span></div>'+
+    emptyFiltered+
+    (visibleContexts.length?'<div class="data-table-wrap gradebook-wrap"><table class="data-table gradebook-table advanced-gradebook-table">'+header+'<tbody>'+body+'</tbody>'+footer+'</table></div>':'');
 }
 
 function renderStudentGrades(){
