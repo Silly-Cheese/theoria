@@ -3321,6 +3321,197 @@ function openResourceModal(existing){
   });
 }
 
+
+function gradebookCurrentMaps(){
+  return {
+    assignments:(state.sectionData?.assignments||[]).filter(a=>a.status!=="Draft"),
+    assessments:(state.sectionData?.assessmentRefs||[]).filter(a=>a.status!=="Draft"),
+    gradeMap:new Map((state.sectionData?.grades||[]).map(g=>[g.assignmentId+"_"+g.studentId,g])),
+    assessmentGradeMap:new Map((state.sectionData?.assessmentGrades||[]).map(g=>[g.assessmentId+"_"+g.studentId,g]))
+  };
+}
+async function saveInlineGrade(assignmentId,studentId,rawScore,{reason="Inline Gradebook edit"}={}){
+  const assignment=state.sectionData?.assignments?.find(x=>x.id===assignmentId);
+  const student=state.sectionData?.members?.find(x=>x.id===studentId);
+  if(!assignment||!student)return;
+  const gradingPeriod=assignment.gradingPeriod||"Overall";
+  if(state.currentSection?.gradingPolicy?.gradingPeriodSettings?.[gradingPeriod]?.locked===true){
+    showToast(gradingPeriod+" is finalized and locked.");return false;
+  }
+  const score=Number(rawScore);
+  if(!Number.isFinite(score)||score<0||score>Number(assignment.points||0)){
+    showToast("Enter a score from 0 to "+Number(assignment.points||0)+".");return false;
+  }
+  const existing=state.sectionData.grades.find(g=>g.assignmentId===assignmentId&&g.studentId===studentId);
+  if(existing&&Number(existing.score)===score)return true;
+  try{
+    await setDoc(doc(db,"sections",state.currentSection.id,"grades",assignmentId+"_"+studentId),{
+      assignmentId,studentId,studentName:student.displayName||"Student",assignmentTitle:assignment.title||"Assignment",
+      score,maxPoints:Number(assignment.points||0),gradeStatus:existing?.gradeStatus||"Normal",
+      comment:existing?.comment||"",rubricId:existing?.rubricId||assignment.rubricId||"",
+      rubricTitle:existing?.rubricTitle||assignment.rubricTitle||"",rubricScores:existing?.rubricScores||[],
+      overrideReason:existing?reason:"",updatedAt:serverTimestamp()
+    },{merge:true});
+    if(window.TheoriaPhase5?.logSectionEvent)await window.TheoriaPhase5.logSectionEvent(
+      state.currentSection.id,existing?"grade_changed":"grade_created","student",studentId,
+      {assignmentId,assignmentTitle:assignment.title||"",priorScore:existing?.score??null,newScore:score,reason,source:"inline_gradebook"}
+    );
+    return true;
+  }catch(error){showToast(humanizeFirebaseError(error));return false;}
+}
+async function openGradebookStudentDrawer(studentId){
+  const student=state.sectionData?.members?.find(x=>x.id===studentId);if(!student)return;
+  const {assignments,assessments,gradeMap,assessmentGradeMap}=gradebookCurrentMaps();
+  const snapshot=gradebookAcademicSnapshot(studentId,assignments,gradeMap,assessmentGradeMap);
+  const grades=assignments.map(a=>({assignment:a,grade:gradeMap.get(a.id+"_"+studentId)}));
+  const missing=grades.filter(x=>String(x.grade?.gradeStatus||"")==="Missing"||!x.grade);
+  const late=grades.filter(x=>String(x.grade?.gradeStatus||"")==="Late");
+  const excused=grades.filter(x=>String(x.grade?.gradeStatus||"")==="Excused");
+  const mastery=(state.sectionData?.mastery||[]).find(x=>(x.studentId||x.id)===studentId);
+  let flags=[],audit=[];
+  try{
+    const [flagSnap,auditSnap]=await Promise.all([
+      getDocs(collection(db,"sections",state.currentSection.id,"flags")),
+      getDocs(collection(db,"sections",state.currentSection.id,"auditLog"))
+    ]);
+    flags=flagSnap.docs.map(d=>({id:d.id,...d.data()})).filter(x=>x.studentId===studentId&&x.status!=="Resolved");
+    audit=auditSnap.docs.map(d=>({id:d.id,...d.data()})).filter(x=>x.targetId===studentId||x.details?.studentId===studentId).sort((a,b)=>(b.createdAt?.toMillis?.()||0)-(a.createdAt?.toMillis?.()||0)).slice(0,12);
+  }catch(_){}
+  const modal=openModal({
+    eyebrow:"Gradebook Student Drawer",
+    title:student.displayName||"Student",
+    wide:true,
+    body:'<div class="student-profile-summary gradebook-drawer-summary"><div><span>Coursework</span><strong>'+(snapshot.coursework===null?"—":snapshot.coursework+"%")+'</strong></div><div><span>Semester Exam</span><strong>'+(snapshot.semester===null?"—":snapshot.semester+"%")+'</strong></div><div><span>Comprehensive</span><strong>'+(snapshot.comprehensive===null?"—":snapshot.comprehensive+"%")+'</strong></div><div><span>Final Projection</span><strong>'+(snapshot.displayPercent===null?"—":snapshot.displayPercent+"% "+snapshot.letter)+'</strong></div></div>'+
+      '<div class="grid-2"><div class="panel"><div class="panel-head"><div class="panel-title">Academic Standing</div></div><div class="panel-body"><div class="detail-list"><div><span>Email</span><strong>'+esc(student.email||"—")+'</strong></div><div><span>Enrollment</span><strong>'+esc(student.status||"enrolled")+'</strong></div><div><span>Grading Pathway</span><strong>'+esc(snapshot.pathway==="examination"?"Examination":snapshot.pathway==="composite"?"Composite":"Not selected")+'</strong></div><div><span>Certification</span><strong>'+esc(snapshot.status)+'</strong></div><div><span>Mastery</span><strong>'+(mastery?.overallPercent===undefined||mastery?.overallPercent===null?"—":esc(mastery.overallPercent)+"%")+'</strong></div></div></div></div>'+
+      '<div class="panel"><div class="panel-head"><div class="panel-title">Work Requiring Attention</div></div><div class="panel-body"><div class="detail-list"><div><span>Missing / Ungraded</span><strong>'+missing.length+'</strong></div><div><span>Late</span><strong>'+late.length+'</strong></div><div><span>Excused</span><strong>'+excused.length+'</strong></div><div><span>Open Appeals</span><strong>'+snapshot.appeals.length+'</strong></div><div><span>Academic Flags</span><strong>'+flags.length+'</strong></div></div></div></div></div>'+
+      (missing.length?'<div class="panel" style="margin-top:16px"><div class="panel-head"><div class="panel-title">Missing / Ungraded Coursework</div></div><div class="panel-body"><div class="profile-record-list">'+missing.slice(0,12).map(x=>'<div class="profile-record-row"><div><strong>'+esc(x.assignment.title||"Assignment")+'</strong><span>'+esc(x.assignment.gradingPeriod||"Overall")+'</span></div><b>'+esc(x.grade?.gradeStatus||"Ungraded")+'</b></div>').join("")+'</div></div></div>':'')+
+      '<div class="grid-2" style="margin-top:16px"><div class="panel"><div class="panel-head"><div class="panel-title">Academic Flags</div></div><div class="panel-body">'+(flags.length?flags.map(f=>'<div class="flag-row"><div><strong>'+esc(f.type||"Academic Flag")+'</strong><span>'+esc(f.note||"")+'</span></div></div>').join(""):'<div class="empty-mini">No active academic flags.</div>')+'</div></div>'+
+      '<div class="panel"><div class="panel-head"><div class="panel-title">Recent Grade Activity</div></div><div class="panel-body">'+(audit.length?audit.map(row=>'<div class="profile-record-row"><div><strong>'+esc(String(row.action||"Academic event").replace(/_/g," "))+'</strong><span>'+esc(row.details?.assignmentTitle||row.details?.assessmentTitle||row.details?.reason||"")+'</span></div><small>'+esc(row.actorName||"System")+'</small></div>').join(""):'<div class="empty-mini">No recent student-specific grade activity.</div>')+'</div></div></div>'+
+      '<div class="card-actions" style="margin-top:18px"><button class="primary-btn small-btn" data-phase4-action="record-audit" data-section="'+state.currentSection.id+'" data-student="'+studentId+'">Open Final Grade Audit</button><button class="secondary-btn small-btn" data-teaching-action="student-profile" data-student="'+studentId+'">Full Academic Profile</button><button class="secondary-btn small-btn" data-phase3-action="accommodations" data-student="'+studentId+'">Assessment Access</button></div>',
+    footer:'<button class="primary-btn" data-close-modal>Done</button>'
+  });
+  modal?.classList.add("gradebook-drawer-modal");
+}
+function gradebookColumnMenu(assignmentId){
+  const assignment=state.sectionData?.assignments?.find(x=>x.id===assignmentId);if(!assignment)return;
+  const students=state.sectionData.members||[];
+  const grades=students.map(student=>state.sectionData.grades.find(g=>g.assignmentId===assignmentId&&g.studentId===student.id));
+  const percentages=grades.map(g=>g&&g.score!==null&&g.score!==undefined&&Number(assignment.points||0)>0?Number(g.score)/Number(assignment.points)*100:null);
+  const stats=gradebookDistribution(percentages);
+  const missing=grades.filter(g=>String(g?.gradeStatus||"")==="Missing").length;
+  const late=grades.filter(g=>String(g?.gradeStatus||"")==="Late").length;
+  const excused=grades.filter(g=>String(g?.gradeStatus||"")==="Excused").length;
+  const ungraded=grades.filter(g=>!g||g.score===null||g.score===undefined).length;
+  const modal=openModal({
+    eyebrow:"Gradebook Column",
+    title:assignment.title||"Assignment",
+    wide:true,
+    body:'<div class="student-profile-summary"><div><span>Mean</span><strong>'+(stats.mean===null?"—":stats.mean+"%")+'</strong></div><div><span>Median</span><strong>'+(stats.median===null?"—":stats.median+"%")+'</strong></div><div><span>High / Low</span><strong>'+(stats.high===null?"—":stats.high+" / "+stats.low+"%")+'</strong></div><div><span>Std. Deviation</span><strong>'+(stats.sd===null?"—":stats.sd)+'</strong></div></div>'+
+      '<div class="gradebook-column-stats"><span>'+stats.count+' graded</span><span>'+ungraded+' ungraded</span><span>'+missing+' missing</span><span>'+late+' late</span><span>'+excused+' excused</span></div>'+
+      '<div class="operations-grid compact-operations" style="margin-top:16px"><button class="operation-card" data-action="assignment-submissions" data-id="'+assignmentId+'"><span>S</span><strong>Grade Submissions</strong><small>Open submitted coursework.</small></button><button class="operation-card" data-action="edit-assignment" data-id="'+assignmentId+'"><span>E</span><strong>Edit Assignment</strong><small>Points, grading period, due date, and rubric.</small></button><button class="operation-card" id="columnBulkGrade"><span>B</span><strong>Bulk Grade</strong><small>Apply score, status, or feedback to selected students.</small></button><button class="operation-card" id="columnPasteGrades"><span>P</span><strong>Paste Scores</strong><small>Paste a column copied from a spreadsheet.</small></button></div>',
+    footer:'<button class="primary-btn" data-close-modal>Done</button>'
+  });
+  modal.querySelector("#columnBulkGrade").onclick=()=>{closeModal();gradebookBulkActionsModal(assignmentId);};
+  modal.querySelector("#columnPasteGrades").onclick=()=>{closeModal();gradebookPasteGradesModal(assignmentId);};
+}
+function gradebookBulkActionsModal(preferredAssignmentId=""){
+  const assignments=(state.sectionData?.assignments||[]).filter(a=>a.status!=="Draft");
+  if(!assignments.length)return showToast("No published coursework is available.");
+  const selectedIds=(state.gradebookSelectedStudents||[]).filter(id=>state.sectionData.members.some(m=>m.id===id));
+  const students=selectedIds.length?state.sectionData.members.filter(m=>selectedIds.includes(m.id)):state.sectionData.members;
+  const defaultId=assignments.some(a=>a.id===preferredAssignmentId)?preferredAssignmentId:assignments[0].id;
+  const modal=openModal({
+    eyebrow:"Gradebook Bulk Actions",
+    title:selectedIds.length?students.length+" Selected Students":"All Students",
+    wide:true,
+    body:'<form id="gradebookBulkForm"><div class="notice"><strong>'+students.length+' student'+(students.length===1?"":"s")+'</strong> will be affected. Every bulk operation is written to the academic audit log.</div>'+
+      '<div class="compact-field-grid"><div class="field"><label>Assignment</label><select name="assignmentId">'+assignments.map(a=>'<option value="'+a.id+'" '+(a.id===defaultId?'selected':'')+'>'+esc(a.title)+' • '+esc(a.points||0)+' pts</option>').join("")+'</select></div><div class="field"><label>Action</label><select name="bulkAction"><option value="score">Set same score</option><option value="full">Give full credit</option><option value="missing">Mark Missing</option><option value="late">Mark Late</option><option value="excused">Mark Excused</option><option value="clear">Clear grade</option></select></div><div class="field"><label>Score (when applicable)</label><input name="score" type="number" min="0" step="0.1"></div></div>'+
+      '<div class="field"><label>Shared Feedback</label><textarea name="comment" placeholder="Optional comment applied to these students."></textarea></div>'+
+      '<div class="field"><label>Reason / Audit Note</label><textarea name="reason" required placeholder="Required for this bulk grade operation."></textarea></div>'+
+      '<div class="modal-foot" style="margin:24px -24px -24px"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Apply Bulk Action</button></div></form>'
+  });
+  modal.querySelector("#gradebookBulkForm").onsubmit=async e=>{
+    e.preventDefault();
+    const fd=new FormData(e.currentTarget),assignment=assignments.find(a=>a.id===String(fd.get("assignmentId"))),action=String(fd.get("bulkAction")),reason=String(fd.get("reason")||"").trim(),comment=String(fd.get("comment")||"").trim();
+    if(!assignment||!reason)return;
+    const period=assignment.gradingPeriod||"Overall";
+    if(state.currentSection?.gradingPolicy?.gradingPeriodSettings?.[period]?.locked===true)return showToast(period+" is finalized and locked.");
+    const entered=String(fd.get("score")||"").trim();
+    if(["score","late"].includes(action)&&entered===""&&action==="score")return showToast("Enter a score for this bulk action.");
+    try{
+      for(let offset=0;offset<students.length;offset+=350){
+        const batch=writeBatch(db);
+        students.slice(offset,offset+350).forEach(student=>{
+          const ref=doc(db,"sections",state.currentSection.id,"grades",assignment.id+"_"+student.id);
+          const existing=state.sectionData.grades.find(g=>g.assignmentId===assignment.id&&g.studentId===student.id);
+          if(action==="clear"){batch.delete(ref);return;}
+          let score=existing?.score??0,status=existing?.gradeStatus||"Normal";
+          if(action==="score"){score=Number(entered);status="Normal";}
+          if(action==="full"){score=Number(assignment.points||0);status="Normal";}
+          if(action==="missing"){score=0;status="Missing";}
+          if(action==="late"){score=entered===""?Number(existing?.score||0):Number(entered);status="Late";}
+          if(action==="excused"){score=Number(existing?.score||0);status="Excused";}
+          score=Math.max(0,Math.min(Number(assignment.points||0),Number(score||0)));
+          batch.set(ref,{assignmentId:assignment.id,studentId:student.id,studentName:student.displayName||"Student",assignmentTitle:assignment.title||"Assignment",score,maxPoints:Number(assignment.points||0),gradeStatus:status,comment:comment||existing?.comment||"",overrideReason:reason,updatedAt:serverTimestamp()},{merge:true});
+        });
+        await batch.commit();
+      }
+      if(window.TheoriaPhase5?.logSectionEvent)await window.TheoriaPhase5.logSectionEvent(state.currentSection.id,"bulk_grade_changed","assignment",assignment.id,{assignmentTitle:assignment.title||"",studentIds:students.map(x=>x.id),studentCount:students.length,action,reason});
+      closeModal();state.sectionData=await loadSectionData(state.currentSection);renderSectionDetail("gradebook");showToast("Bulk Gradebook action applied to "+students.length+" student"+(students.length===1?"":"s")+".");
+    }catch(error){showToast(humanizeFirebaseError(error));}
+  };
+}
+function gradebookPasteGradesModal(preferredAssignmentId=""){
+  const assignments=(state.sectionData?.assignments||[]).filter(a=>a.status!=="Draft");
+  if(!assignments.length)return showToast("No published coursework is available.");
+  const defaultId=assignments.some(a=>a.id===preferredAssignmentId)?preferredAssignmentId:assignments[0].id;
+  const students=state.sectionData.members||[];
+  const modal=openModal({
+    eyebrow:"Spreadsheet Grade Import",
+    title:"Paste Grades",
+    wide:true,
+    body:'<form id="pasteGradesForm"><div class="academic-banner"><div class="kicker">Fast Entry</div><h3>Paste one spreadsheet column</h3><p>Paste scores in roster order, or paste two columns as Student Name + Score. Theoria validates scores against the selected assignment before saving.</p></div>'+
+      '<div class="field"><label>Assignment</label><select name="assignmentId">'+assignments.map(a=>'<option value="'+a.id+'" '+(a.id===defaultId?'selected':'')+'>'+esc(a.title)+' • '+esc(a.points||0)+' pts</option>').join("")+'</select></div>'+
+      '<div class="field"><label>Spreadsheet Data</label><textarea name="pasteData" rows="12" required placeholder="92&#10;88&#10;100&#10;74&#10;96&#10;&#10;or&#10;&#10;Student Name&#9;92"></textarea></div>'+
+      '<div class="notice">'+students.length+' students are currently in this roster. Single-column values are applied in the Gradebook roster order.</div>'+
+      '<div class="modal-foot" style="margin:24px -24px -24px"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Validate & Save Grades</button></div></form>'
+  });
+  modal.querySelector("#pasteGradesForm").onsubmit=async e=>{
+    e.preventDefault();const fd=new FormData(e.currentTarget),assignment=assignments.find(a=>a.id===String(fd.get("assignmentId"))),raw=String(fd.get("pasteData")||"").trim();
+    if(!assignment||!raw)return;
+    const period=assignment.gradingPeriod||"Overall";
+    if(state.currentSection?.gradingPolicy?.gradingPeriodSettings?.[period]?.locked===true)return showToast(period+" is finalized and locked.");
+    const lines=raw.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+    const rows=[];
+    for(let i=0;i<lines.length;i++){
+      const parts=lines[i].split(/\t|,/).map(x=>x.trim()).filter(Boolean);
+      if(parts.length>=2&&!Number.isNaN(Number(parts[parts.length-1]))){
+        const name=parts.slice(0,-1).join(" ").toLowerCase(),score=Number(parts[parts.length-1]);
+        const student=students.find(s=>String(s.displayName||"").toLowerCase()===name||String(s.email||"").toLowerCase()===name);
+        if(student)rows.push({student,score});
+      }else if(!Number.isNaN(Number(parts[0]))&&students[i]){
+        rows.push({student:students[i],score:Number(parts[0])});
+      }
+    }
+    if(!rows.length)return showToast("No valid score rows were found.");
+    const invalid=rows.find(x=>x.score<0||x.score>Number(assignment.points||0));
+    if(invalid)return showToast("A pasted score is outside the 0–"+Number(assignment.points||0)+" point range.");
+    if(!confirm("Save "+rows.length+" pasted grade"+(rows.length===1?"":"s")+" for "+assignment.title+"?"))return;
+    try{
+      for(let offset=0;offset<rows.length;offset+=350){
+        const batch=writeBatch(db);
+        rows.slice(offset,offset+350).forEach(({student,score})=>{
+          const existing=state.sectionData.grades.find(g=>g.assignmentId===assignment.id&&g.studentId===student.id);
+          batch.set(doc(db,"sections",state.currentSection.id,"grades",assignment.id+"_"+student.id),{assignmentId:assignment.id,studentId:student.id,studentName:student.displayName||"Student",assignmentTitle:assignment.title||"Assignment",score,maxPoints:Number(assignment.points||0),gradeStatus:existing?.gradeStatus||"Normal",comment:existing?.comment||"",overrideReason:existing?"Spreadsheet paste":"",updatedAt:serverTimestamp()},{merge:true});
+        });
+        await batch.commit();
+      }
+      if(window.TheoriaPhase5?.logSectionEvent)await window.TheoriaPhase5.logSectionEvent(state.currentSection.id,"spreadsheet_grades_pasted","assignment",assignment.id,{assignmentTitle:assignment.title||"",studentCount:rows.length});
+      closeModal();state.sectionData=await loadSectionData(state.currentSection);renderSectionDetail("gradebook");showToast(rows.length+" pasted grade"+(rows.length===1?"":"s")+" saved.");
+    }catch(error){showToast(humanizeFirebaseError(error));}
+  };
+}
+
 function openGradeModal(assignmentId,studentId){
   const a=state.sectionData.assignments.find(x=>x.id===assignmentId);
   const s=state.sectionData.members.find(x=>x.id===studentId);
