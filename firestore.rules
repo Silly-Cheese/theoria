@@ -650,6 +650,40 @@ service cloud.firestore {
           );
       }
 
+      match /attemptSubmissions/{historyId} {
+        allow read: if assessmentOwner(assessmentId)
+          || (
+            assessmentData(assessmentId).sectionId != ''
+            && sectionGrader(assessmentData(assessmentId).sectionId)
+          )
+          || (
+            signedIn()
+            && resource.data.studentId == uid()
+          );
+        allow create, update, delete: if assessmentOwner(assessmentId)
+          || (
+            assessmentData(assessmentId).sectionId != ''
+            && sectionAcademicManager(assessmentData(assessmentId).sectionId)
+          );
+      }
+
+      match /attemptResults/{historyId} {
+        allow read: if assessmentOwner(assessmentId)
+          || (
+            assessmentData(assessmentId).sectionId != ''
+            && sectionGrader(assessmentData(assessmentId).sectionId)
+          )
+          || (
+            signedIn()
+            && resource.data.studentId == uid()
+          );
+        allow create, update, delete: if assessmentOwner(assessmentId)
+          || (
+            assessmentData(assessmentId).sectionId != ''
+            && sectionAcademicManager(assessmentData(assessmentId).sectionId)
+          );
+      }
+
       match /submissions/{studentId} {
           allow read: if sectionGrader(sectionId) || isSelf(studentId);
           allow create: if isSelf(studentId)
