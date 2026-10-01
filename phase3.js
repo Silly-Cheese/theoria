@@ -3057,6 +3057,7 @@ async function logEvent(type,details={}){
 
 function lockExamSecurity(reason,eventType="security_lock"){
   if(!P3.exam)return;
+  core().closeModal?.();
   P3.exam.securityState.locked=true;
   P3.exam.securityState.lockReason=reason||"The secure assessment session is paused.";
   logEvent(eventType,{reason:P3.exam.securityState.lockReason,violationCount:P3.exam.securityState.violationCount});
@@ -3073,13 +3074,17 @@ async function recordSecurityViolation(type,details={}){
   }
   security.lastViolationAt=now;
   security.violationCount=Number(security.violationCount||0)+1;
-  await logEvent(type,{...details,violationCount:security.violationCount});
-  try{
-    await updateDoc(doc(db,"assessments",P3.exam.assessment.id,"submissions",state().user.uid),{
-      securityViolationCount:security.violationCount,
-      updatedAt:serverTimestamp()
-    });
-  }catch(error){console.warn("Unable to persist security violation count:",error);}
+  const violationCount=security.violationCount;
+  await logEvent(type,{...details,violationCount});
+  security.persistPromise=(security.persistPromise||Promise.resolve()).then(async()=>{
+    try{
+      await updateDoc(doc(db,"assessments",P3.exam.assessment.id,"submissions",state().user.uid),{
+        securityViolationCount:violationCount,
+        updatedAt:serverTimestamp()
+      });
+    }catch(error){console.warn("Unable to persist security violation count:",error);}
+  });
+  await security.persistPromise;
 
   const policyMode=String(policy.focusPolicy||((policy.logFocusLoss===false)?"none":"log"));
   if(policyMode==="pause"){
@@ -3235,7 +3240,8 @@ function launchExam(assessment,questions,submission){
       lastViolationAt:0,
       locked:false,
       lockReason:"",
-      autoSubmitting:false
+      autoSubmitting:false,
+      persistPromise:Promise.resolve()
     }
   };
   if(recoverLocal)setTimeout(()=>toast("Recovered a newer local assessment draft after an interrupted save."),80);
@@ -3268,7 +3274,7 @@ function clock(sec){
 function renderExam(){
   const ex=P3.exam;if(!ex)return;
   const a=ex.assessment,q=ex.questions[ex.index],answer=ex.answers[q.id],marked=ex.marked.includes(q.id);
-  const nav=ex.questions.map((x,i)=>'<button class="exam-nav-item '+(i===ex.index?'active':'')+' '+(ex.answers[x.id]!==undefined&&String(ex.answers[x.id]).length?'answered':'')+' '+(ex.marked.includes(x.id)?'marked':'')+'" data-phase3-action="exam-jump" data-index="'+i+'">'+(i+1)+'</button>').join("");
+  const nav=ex.questions.map((x,i)=>'<button class="exam-nav-item '+(i===ex.index?'active':'')+' '+(ex.answers[x.id]!==undefined&&String(ex.answers[x.id]).length?'answered':'')+' '+(ex.marked.includes(x.id)?'marked':'')+'" data-phase3-action="exam-jump" data-index="'+i+'" '+(a.backtracking===false&&i<ex.index?'disabled aria-disabled="true"':'')+'>'+(i+1)+'</button>').join("");
   let response="";
   if(q.type==="Multiple Choice")response='<div class="choice-list">'+(q.options||[]).map(o=>'<label class="choice-option '+(answer===o.id?'selected':'')+'"><input type="radio" name="examAnswer" value="'+esc(o.id)+'" '+(answer===o.id?'checked':'')+'><span class="choice-label">'+esc(o.id)+'</span><span>'+esc(o.text)+'</span></label>').join("")+'</div>';
   else if(q.type==="Multiple Select"){const arr=Array.isArray(answer)?answer:[];response='<div class="choice-list">'+(q.options||[]).map(o=>'<label class="choice-option '+(arr.includes(o.id)?'selected':'')+'"><input type="checkbox" name="examMulti" value="'+esc(o.id)+'" '+(arr.includes(o.id)?'checked':'')+'><span class="choice-label">'+esc(o.id)+'</span><span>'+esc(o.text)+'</span></label>').join("")+'</div>';}
@@ -3277,7 +3283,7 @@ function renderExam(){
   $("#examRoot").innerHTML='<div class="exam-shell"><header class="exam-header"><div><div class="exam-brand">Θ THEORIA</div><div class="exam-title">'+esc(a.title)+'</div></div><div class="exam-candidate">Candidate <strong>'+esc(ex.submission.candidateNumber)+'</strong></div><div id="examTimer" class="exam-timer">--:--</div></header>'+
     '<div class="exam-body"><aside class="exam-sidebar"><div class="exam-progress">Question '+(ex.index+1)+' of '+ex.questions.length+'</div><div class="exam-navigator">'+nav+'</div><div class="exam-legend"><span>● Answered</span><span>◆ Marked</span></div>'+(ex.submission.accommodationsApplied?.calculator?'<button class="secondary-btn small-btn full-btn" data-phase3-action="calculator">Calculator</button>':'')+'<button class="danger-btn full-btn" data-phase3-action="submit-exam">Submit Assessment</button></aside>'+
     '<main class="exam-question"><div class="exam-question-meta"><span>'+esc((a.parts||[]).find(p=>p.id===q.partId)?.title||"Assessment")+'</span><span>'+esc(q.points)+' points</span></div>'+(q.sourceTitle?'<div class="source-title">'+esc(q.sourceTitle)+'</div>':'')+(q.stimulus?'<div class="exam-stimulus">'+esc(q.stimulus).replace(/\n/g,"<br>")+'</div>':'')+'<h2>'+esc(q.prompt)+'</h2>'+response+
-    '<div class="exam-controls"><button class="secondary-btn" data-phase3-action="mark-question">'+(marked?"Unmark":"Mark for Review")+'</button><div><button class="secondary-btn" data-phase3-action="exam-prev" '+(ex.index===0?'disabled':'')+'>Previous</button><button class="primary-btn" data-phase3-action="'+(ex.index===ex.questions.length-1?"review-exam":"exam-next")+'">'+(ex.index===ex.questions.length-1?"Review & Submit":"Next")+'</button></div></div></main></div></div>';
+    '<div class="exam-controls"><button class="secondary-btn" data-phase3-action="mark-question">'+(marked?"Unmark":"Mark for Review")+'</button><div><button class="secondary-btn" data-phase3-action="exam-prev" '+(ex.index===0||a.backtracking===false?'disabled':'')+'>Previous</button><button class="primary-btn" data-phase3-action="'+(ex.index===ex.questions.length-1?"review-exam":"exam-next")+'">'+(ex.index===ex.questions.length-1?"Review & Submit":"Next")+'</button></div></div></main></div></div>';
   bindExamInputs();
   renderSecurityOverlay();
 }
@@ -3316,8 +3322,8 @@ function reviewExam(){
     title:"Review Before Submission",
     wide:true,
     body:'<div class="review-summary-grid"><div><strong>'+answered+'</strong><span>Answered</span></div><div><strong>'+unanswered+'</strong><span>Unanswered</span></div><div><strong>'+marked+'</strong><span>Marked</span></div></div>'+
-      (unanswered?'<div class="notice danger-notice" style="margin-top:14px">You still have '+unanswered+' unanswered question'+(unanswered===1?"":"s")+'. You may return to them before submitting.</div>':'<div class="notice" style="margin-top:14px">All questions have a response recorded.</div>')+
-      '<div class="review-question-grid">'+ex.questions.map((q,i)=>{const a=ex.answers[q.id],done=Array.isArray(a)?a.length>0:String(a??"").trim().length>0;return '<button type="button" class="review-question-chip '+(done?'answered':'unanswered')+' '+(ex.marked.includes(q.id)?'marked':'')+'" data-phase3-action="review-jump" data-index="'+i+'"><span>Q'+(i+1)+'</span><strong>'+(done?"Answered":"Unanswered")+'</strong>'+(ex.marked.includes(q.id)?'<small>Marked</small>':'')+'</button>';}).join("")+'</div>',
+      (unanswered?'<div class="notice danger-notice" style="margin-top:14px">You still have '+unanswered+' unanswered question'+(unanswered===1?"":"s")+'. '+(ex.assessment.backtracking===false?'Backtracking is disabled, so earlier questions cannot be reopened.':'You may return to them before submitting.')+'</div>':'<div class="notice" style="margin-top:14px">All questions have a response recorded.</div>')+
+      '<div class="review-question-grid">'+ex.questions.map((q,i)=>{const ans=ex.answers[q.id],done=Array.isArray(ans)?ans.length>0:String(ans??"").trim().length>0,blocked=ex.assessment.backtracking===false&&i<ex.index;return '<button type="button" class="review-question-chip '+(done?'answered':'unanswered')+' '+(ex.marked.includes(q.id)?'marked':'')+'" data-phase3-action="review-jump" data-index="'+i+'" '+(blocked?'disabled aria-disabled="true"':'')+'><span>Q'+(i+1)+'</span><strong>'+(done?"Answered":"Unanswered")+'</strong>'+(ex.marked.includes(q.id)?'<small>Marked</small>':'')+'</button>';}).join("")+'</div>',
     footer:'<button class="secondary-btn" data-close-modal>Return to Assessment</button><button class="danger-btn" data-phase3-action="confirm-submit-exam">Submit Assessment</button>'
   });
 }
