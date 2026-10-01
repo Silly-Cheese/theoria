@@ -1031,13 +1031,29 @@ async function renderAssessments(){
     return;
   }
   if(s.role==="instructor"){
-    const templates=P3.assessments.filter(a=>!a.sectionId);
-    const entrance=P3.assessments.filter(a=>!!a.sectionId&&a.entranceExam===true);
-    const assigned=P3.assessments.filter(a=>!!a.sectionId&&a.entranceExam!==true);
     const card=a=>'<article class="assessment-card"><div class="assessment-type">'+esc(a.type)+(a.entranceExam?' • Entrance Exam':'')+'</div><h3>'+esc(a.title)+'</h3><p>'+esc(a.courseCode||"")+' • '+(a.sectionId?esc(a.sectionName||"Assigned Section"):'Reusable assessment template')+'</p><div class="assessment-card-stats"><span><strong>'+esc(a.questionCount||0)+'</strong> '+(a.randomDrawEnabled?'questions/student':'questions')+'</span><span><strong>'+esc(a.totalPoints||0)+'</strong> points</span><span>'+(a.entranceExam?'Pass '+esc(a.entrancePassPercent||70)+'%':esc(a.sectionId?availability(a):"Template"))+'</span></div><div class="card-actions">'+(!a.sectionId?'<button class="primary-btn small-btn" data-phase3-action="assign-assessment" data-id="'+a.id+'">Assign to Section</button>':a.entranceExam?'<button class="secondary-btn small-btn" data-phase3-action="open-entrance-section" data-section="'+esc(a.sectionId)+'">Manage Section</button>':'<button class="secondary-btn small-btn" data-phase3-action="edit-assignment" data-id="'+a.id+'">Edit Assignment</button>')+'<button class="secondary-btn small-btn" data-phase3-action="open-assessment" data-id="'+a.id+'">Open Builder</button>'+(a.entranceExam?'':'<button class="danger-btn small-btn" data-phase3-action="delete-assessment" data-id="'+a.id+'">Delete</button>')+'</div></article>';
-    el.innerHTML=(templates.length?'<div class="assessment-library-group"><div class="page-head compact-head"><div><div class="panel-title">Assessment Templates</div><p class="page-subtitle">Build once from the Question Bank, then assign to one or more sections.</p></div></div><div class="assessment-grid">'+templates.map(card).join("")+'</div></div>':'')+
-      (entrance.length?'<div class="assessment-library-group"><div class="page-head compact-head"><div><div class="panel-title">Entrance Examinations</div><p class="page-subtitle">Enrollment-gating assessments configured from section settings.</p></div></div><div class="assessment-grid">'+entrance.map(card).join("")+'</div></div>':'')+
-      (assigned.length?'<div class="assessment-library-group"><div class="page-head compact-head"><div><div class="panel-title">Assigned Assessments</div><p class="page-subtitle">Live section copies with their own schedule, submissions, and grading.</p></div></div><div class="assessment-grid">'+assigned.map(card).join("")+'</div></div>':'');
+    const courseGroups=new Map();
+    for(const assessment of P3.assessments){
+      const key=assessment.courseId||assessment.courseCode||assessment.courseTitle||"uncategorized";
+      if(!courseGroups.has(key))courseGroups.set(key,{courseId:assessment.courseId||"",courseCode:assessment.courseCode||"Course",courseTitle:assessment.courseTitle||"",items:[]});
+      courseGroups.get(key).items.push(assessment);
+    }
+    const groups=[...courseGroups.values()].sort((a,b)=>{
+      const codeCompare=String(a.courseCode||"").localeCompare(String(b.courseCode||""),undefined,{numeric:true,sensitivity:"base"});
+      return codeCompare||String(a.courseTitle||"").localeCompare(String(b.courseTitle||""),undefined,{sensitivity:"base"});
+    });
+    const subgroup=(title,subtitle,items)=>items.length?'<div class="assessment-course-subgroup"><div class="page-head compact-head"><div><div class="panel-title">'+esc(title)+'</div><p class="page-subtitle">'+esc(subtitle)+'</p></div></div><div class="assessment-grid">'+items.map(card).join("")+'</div></div>':'';
+    el.innerHTML=groups.map(group=>{
+      const templates=group.items.filter(a=>!a.sectionId).sort((a,b)=>String(a.title||"").localeCompare(String(b.title||""),undefined,{numeric:true,sensitivity:"base"}));
+      const entrance=group.items.filter(a=>!!a.sectionId&&a.entranceExam===true).sort((a,b)=>String(a.title||"").localeCompare(String(b.title||""),undefined,{numeric:true,sensitivity:"base"}));
+      const assigned=group.items.filter(a=>!!a.sectionId&&a.entranceExam!==true).sort((a,b)=>String(a.sectionName||"").localeCompare(String(b.sectionName||""),undefined,{numeric:true,sensitivity:"base"})||String(a.title||"").localeCompare(String(b.title||""),undefined,{numeric:true,sensitivity:"base"}));
+      const sectionCount=new Set(group.items.filter(a=>a.sectionId).map(a=>a.sectionId)).size;
+      return '<section class="assessment-library-group assessment-course-group"><div class="detail-hero assessment-course-hero"><div class="eyebrow">Course Assessments</div><h2 class="detail-title">'+esc(group.courseCode)+(group.courseTitle?' — '+esc(group.courseTitle):'')+'</h2><p class="page-subtitle">'+templates.length+' reusable template'+(templates.length===1?"":"s")+' • '+assigned.length+' assigned assessment'+(assigned.length===1?"":"s")+' • '+sectionCount+' section'+(sectionCount===1?"":"s")+'</p></div>'+
+        subgroup("Assessment Templates","Reusable assessments for this course.",templates)+
+        subgroup("Entrance Examinations","Enrollment-gating assessments for this course.",entrance)+
+        subgroup("Assigned Assessments","Live section copies, sorted by section and title.",assigned)+
+      '</section>';
+    }).join("");
     return;
   }
   const cards=[];
@@ -1073,7 +1089,16 @@ async function renderAssessments(){
       (retake?'<div class="released-result retake-authorized"><strong>Retake '+esc(retake.authorizedAttemptNumber||"")+'</strong><span>'+esc(retakePolicyLabel(retake.scorePolicy,retake.retakeWeightPercent))+'</span></div>':graded?'<div class="released-result"><strong>'+esc(result.percent)+'%</strong><span>Graded result available</span></div>':'')+
       '<div class="card-actions">'+actions+'</div></article>');
   }
-  el.innerHTML='<div class="assessment-grid">'+cards.join("")+'</div>';
+  const studentGroups=new Map();
+  for(let i=0;i<P3.assessments.length;i++){
+    const assessment=P3.assessments[i],html=cards[i];
+    const key=assessment.courseId||assessment.courseCode||assessment.courseTitle||"uncategorized";
+    if(!studentGroups.has(key))studentGroups.set(key,{courseCode:assessment.courseCode||"Course",courseTitle:assessment.courseTitle||"",cards:[]});
+    studentGroups.get(key).cards.push({assessment,html});
+  }
+  el.innerHTML=[...studentGroups.values()].sort((a,b)=>String(a.courseCode||"").localeCompare(String(b.courseCode||""),undefined,{numeric:true,sensitivity:"base"})).map(group=>
+    '<section class="assessment-library-group assessment-course-group"><div class="page-head compact-head"><div><div class="panel-title">'+esc(group.courseCode)+(group.courseTitle?' — '+esc(group.courseTitle):'')+'</div><p class="page-subtitle">Scheduled and completed assessments for this course.</p></div></div><div class="assessment-grid">'+group.cards.sort((a,b)=>(a.assessment.opensAt?.toMillis?.()||0)-(b.assessment.opensAt?.toMillis?.()||0)||String(a.assessment.title||"").localeCompare(String(b.assessment.title||""),undefined,{numeric:true,sensitivity:"base"})).map(x=>x.html).join("")+'</div></section>'
+  ).join("");
 }
 
 
@@ -2850,42 +2875,175 @@ async function deleteAssessment(assessmentId){
   };
 }
 
+async function cloneAssessmentTemplateToSection(template,detail,section,{initialStatus="Draft",opensAt=null,closesAt=null}={}){
+  const s=state();
+  const ref=doc(collection(db,"assessments"));
+  const questionTotal=detail.questions.reduce((n,q)=>n+Number(q.points||0),0);
+  const clone={
+    ...Object.fromEntries(Object.entries(template).filter(([k])=>!["id","createdAt","updatedAt"].includes(k))),
+    ownerId:s.user.uid,
+    sectionId:section.id,
+    sectionName:section.sectionName,
+    templateSourceId:template.id,
+    title:String(template.title||"Assessment").trim(),
+    status:initialStatus,
+    durationMinutes:Number(template.durationMinutes||60),
+    opensAt,
+    closesAt,
+    questionIds:detail.questions.map(q=>q.id),
+    questionPool:(template.questionPool?.length?template.questionPool:detail.questions.map(q=>({id:q.id,itemId:q.itemId||"",type:q.type,points:Number(q.points||0)}))),
+    poolQuestionCount:detail.questions.length,
+    questionCount:Number(template.questionCount||detail.questions.length),
+    totalPoints:Number(template.totalPoints||questionTotal),
+    createdAt:serverTimestamp(),
+    updatedAt:serverTimestamp()
+  };
+
+  await setDoc(ref,clone);
+  for(let i=0;i<detail.questions.length;i+=180){
+    const batch=writeBatch(db),chunk=detail.questions.slice(i,i+180);
+    for(const q of chunk){
+      const cleanQ=Object.fromEntries(Object.entries(q).filter(([k])=>k!=="id"));
+      batch.set(doc(db,"assessments",ref.id,"questions",q.id),{...cleanQ,clonedAt:serverTimestamp()});
+      const key=detail.keys.find(k=>k.id===q.id);
+      if(key){
+        const cleanK=Object.fromEntries(Object.entries(key).filter(([k])=>k!=="id"));
+        batch.set(doc(db,"assessments",ref.id,"keys",q.id),{...cleanK,clonedAt:serverTimestamp()});
+      }
+    }
+    await batch.commit();
+  }
+
+  if(initialStatus==="Published"){
+    await setDoc(doc(db,"sections",section.id,"assessmentRefs",ref.id),{
+      assessmentId:ref.id,
+      title:clone.title,
+      type:clone.type,
+      assessmentType:clone.type,
+      totalPoints:Number(clone.totalPoints||0),
+      status:"Published",
+      opensAt:clone.opensAt||null,
+      closesAt:clone.closesAt||null,
+      durationMinutes:clone.durationMinutes||0,
+      updatedAt:serverTimestamp()
+    });
+  }
+
+  if(window.TheoriaPhase5?.logSectionEvent){
+    await window.TheoriaPhase5.logSectionEvent(section.id,"assessment_assigned","assessment",ref.id,{
+      title:clone.title||"",
+      templateSourceId:template.id,
+      status:initialStatus,
+      batchAssignment:true
+    });
+  }
+  return {id:ref.id,...clone};
+}
+
 async function chooseAssessmentForSection(sectionId){
   await loadAssessments();
   const section=state().sections.find(x=>x.id===sectionId)||state().currentSection;
-  const templates=P3.assessments.filter(a=>!a.sectionId&&a.courseId===section.courseId);
+  if(!section)return toast("Section not found.");
+  const templates=P3.assessments
+    .filter(a=>!a.sectionId&&a.courseId===section.courseId)
+    .sort((a,b)=>String(a.title||"").localeCompare(String(b.title||""),undefined,{numeric:true,sensitivity:"base"}));
   if(!templates.length)return toast("No reusable assessment templates exist for this course yet. Create one in Assessments and add Question Bank questions first.");
 
   const assignedForSection=P3.assessments.filter(a=>a.sectionId===section.id);
+  const existingTemplateIds=new Set(assignedForSection.map(a=>a.templateSourceId).filter(Boolean));
   const modal=core().openModal({
-    eyebrow:"Assign Assessment",
-    title:"Choose Assessment for "+section.sectionName,
+    eyebrow:"Assign Assessments",
+    title:"Assign to "+section.sectionName,
     wide:true,
     body:'<form id="chooseAssessmentForm" class="academic-form">'+
-      '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Reusable Assessments</h3><p>Select a course template to create an independent copy for this section.</p></div><div class="assignment-preview-stats compact"><div><strong>'+templates.length+'</strong><span>Templates</span></div><div><strong>'+assignedForSection.length+'</strong><span>Already Assigned</span></div></div></div>'+
+      '<div class="academic-banner"><div class="kicker">'+esc(section.courseCode||"Course")+' • Batch Assignment</div><h3>Select one or more assessment templates</h3><p>Every selected template becomes its own independent section assessment with its own questions, submissions, results, grading, and security policy.</p></div>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Assessment Templates</h3><p>Select as many assessments as you want to assign in this batch.</p></div><div class="assignment-preview-stats compact"><div><strong id="selectedAssessmentCount">0</strong><span>Selected</span></div><div><strong>'+templates.length+'</strong><span>Available</span></div><div><strong>'+assignedForSection.length+'</strong><span>Already Assigned</span></div></div></div>'+
       '<div class="question-bank-toolbar"><div class="field"><label>Search Assessments</label><input id="templateSearch" placeholder="Search title or assessment type"></div><div class="field"><label>Type</label><select id="templateType"><option value="">All types</option>'+[...new Set(templates.map(x=>x.type).filter(Boolean))].sort().map(x=>'<option value="'+esc(x)+'">'+esc(x)+'</option>').join("")+'</select></div></div>'+
+      '<div class="inline-actions" style="margin-bottom:12px"><button type="button" class="secondary-btn small-btn" id="selectVisibleAssessments">Select Visible</button><button type="button" class="text-btn" id="clearAssessmentSelection">Clear Selection</button></div>'+
       '<div id="templateChoiceList" class="template-choice-list"></div></section>'+
-      '<div class="assignment-copy-note"><strong>Nothing is published yet.</strong><span>After choosing a template, you will set the destination schedule and decide whether to save it as Draft or publish immediately.</span></div>'+
-      '<div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Continue to Assignment</button></div></form>'
+      '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Shared Schedule</h3><p>The selected assessments keep their own duration, but use this common availability window.</p></div></div>'+
+        '<div class="compact-field-grid"><div class="field"><label>Opens</label><input name="opensAt" type="datetime-local"></div><div class="field"><label>Closes</label><input name="closesAt" type="datetime-local"></div></div>'+
+      '</section>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>03</span><h3>Release</h3><p>Choose how every assessment in this batch should be created.</p></div></div>'+
+        '<div class="release-choice-grid"><label class="release-choice"><input type="radio" name="initialStatus" value="Draft" checked><div><strong>Save All as Draft</strong><span>Students cannot see them until you publish each assessment.</span></div></label><label class="release-choice"><input type="radio" name="initialStatus" value="Published"><div><strong>Assign & Publish All</strong><span>Each assessment becomes visible according to the shared schedule.</span></div></label></div>'+
+      '</section>'+
+      '<div class="assignment-copy-note"><strong>Templates remain unchanged.</strong><span>Existing assignments are marked in the list. If you select one that is already assigned to this section, Theoria will ask before creating another independent copy.</span></div>'+
+      '<div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" id="batchAssignSubmit" type="submit">Assign Selected Assessments</button></div></form>'
   });
-  const form=modal.querySelector("#chooseAssessmentForm"),list=modal.querySelector("#templateChoiceList"),search=modal.querySelector("#templateSearch"),type=modal.querySelector("#templateType");
-  let selectedId=templates[0]?.id||"";
-  const render=()=>{
+
+  const form=modal.querySelector("#chooseAssessmentForm");
+  const list=modal.querySelector("#templateChoiceList");
+  const search=modal.querySelector("#templateSearch");
+  const type=modal.querySelector("#templateType");
+  const count=modal.querySelector("#selectedAssessmentCount");
+  const selected=new Set();
+
+  const filteredTemplates=()=>{
     const q=search.value.trim().toLowerCase(),t=type.value;
-    const rows=templates.filter(a=>(!t||a.type===t)&&(!q||[a.title,a.type,a.courseCode].join(" ").toLowerCase().includes(q)));
-    if(rows.length&&!rows.some(x=>x.id===selectedId))selectedId=rows[0].id;
+    return templates.filter(a=>(!t||a.type===t)&&(!q||[a.title,a.type,a.courseCode,a.courseTitle].join(" ").toLowerCase().includes(q)));
+  };
+  const refreshCount=()=>{count.textContent=String(selected.size);};
+  const render=()=>{
+    const rows=filteredTemplates();
     list.innerHTML=rows.length?rows.map(a=>{
       const assignedCount=P3.assessments.filter(x=>x.templateSourceId===a.id).length;
-      return '<label class="template-choice rich '+(selectedId===a.id?'selected':'')+'"><input type="radio" name="assessmentId" value="'+a.id+'" '+(selectedId===a.id?'checked':'')+'><div><span>'+esc(a.type)+'</span><strong>'+esc(a.title)+'</strong><small>'+esc(a.questionCount||0)+' questions • '+esc(a.totalPoints||0)+' points • '+esc(a.durationMinutes||0)+' min'+(assignedCount?' • assigned '+assignedCount+' time'+(assignedCount===1?"":"s"):'')+'</small></div><div class="template-choice-arrow">→</div></label>';
+      const alreadyHere=existingTemplateIds.has(a.id);
+      return '<label class="template-choice rich '+(selected.has(a.id)?'selected':'')+'"><input type="checkbox" name="assessmentId" value="'+a.id+'" '+(selected.has(a.id)?'checked':'')+'><div><span>'+esc(a.type)+(alreadyHere?' • Already in this section':'')+'</span><strong>'+esc(a.title)+'</strong><small>'+esc(a.questionCount||0)+' questions • '+esc(a.totalPoints||0)+' points • '+esc(a.durationMinutes||0)+' min'+(assignedCount?' • assigned '+assignedCount+' time'+(assignedCount===1?"":"s"):'')+'</small></div><div class="section-choice-check">✓</div></label>';
     }).join(""):'<div class="empty-state compact-empty"><div class="empty-symbol">A</div><h3>No matching assessment templates.</h3><p>Adjust the search or filter.</p></div>';
-    list.querySelectorAll('input[name="assessmentId"]').forEach(input=>input.onchange=()=>{selectedId=input.value;render();});
+    list.querySelectorAll('input[name="assessmentId"]').forEach(input=>input.onchange=()=>{
+      if(input.checked)selected.add(input.value);else selected.delete(input.value);
+      refreshCount();render();
+    });
+    refreshCount();
   };
-  search.oninput=render;type.onchange=render;render();
-  form.onsubmit=e=>{
+
+  search.oninput=render;
+  type.onchange=render;
+  modal.querySelector("#selectVisibleAssessments").onclick=()=>{filteredTemplates().forEach(a=>selected.add(a.id));render();};
+  modal.querySelector("#clearAssessmentSelection").onclick=()=>{selected.clear();render();};
+  modal.querySelectorAll('.release-choice input').forEach(x=>x.addEventListener("change",()=>modal.querySelectorAll(".release-choice").forEach(label=>label.classList.toggle("selected",label.querySelector("input").checked))));
+  modal.querySelectorAll(".release-choice").forEach(label=>label.classList.toggle("selected",label.querySelector("input").checked));
+  render();
+
+  form.onsubmit=async e=>{
     e.preventDefault();
-    const id=form.querySelector('input[name="assessmentId"]:checked')?.value;
-    if(!id)return toast("Choose an assessment template.");
-    core().closeModal();assignAssessmentModal(String(id),sectionId);
+    if(!selected.size)return toast("Select at least one assessment template.");
+    const fd=new FormData(form);
+    const initialStatus=String(fd.get("initialStatus")||"Draft");
+    const opensAt=timestampFrom(fd.get("opensAt")),closesAt=timestampFrom(fd.get("closesAt"));
+    if(opensAt&&closesAt&&opensAt.toMillis()>=closesAt.toMillis())return toast("The close time must be after the open time.");
+
+    const selectedTemplates=templates.filter(a=>selected.has(a.id));
+    const duplicates=selectedTemplates.filter(a=>existingTemplateIds.has(a.id));
+    if(duplicates.length&&!confirm(duplicates.length+" selected assessment"+(duplicates.length===1?" is":"s are")+" already assigned to this section. Create another independent cop"+(duplicates.length===1?"y":"ies")+" anyway?"))return;
+
+    const submit=modal.querySelector("#batchAssignSubmit");
+    submit.disabled=true;submit.textContent="Assigning 0 / "+selectedTemplates.length;
+    const created=[],failed=[];
+    for(let i=0;i<selectedTemplates.length;i++){
+      const template=selectedTemplates[i];
+      submit.textContent="Assigning "+(i+1)+" / "+selectedTemplates.length;
+      try{
+        const detail=await loadAssessment(template.id);
+        if(!detail.questions.length)throw new Error("No questions are attached to this template.");
+        const clone=await cloneAssessmentTemplateToSection(template,detail,section,{initialStatus,opensAt,closesAt});
+        created.push(clone);
+      }catch(error){
+        console.error("Batch assessment assignment failed:",template.id,error);
+        failed.push({template,error});
+      }
+    }
+
+    await loadAssessments();
+    core().closeModal();
+    if(state().currentSection?.id===section.id)await renderSectionAssessments();
+    else await renderAssessments();
+
+    if(failed.length){
+      toast(created.length+" assessment"+(created.length===1?"":"s")+" assigned; "+failed.length+" could not be assigned.");
+    }else{
+      toast(created.length+" assessment"+(created.length===1?"":"s")+" assigned "+(initialStatus==="Published"?"and published.":"as drafts."));
+    }
   };
 }
 
@@ -2964,7 +3122,7 @@ async function renderSectionAssessments(){
     list.sort((a,b)=>(b.opensAt?.toMillis?.()||0)-(a.opensAt?.toMillis?.()||0));
 
     const header=s.role==="instructor"
-      ? '<div class="page-head" style="margin-bottom:16px"><div><div class="panel-title">Assigned Assessments</div><p class="page-subtitle">Assign reusable course assessments to this section, then publish when ready.</p></div><button class="primary-btn small-btn" data-phase3-action="assign-current-section" data-section="'+section.id+'">Assign Assessment</button></div>'
+      ? '<div class="page-head" style="margin-bottom:16px"><div><div class="panel-title">Assigned Assessments</div><p class="page-subtitle">Assign reusable course assessments to this section, then publish when ready.</p></div><button class="primary-btn small-btn" data-phase3-action="assign-current-section" data-section="'+section.id+'">Assign Assessments</button></div>'
       : '<div class="page-head" style="margin-bottom:16px"><div><div class="panel-title">Assessments</div><p class="page-subtitle">View scheduled assessment contents before opening, then review results after grading is complete.</p></div></div>';
 
     if(!list.length){
