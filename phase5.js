@@ -577,7 +577,7 @@ async function renderAssessmentAnalytics(detail){
       const res=resultByStudent.get(sub.studentId),grade=res?.grading?.[q.id];
       if(grade?.score!==undefined&&grade?.score!==null){
         scores.push(Number(grade.score||0));
-        totals.push(Number(res.percent||0));
+        totals.push(Number(res.attemptPercent??res.percent??0));
       }
       const answer=sub.answers?.[q.id];
       if(answer!==undefined){
