@@ -120,10 +120,21 @@ const FLAG_DEFS=[
   ["rubrics","Advanced Rubric Grading"],
   ["assessmentSecurity","Assessment Security Center"],
   ["attendance","Attendance"],
+  ["extensions","Extensions & Late Windows"],
   ["studentGroups","Student Groups"],
+  ["bulkOperations","Bulk Operations"],
+  ["studentProfiles","Student Profiles, Flags & Narratives"],
+  ["gradingPeriods","Grading Periods & Term Locks"],
   ["courseProgression","Course Progression"],
-  ["analytics","Academic Intelligence"],
+  ["analytics","Academic Intelligence & Blueprint Designer"],
   ["questionQuality","Question Bank Quality Workflow"],
+  ["programMap","Program Map"],
+  ["transcript","Multi-Course Transcript"],
+  ["courseVersioning","Course Versioning"],
+  ["termRollover","Section Rollover"],
+  ["importExport","Import / Export Center"],
+  ["accessibility","Accessibility Controls"],
+  ["recovery","Offline & Autosave Recovery"],
   ["maintenanceMode","Maintenance Mode"]
 ];
 async function featureFlags(){
@@ -436,6 +447,15 @@ function bind(){
   document.addEventListener("click",async e=>{
     const b=e.target.closest("[data-admin-action]");if(!b)return;
     const a=b.dataset.adminAction;
+    const flags=window.TheoriaFeatureFlags||{};
+    const featureByAction={
+      "import-export":"importExport","export-catalog":"importExport","export-course":"importExport","export-question-bank":"importExport",
+      "export-transcript":"importExport","export-roster":"importExport","export-gradebook":"importExport","export-assessment":"importExport",
+      "export-academic-config":"importExport","import-course":"importExport",
+      "version-course":"courseVersioning","rollover-section":"termRollover"
+    };
+    const required=featureByAction[a];
+    if(required&&flags[required]===false)return toast("This platform feature is currently disabled.");
     if(a==="integrity-scan")return integrityScan();
     if(a==="diagnostics")return diagnostics();
     if(a==="feature-flags")return featureFlags();
