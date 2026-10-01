@@ -3362,6 +3362,8 @@ async function saveInlineGrade(assignmentId,studentId,rawScore,{reason="Inline G
       state.currentSection.id,existing?"grade_changed":"grade_created","student",studentId,
       {assignmentId,assignmentTitle:assignment.title||"",priorScore:existing?.score??null,newScore:score,reason,source:"inline_gradebook"}
     );
+    const local={...(existing||{}),assignmentId,studentId,studentName:student.displayName||"Student",assignmentTitle:assignment.title||"Assignment",score,maxPoints:Number(assignment.points||0),gradeStatus:existing?.gradeStatus||"Normal",comment:existing?.comment||"",updatedAt:new Date()};
+    if(existing)Object.assign(existing,local);else state.sectionData.grades.push(local);
     return true;
   }catch(error){showToast(humanizeFirebaseError(error));return false;}
 }
@@ -4099,11 +4101,81 @@ $("#homeCreateSection").addEventListener("click",()=>openSectionModal());
 $("#joinCodeBtn").addEventListener("click",()=>previewJoin($("#joinCodeInput").value));
 $("#joinCodeInput").addEventListener("input",e=>{e.target.value=e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g,"");});
 $("#joinCodeInput").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();previewJoin(e.target.value);}});
-document.addEventListener("change",e=>{
-  if(e.target?.id==="gradebookPeriodFilter"){
-    state.gradebookPeriodFilter=String(e.target.value||"All");
+document.addEventListener("change",async e=>{
+  const target=e.target;
+  if(target?.id==="gradebookPeriodFilter"){
+    state.gradebookPeriodFilter=String(target.value||"All");
     if(state.currentSection&&state.sectionData)renderSectionDetail("gradebook");
+    return;
   }
+  if(target?.id==="gradebookUnitFilter"){
+    state.gradebookUnitFilter=String(target.value||"All");
+    if(state.currentSection&&state.sectionData)renderSectionDetail("gradebook");
+    return;
+  }
+  if(target?.id==="gradebookStatusFilter"){
+    state.gradebookStatusFilter=String(target.value||"all");
+    if(state.currentSection&&state.sectionData)renderSectionDetail("gradebook");
+    return;
+  }
+  if(target?.id==="gradebookThreshold"){
+    state.gradebookThreshold=Math.max(0,Math.min(100,Number(target.value||70)));
+    if(state.currentSection&&state.sectionData)renderSectionDetail("gradebook");
+    return;
+  }
+  if(target?.id==="gradebookSelectAll"){
+    const visible=[...document.querySelectorAll(".gradebook-student-select")].map(x=>x.value);
+    const selected=new Set(state.gradebookSelectedStudents||[]);
+    visible.forEach(id=>target.checked?selected.add(id):selected.delete(id));
+    state.gradebookSelectedStudents=[...selected];
+    document.querySelectorAll(".gradebook-student-select").forEach(x=>x.checked=target.checked);
+    return;
+  }
+  if(target?.classList?.contains("gradebook-student-select")){
+    const selected=new Set(state.gradebookSelectedStudents||[]);
+    if(target.checked)selected.add(target.value);else selected.delete(target.value);
+    state.gradebookSelectedStudents=[...selected];
+    return;
+  }
+  if(target?.classList?.contains("gradebook-inline-score")){
+    const ok=await saveInlineGrade(target.dataset.assignment,target.dataset.student,target.value);
+    if(ok&&state.currentSection&&state.sectionData)renderSectionDetail("gradebook");
+  }
+});
+
+let gradebookSearchTimer=null;
+document.addEventListener("input",e=>{
+  if(e.target?.id!=="gradebookSearchFilter")return;
+  state.gradebookSearchFilter=String(e.target.value||"");
+  clearTimeout(gradebookSearchTimer);
+  gradebookSearchTimer=setTimeout(()=>{
+    if(!state.currentSection||!state.sectionData)return;
+    renderSectionDetail("gradebook");
+    const input=document.querySelector("#gradebookSearchFilter");
+    if(input){input.focus();input.setSelectionRange(input.value.length,input.value.length);}
+  },180);
+});
+
+document.addEventListener("keydown",async e=>{
+  const input=e.target.closest?.(".gradebook-inline-score");if(!input)return;
+  const key=e.key;
+  if(!["Enter","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(key))return;
+  e.preventDefault();
+  const row=Number(input.dataset.row||0),col=Number(input.dataset.col||0);
+  const ok=await saveInlineGrade(input.dataset.assignment,input.dataset.student,input.value);
+  if(!ok)return;
+  const delta=key==="ArrowUp"?[-1,0]:key==="ArrowDown"||key==="Enter"?[1,0]:key==="ArrowLeft"?[0,-1]:[0,1];
+  const nextRow=row+delta[0],nextCol=col+delta[1];
+  renderSectionDetail("gradebook");
+  setTimeout(()=>{
+    const next=document.querySelector('.gradebook-inline-score[data-row="'+nextRow+'"][data-col="'+nextCol+'"]');
+    if(next){next.focus();next.select();}
+  },0);
+});
+
+document.addEventListener("dblclick",e=>{
+  const cell=e.target.closest?.(".gradebook-inline-cell");if(!cell)return;
+  openGradeModal(cell.dataset.assignment,cell.dataset.student);
 });
 
 window.TheoriaCore = {
@@ -4183,7 +4255,21 @@ document.addEventListener("click",async event=>{
   if(action==="open-section-resource") return openSection(btn.dataset.section,"resources");
   if(action==="delete-library-resource") return deleteLibraryResource(btn.dataset.section,btn.dataset.id);
   if(action==="edit-resource") return openResourceModal(state.sectionData.resources.find(x=>x.id===btn.dataset.id));
-  if(action==="set-grade") return openGradeModal(btn.dataset.assignment,btn.dataset.student);
+  if(action==="gradebook-student-drawer") return openGradebookStudentDrawer(btn.dataset.student);
+  if(action==="gradebook-column-menu") return gradebookColumnMenu(btn.dataset.assignment);
+  if(action==="gradebook-bulk-actions") return gradebookBulkActionsModal();
+  if(action==="gradebook-paste") return gradebookPasteGradesModal();
+  if(action==="gradebook-attention"){
+    state.gradebookAttentionOnly=!state.gradebookAttentionOnly;
+    return renderSectionDetail("gradebook");
+  }
+  if(action==="gradebook-toggle-unit"){
+    const set=new Set(state.gradebookCollapsedUnits||[]),unit=btn.dataset.unit;
+    if(set.has(unit))set.delete(unit);else set.add(unit);
+    state.gradebookCollapsedUnits=[...set];
+    return renderSectionDetail("gradebook");
+  }
+    if(action==="set-grade") return openGradeModal(btn.dataset.assignment,btn.dataset.student);
   if(action==="gradebook-jump"){
     const wrap=document.querySelector(".gradebook-wrap");
     const target=document.querySelector('[data-gradebook-anchor="'+btn.dataset.target+'"]');
