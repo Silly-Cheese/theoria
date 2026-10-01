@@ -171,6 +171,7 @@ window.addEventListener("theoria:page",()=>setTimeout(enhanceCurrentContext,60))
 
 window.TheoriaPlatform={
   hashCode:(value)=>teaching.hashCode(value),
+  authorizeAssessmentAccess:(assessment,code)=>teaching.authorizeAssessmentAccess(assessment,code),
   renderAssessmentSecurity:(detail)=>teaching.renderAssessmentSecurity(detail),
   renderBlueprintDesigner:(detail)=>teaching.renderBlueprintDesigner(detail)
 };
