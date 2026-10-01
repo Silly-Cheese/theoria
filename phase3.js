@@ -1835,16 +1835,24 @@ async function authorizeRetakeModal(studentId){
     const button=form.querySelector('button[type="submit"]');button.disabled=true;button.textContent="Authorizing…";
     try{
       const attemptNumber=Math.max(1,Number(sub?.attemptNumber||counterCount||1));
-      const historyRef=doc(db,"assessments",a.id,"attemptHistory",studentId+"_attempt_"+attemptNumber);
+      const archiveId=studentId+"_attempt_"+attemptNumber;
+      const historyRef=doc(db,"assessments",a.id,"attemptHistory",archiveId);
       const batch=writeBatch(db);
       batch.set(historyRef,{
         studentId,attemptNumber,
-        submission:sub||{},
-        result:res||{},
+        candidateNumber:sub?.candidateNumber||res?.candidateNumber||"",
+        submissionStatus:sub?.status||"graded",
+        startedAt:sub?.startedAt||null,submittedAt:sub?.submittedAt||null,gradedAt:res?.gradedAt||null,
+        attemptPercent:Number(res?.attemptPercent??res?.percent??0),
+        officialPercent:Number(res?.officialPercent??res?.percent??0),
+        retakePolicy:res?.retakePolicy||"",
+        retakeWeightPercent:res?.retakeWeightPercent??null,
         archivedReason:"retake_authorized",
         archivedAt:serverTimestamp(),
         archivedBy:state().user.uid
       },{merge:true});
+      if(sub)batch.set(doc(db,"assessments",a.id,"attemptSubmissions",archiveId),{...sub,studentId,attemptNumber,archivedAt:serverTimestamp(),archivedBy:state().user.uid},{merge:false});
+      if(res)batch.set(doc(db,"assessments",a.id,"attemptResults",archiveId),{...res,studentId,attemptNumber,archivedAt:serverTimestamp(),archivedBy:state().user.uid},{merge:false});
       batch.set(doc(db,"assessments",a.id,"retakes",studentId),{
         studentId,active:true,authorizedAttemptNumber:nextAttempt,
         scorePolicy,retakeWeightPercent,
@@ -1881,13 +1889,22 @@ async function revokeRetake(studentId){
     const archived=safeArray(d.attemptHistory)
       .filter(x=>x.studentId===studentId)
       .sort((x,y)=>Number(y.attemptNumber||0)-Number(x.attemptNumber||0))[0];
+    let archivedSubmission=null,archivedResult=null;
+    if(archived){
+      const archiveId=studentId+"_attempt_"+Number(archived.attemptNumber||1);
+      try{const snap=await getDoc(doc(db,"assessments",a.id,"attemptSubmissions",archiveId));if(snap.exists())archivedSubmission=snap.data();}catch(_){}
+      try{const snap=await getDoc(doc(db,"assessments",a.id,"attemptResults",archiveId));if(snap.exists())archivedResult=snap.data();}catch(_){}
+      // Backward compatibility for any history written by the first retake implementation.
+      archivedSubmission=archivedSubmission||archived.submission||null;
+      archivedResult=archivedResult||archived.result||null;
+    }
     const batch=writeBatch(db);
     batch.set(doc(db,"assessments",a.id,"retakes",studentId),{
       active:false,revokedAt:serverTimestamp(),revokedBy:state().user.uid,updatedAt:serverTimestamp()
     },{merge:true});
     batch.set(doc(db,"sections",a.sectionId,"assessmentGrades",a.id+"_"+studentId),{retakePending:false,updatedAt:serverTimestamp()},{merge:true});
-    if(archived?.submission)batch.set(doc(db,"assessments",a.id,"submissions",studentId),{...archived.submission,updatedAt:serverTimestamp()},{merge:false});
-    if(archived?.result)batch.set(doc(db,"assessments",a.id,"results",studentId),{...archived.result,updatedAt:serverTimestamp()},{merge:false});
+    if(archivedSubmission)batch.set(doc(db,"assessments",a.id,"submissions",studentId),{...archivedSubmission,updatedAt:serverTimestamp()},{merge:false});
+    if(archivedResult)batch.set(doc(db,"assessments",a.id,"results",studentId),{...archivedResult,updatedAt:serverTimestamp()},{merge:false});
     await batch.commit();
     if(window.TheoriaPhase5?.logSectionEvent)await window.TheoriaPhase5.logSectionEvent(a.sectionId,"assessment_retake_revoked","student",studentId,{assessmentId:a.id,attemptNumber:auth.authorizedAttemptNumber,restoredAttempt:archived?.attemptNumber||null});
     await openAssessment(a.id,"candidates");toast("Retake authorization revoked and the prior attempt restored.");
@@ -1899,7 +1916,14 @@ async function attemptHistoryModal(studentId){
   if(!a)return;
   let rows=safeArray(d.attemptHistory).filter(x=>x.studentId===studentId).map(x=>({
     attemptNumber:Number(x.attemptNumber||x.submission?.attemptNumber||1),
-    result:x.result||{},submission:x.submission||{},archived:true
+    result:x.result||{
+      attemptPercent:x.attemptPercent,officialPercent:x.officialPercent,percent:x.officialPercent,
+      retakePolicy:x.retakePolicy,retakeWeightPercent:x.retakeWeightPercent,gradedAt:x.gradedAt
+    },
+    submission:x.submission||{
+      candidateNumber:x.candidateNumber,status:x.submissionStatus,startedAt:x.startedAt,submittedAt:x.submittedAt
+    },
+    archived:true
   }));
   const currentSub=d.submissions.find(x=>x.studentId===studentId),currentResult=d.results.find(x=>x.studentId===studentId);
   if(currentSub||currentResult)rows.push({attemptNumber:Number(currentSub?.attemptNumber||currentResult?.attemptNumber||rows.length+1),result:currentResult||{},submission:currentSub||{},archived:false});
@@ -2748,15 +2772,19 @@ async function deleteAssessment(assessmentId){
         events.docs.forEach(x=>refs.push(x.ref));
         refs.push(sub.ref);
       }
-      const [results,retakes,attemptHistory,attemptCounters]=await Promise.all([
+      const [results,retakes,attemptHistory,attemptSubmissions,attemptResults,attemptCounters]=await Promise.all([
         getDocs(collection(db,"assessments",a.id,"results")),
         getDocs(collection(db,"assessments",a.id,"retakes")),
         getDocs(collection(db,"assessments",a.id,"attemptHistory")),
+        getDocs(collection(db,"assessments",a.id,"attemptSubmissions")),
+        getDocs(collection(db,"assessments",a.id,"attemptResults")),
         getDocs(collection(db,"assessments",a.id,"attemptCounters"))
       ]);
       results.docs.forEach(x=>refs.push(x.ref));
       retakes.docs.forEach(x=>refs.push(x.ref));
       attemptHistory.docs.forEach(x=>refs.push(x.ref));
+      attemptSubmissions.docs.forEach(x=>refs.push(x.ref));
+      attemptResults.docs.forEach(x=>refs.push(x.ref));
       attemptCounters.docs.forEach(x=>refs.push(x.ref));
       await deleteRefsInBatches(refs);
 
