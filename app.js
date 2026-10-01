@@ -3519,41 +3519,84 @@ function openGradeModal(assignmentId,studentId){
   const gradingPeriod=a?.gradingPeriod||"Overall";
   const periodSetting=state.currentSection?.gradingPolicy?.gradingPeriodSettings?.[gradingPeriod]||{};
   if(periodSetting.locked===true)return showToast(gradingPeriod+" is finalized and locked. Reopen the grading period before changing grades.");
+  const maps=gradebookCurrentMaps();
+  const baseline=gradebookAcademicSnapshot(studentId,maps.assignments,maps.gradeMap,maps.assessmentGradeMap);
+  const certified=baseline.record?.status==="Certified";
+  const presets=gradebookFeedbackPresets();
   const modal=openModal({
     eyebrow:"Gradebook",
     title:(s?.displayName||"Student")+" — "+(a?.title||"Assignment"),
-    body:'<form id="gradeForm"><div class="notice">Possible points: <strong>'+esc(a?.points||0)+'</strong>'+(a?.rubricTitle?' • Rubric: <strong>'+esc(a.rubricTitle)+'</strong>':'')+'</div>'+
+    wide:true,
+    body:'<form id="gradeForm">'+
+      (certified?'<div class="notice gradebook-certified-warning"><strong>Certified academic record exists.</strong><span>Changing this grade will not silently rewrite the certified record. Review and certify an amendment afterward if the final record should change.</span></div>':'')+
+      '<div class="notice">Possible points: <strong>'+esc(a?.points||0)+'</strong>'+(a?.rubricTitle?' • Rubric: <strong>'+esc(a.rubricTitle)+'</strong>':'')+'</div>'+
+      '<div id="gradeImpactPreview" class="grade-impact-preview"></div>'+
       ((a?.rubricSnapshot||[]).length?'<div class="rubric-grade-grid">'+(a.rubricSnapshot||[]).map((criterion,i)=>'<div class="rubric-grade-row"><div><strong>'+esc(criterion.name||criterion.criterion||"Criterion")+'</strong><span>'+esc(criterion.description||"")+'</span></div><div class="input-with-suffix mini"><input class="rubric-grade-score" data-index="'+i+'" type="number" min="0" max="'+esc(criterion.points||0)+'" step="0.1" value="'+esc(existing?.rubricScores?.[i]?.score??"")+'"><span>/ '+esc(criterion.points||0)+'</span></div><input class="table-input rubric-grade-comment" data-index="'+i+'" placeholder="Criterion feedback" value="'+esc(existing?.rubricScores?.[i]?.comment||"")+'"></div>').join("")+'</div><button type="button" class="secondary-btn small-btn" id="calculateRubricScore">Use Rubric Total</button>':'')+
-      '<div class="compact-field-grid"><div class="field"><label>Score</label><input type="number" min="0" step="0.1" name="score" value="'+esc(existing?.score??"")+'" required></div><div class="field"><label>Grade Status</label><select name="gradeStatus"><option>Normal</option><option>Late</option><option>Missing</option><option>Excused</option></select></div></div><div class="field"><label>Instructor Comment</label><textarea class="editor-compact" rows="2" name="comment" placeholder="Optional concise feedback">'+esc(existing?.comment||"")+'</textarea></div>'+(existing?'<div class="field"><label>Reason for Grade Change</label><textarea class="editor-compact" rows="2" name="overrideReason" required placeholder="Required because this changes an existing grade."></textarea></div>':'')+'<div class="modal-foot" style="margin:24px -24px -24px"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Grade</button></div></form>'
+      '<div class="compact-field-grid"><div class="field"><label>Score</label><input type="number" min="0" max="'+esc(a?.points||0)+'" step="0.1" name="score" value="'+esc(existing?.score??"")+'" required></div><div class="field"><label>Grade Status</label><select name="gradeStatus"><option>Normal</option><option>Late</option><option>Missing</option><option>Excused</option></select></div></div>'+
+      '<div class="field"><label>Quick Feedback</label><div class="feedback-preset-row">'+presets.map(text=>'<button type="button" class="feedback-preset" data-feedback-preset="'+esc(text)+'">'+esc(text)+'</button>').join("")+'</div></div>'+
+      '<div class="field"><label>Instructor Comment</label><textarea class="editor-compact" rows="3" name="comment" placeholder="Optional concise feedback">'+esc(existing?.comment||"")+'</textarea><button type="button" class="text-btn small-btn" id="saveFeedbackPreset">Save current comment as quick feedback</button></div>'+
+      (existing?'<div class="field"><label>Reason for Grade Change</label><textarea class="editor-compact" rows="2" name="overrideReason" required placeholder="Required because this changes an existing grade."></textarea></div>':'')+
+      '<div class="modal-foot" style="margin:24px -24px -24px"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Grade</button></div></form>'
   });
   const gradeForm=modal?.querySelector("#gradeForm");
   if(!gradeForm){closeModal();return showToast("The grade editor could not be initialized. Refresh Theoria and try again.");}
   const gradeStatusInput=gradeForm.querySelector('[name="gradeStatus"]');
   const scoreInput=gradeForm.querySelector('[name="score"]');
+  const commentInput=gradeForm.querySelector('[name="comment"]');
+  const impact=gradeForm.querySelector("#gradeImpactPreview");
   if(!gradeStatusInput||!scoreInput){closeModal();return showToast("The grade editor is missing required fields. Refresh Theoria and try again.");}
   gradeStatusInput.value=existing?.gradeStatus||"Normal";
+
+  const updateImpact=()=>{
+    const status=gradeStatusInput.value;
+    let score=status==="Missing"?0:Number(scoreInput.value||0);
+    if(status==="Excused"&&scoreInput.value==="")score=Number(existing?.score||0);
+    const simulated=new Map(maps.gradeMap);
+    simulated.set(assignmentId+"_"+studentId,{...(existing||{}),assignmentId,studentId,score,gradeStatus:status});
+    const after=gradebookAcademicSnapshot(studentId,maps.assignments,simulated,maps.assessmentGradeMap);
+    const beforeCourse=baseline.coursework===null?"—":baseline.coursework+"%";
+    const afterCourse=after.coursework===null?"—":after.coursework+"%";
+    const beforeFinal=baseline.displayPercent===null?"—":baseline.displayPercent+"% "+baseline.letter;
+    const afterFinal=after.displayPercent===null?"—":after.displayPercent+"% "+after.letter;
+    impact.innerHTML='<div><span>Coursework Average</span><strong>'+esc(beforeCourse)+' → '+esc(afterCourse)+'</strong></div><div><span>Final Projection</span><strong>'+esc(beforeFinal)+' → '+esc(afterFinal)+'</strong></div>';
+  };
   const syncGradeStatus=()=>{
     const status=gradeStatusInput.value;
     if(status==="Missing"){scoreInput.value="0";scoreInput.readOnly=true;}
-    else if(status==="Excused"){scoreInput.required=false;scoreInput.readOnly=true;scoreInput.value=existing?.score??"0";}
+    else if(status==="Excused"){scoreInput.required=false;scoreInput.readOnly=true;if(scoreInput.value==="")scoreInput.value=existing?.score??"0";}
     else{scoreInput.required=true;scoreInput.readOnly=false;}
+    updateImpact();
   };
-  gradeStatusInput.addEventListener("change",syncGradeStatus);syncGradeStatus();
+  gradeStatusInput.addEventListener("change",syncGradeStatus);
+  scoreInput.addEventListener("input",updateImpact);
+  syncGradeStatus();
+
+  modal.querySelectorAll("[data-feedback-preset]").forEach(button=>button.addEventListener("click",()=>{
+    const value=button.dataset.feedbackPreset||"";
+    commentInput.value=commentInput.value.trim()?commentInput.value.trim()+" "+value:value;
+    commentInput.focus();
+  }));
+  modal.querySelector("#saveFeedbackPreset")?.addEventListener("click",()=>{
+    const value=commentInput.value.trim();if(!value)return showToast("Write feedback first.");
+    saveGradebookFeedbackPreset(value);showToast("Quick feedback saved for this browser.");
+  });
   modal.querySelector("#calculateRubricScore")?.addEventListener("click",()=>{
     const total=[...gradeForm.querySelectorAll(".rubric-grade-score")].reduce((n,input)=>n+Number(input.value||0),0);
-    scoreInput.value=String(Math.round(total*100)/100);
+    scoreInput.value=String(Math.round(total*100)/100);updateImpact();
   });
   gradeForm.addEventListener("submit",async e=>{
     e.preventDefault();const fd=new FormData(e.currentTarget),gradeStatus=String(fd.get("gradeStatus")||"Normal");const score=gradeStatus==="Missing"?0:Number(fd.get("score")||0);
+    if(score<0||score>Number(a?.points||0))return showToast("Score must be between 0 and "+Number(a?.points||0)+".");
     try{
       await setDoc(doc(db,"sections",state.currentSection.id,"grades",assignmentId+"_"+studentId),{
         assignmentId,studentId,studentName:s?.displayName||"Student",assignmentTitle:a?.title||"Assignment",
-        score,maxPoints:Number(a?.points||0),gradeStatus:String(fd.get("gradeStatus")||"Normal"),comment:String(fd.get("comment")).trim(),
+        score,maxPoints:Number(a?.points||0),gradeStatus,comment:String(fd.get("comment")).trim(),
         rubricId:a?.rubricId||"",rubricTitle:a?.rubricTitle||"",rubricScores:[...gradeForm.querySelectorAll(".rubric-grade-score")].map((input,i)=>({index:i,name:a?.rubricSnapshot?.[i]?.name||a?.rubricSnapshot?.[i]?.criterion||"Criterion",score:Number(input.value||0),maxPoints:Number(a?.rubricSnapshot?.[i]?.points||0),comment:gradeForm.querySelector('.rubric-grade-comment[data-index="'+i+'"]')?.value.trim()||""})),
         overrideReason:String(fd.get("overrideReason")||"").trim(),updatedAt:serverTimestamp()
       },{merge:true});
-      if(existing&&window.TheoriaPhase5?.logSectionEvent)await window.TheoriaPhase5.logSectionEvent(state.currentSection.id,"grade_changed","student",studentId,{assignmentId,assignmentTitle:a?.title||"",priorScore:existing.score,newScore:score,reason:String(fd.get("overrideReason")||"").trim()});
-      closeModal();state.sectionData=await loadSectionData(state.currentSection);renderSectionDetail("gradebook");showToast("Grade saved.");
+      if(window.TheoriaPhase5?.logSectionEvent)await window.TheoriaPhase5.logSectionEvent(state.currentSection.id,existing?"grade_changed":"grade_created","student",studentId,{assignmentId,assignmentTitle:a?.title||"",priorScore:existing?.score??null,newScore:score,reason:String(fd.get("overrideReason")||"").trim(),certifiedRecordExisted:certified});
+      closeModal();state.sectionData=await loadSectionData(state.currentSection);renderSectionDetail("gradebook");
+      showToast(certified?"Grade saved. Review the certified record for a possible amendment.":"Grade saved.");
     }catch(error){showToast(humanizeFirebaseError(error));}
   });
 }
