@@ -486,6 +486,160 @@ async function certifyRecord(sectionId,studentId,reason=""){
   if(P4.reportsSectionId===sectionId)renderReportsPage(sectionId);
 }
 
+
+async function withdrawalCertificationModal(sectionId,studentId){
+  invalidate(sectionId);
+  const bundle=await loadSectionBundle(sectionId);
+  const member=bundle.members.find(x=>x.id===studentId);
+  if(!member)return toast("Student not found in this section.");
+
+  const coursework=courseworkPercent(bundle,studentId);
+  if(coursework.percent===null){
+    return toast("A withdrawal grade cannot be certified until at least one coursework grade is available.");
+  }
+
+  const prior=recordFor(bundle,studentId);
+  const scale=bundle.section.gradingPolicy?.gradeScale||DEFAULT_SCALE;
+  const modal=core().openModal({
+    eyebrow:"Withdrawal Certification",
+    title:"Certify Withdrawal — "+(member.displayName||"Student"),
+    wide:true,
+    body:'<form id="withdrawalCertificationForm">'+
+      '<div class="academic-banner"><div class="kicker">'+esc(bundle.section.courseCode||"Course")+' • Withdrawal</div><h3>Certify a coursework-only final grade</h3><p>This withdrawal pathway waives semester and comprehensive assessment requirements. The permanent record identifies the grade as a withdrawal certification rather than a normal course-completion certification.</p></div>'+
+      '<div class="record-calculation"><div><span>Current Coursework Grade</span><strong>'+esc(coursework.percent)+'%</strong></div><div><span>Assessment Requirement</span><strong>Waived</strong></div><div><span>Current Letter</span><strong>'+esc(letter(coursework.percent,scale))+'</strong></div></div>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Grade Adjustment Authority</h3><p>You must explicitly decide whether the withdrawal grade may be adjusted.</p></div></div>'+
+        '<div class="retake-policy-grid">'+
+          '<label class="policy-card"><input type="radio" name="adjustmentMode" value="none" checked><div><strong>No Adjustment Permitted</strong><span>The current coursework percentage becomes the certified withdrawal grade exactly as recorded.</span></div></label>'+
+          '<label class="policy-card"><input type="radio" name="adjustmentMode" value="points"><div><strong>Instructor Adjustment Permitted</strong><span>Apply a signed percentage-point adjustment with a permanent written rationale.</span></div></label>'+
+        '</div>'+
+        '<div class="compact-field-grid" style="margin-top:14px"><div class="field"><label>Adjustment (percentage points)</label><input id="withdrawalAdjustmentPoints" name="adjustmentPoints" type="number" min="-100" max="100" step="0.1" value="0" disabled></div><div class="field"><label>Adjusted Final Preview</label><input id="withdrawalAdjustedPreview" value="'+esc(coursework.percent)+'%" disabled></div></div>'+
+        '<div class="field"><label>Adjustment Rationale</label><textarea id="withdrawalAdjustmentReason" name="adjustmentReason" disabled placeholder="Required when an adjustment is applied."></textarea></div>'+
+      '</section>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Withdrawal Documentation</h3><p>The reason and certification basis are preserved in enrollment history and the permanent academic record.</p></div></div>'+
+        '<div class="field"><label>Withdrawal Reason</label><textarea name="withdrawalReason" required placeholder="Document the student’s withdrawal request or other basis for ending enrollment."></textarea></div>'+
+        '<label class="checkbox-line"><input type="checkbox" name="acknowledgement" required> I understand that this certification waives the normal assessment requirements for this withdrawal and closes the student’s active enrollment.</label>'+
+      '</section>'+
+      '<div class="modal-foot" style="margin:24px -24px -24px"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="danger-btn" type="submit">Certify Grade & Withdraw Student</button></div>'+
+    '</form>'
+  });
+
+  const form=modal.querySelector("#withdrawalCertificationForm");
+  const pointsInput=modal.querySelector("#withdrawalAdjustmentPoints");
+  const reasonInput=modal.querySelector("#withdrawalAdjustmentReason");
+  const preview=modal.querySelector("#withdrawalAdjustedPreview");
+
+  const refreshAdjustment=()=>{
+    const mode=form.querySelector('input[name="adjustmentMode"]:checked')?.value||"none";
+    const enabled=mode==="points";
+    pointsInput.disabled=!enabled;
+    reasonInput.disabled=!enabled;
+    const points=enabled?Number(pointsInput.value||0):0;
+    const adjusted=round(Number(coursework.percent)+points);
+    preview.value=(Number.isFinite(adjusted)?adjusted:coursework.percent)+"%";
+  };
+  form.querySelectorAll('input[name="adjustmentMode"]').forEach(x=>x.addEventListener("change",refreshAdjustment));
+  pointsInput.addEventListener("input",refreshAdjustment);
+
+  form.addEventListener("submit",async e=>{
+    e.preventDefault();
+    const fd=new FormData(form);
+    const mode=String(fd.get("adjustmentMode")||"none");
+    const adjustment=mode==="points"?round(Number(fd.get("adjustmentPoints")||0)):0;
+    const adjustmentReason=String(fd.get("adjustmentReason")||"").trim();
+    const withdrawalReason=String(fd.get("withdrawalReason")||"").trim();
+    if(!withdrawalReason)return toast("Enter the withdrawal reason before certification.");
+    if(mode==="points"&&adjustment!==0&&!adjustmentReason)return toast("A written rationale is required for a grade adjustment.");
+
+    const finalPercent=round(Number(coursework.percent)+adjustment);
+    if(!Number.isFinite(finalPercent)||finalPercent<0||finalPercent>100){
+      return toast("The adjusted withdrawal grade must remain between 0% and 100%.");
+    }
+
+    const mastery=bundle.mastery.find(x=>x.id===studentId);
+    const narrative=bundle.narratives.find(x=>x.id===studentId);
+    let courseVersion="";
+    try{
+      const courseSnap=await getDoc(doc(db,"courses",bundle.section.courseId));
+      if(courseSnap.exists())courseVersion=courseSnap.data().versionLabel||"";
+    }catch(_){}
+
+    const version=Number(prior?.version||0)+1;
+    const recordId=prior?.recordId||idStamp();
+    const gradeLetter=letter(finalPercent,scale);
+    const snapshot={
+      studentId,studentName:member.displayName||"Student",studentEmail:member.email||"",
+      sectionId:bundle.section.id,courseId:bundle.section.courseId,courseCode:bundle.section.courseCode||"",
+      courseTitle:bundle.section.courseTitle||"",sectionName:bundle.section.sectionName||"",term:bundle.section.term||"",
+      courseVersion,recordId,version,status:"Certified",recordType:"Withdrawal",enrollmentOutcome:"Withdrawn",
+      certificationBasis:"Coursework at withdrawal",assessmentRequirementWaived:true,
+      withdrawalReason,withdrawalCertified:true,
+      pathway:"withdrawal-coursework",courseworkPercent:coursework.percent,
+      semesterExamPercent:null,comprehensiveExamPercent:null,
+      rawWithdrawalPercent:coursework.percent,gradeAdjustmentMode:mode,
+      gradeAdjustmentPoints:adjustment,gradeAdjustmentReason:adjustmentReason,
+      finalPercent,projectedPercent:coursework.percent,letterGrade:gradeLetter,
+      masteryPercent:mastery?.overallPercent??null,
+      narrativeEvaluation:narrative?.includeOnRecord?{strengths:narrative.strengths||"",recommendations:narrative.recommendations||""}:null,
+      audit:[
+        {id:"coursework",label:"Coursework grade available at withdrawal",ok:true},
+        {id:"assessments-waived",label:"Assessment requirements waived for withdrawal",ok:true},
+        {id:"adjustment",label:mode==="points"?"Instructor adjustment decision documented":"Instructor chose no grade adjustment",ok:true}
+      ],
+      components:[{key:"coursework",label:"Coursework at Withdrawal",value:coursework.percent,weight:100}]
+    };
+
+    try{
+      const batch=writeBatch(db);
+      batch.set(doc(db,"sections",sectionId,"academicRecords",studentId),{
+        ...snapshot,
+        certifiedAt:serverTimestamp(),certifiedBy:state().user.uid,
+        amendmentReason:prior?"Withdrawal certification superseded the prior record.":"",
+        updatedAt:serverTimestamp()
+      },{merge:true});
+      batch.set(doc(collection(db,"sections",sectionId,"recordHistory")),{
+        studentId,
+        action:prior?"Withdrawal Certification / Amendment":"Withdrawal Certification",
+        reason:withdrawalReason,version,snapshot,
+        createdAt:serverTimestamp(),createdBy:state().user.uid
+      });
+      batch.set(doc(db,"users",studentId,"enrollments",sectionId),{
+        sectionId,courseId:bundle.section.courseId,courseCode:bundle.section.courseCode||"",
+        courseTitle:bundle.section.courseTitle||"",sectionName:bundle.section.sectionName||"",
+        term:bundle.section.term||"",status:"Withdrawn",endedAt:serverTimestamp(),
+        certifiedFinalPercent:finalPercent,certifiedLetterGrade:gradeLetter,
+        withdrawalCertified:true,updatedAt:serverTimestamp()
+      },{merge:true});
+      batch.set(doc(collection(db,"sections",sectionId,"enrollmentHistory")),{
+        studentId,studentName:member.displayName||"Student",studentEmail:member.email||"",
+        status:"Withdrawn",reason:withdrawalReason,
+        actorId:state().user.uid,actorName:state().profile?.displayName||state().user.displayName||"Instructor",
+        withdrawalCertified:true,finalPercent,letterGrade:gradeLetter,
+        courseworkPercent:coursework.percent,assessmentRequirementWaived:true,
+        gradeAdjustmentMode:mode,gradeAdjustmentPoints:adjustment,
+        gradeAdjustmentReason:adjustmentReason,recordId,recordVersion:version,
+        createdAt:serverTimestamp()
+      });
+      batch.delete(doc(db,"sections",sectionId,"members",studentId));
+      await batch.commit();
+
+      if(window.TheoriaPhase5?.logSectionEvent){
+        await window.TheoriaPhase5.logSectionEvent(sectionId,"withdrawal_grade_certified","student",studentId,{
+          withdrawalReason,courseworkPercent:coursework.percent,finalPercent,
+          letterGrade:gradeLetter,adjustmentMode:mode,adjustmentPoints:adjustment,
+          assessmentRequirementWaived:true,recordId,version
+        });
+      }
+
+      core().closeModal();
+      invalidate(sectionId);
+      if(state().currentSection?.id===sectionId)await core().reloadCurrentSection("students");
+      toast((member.displayName||"Student")+" was withdrawn with a certified "+gradeLetter+" ("+finalPercent+"%) final grade.");
+    }catch(error){
+      toast(error.message||"Unable to certify the withdrawal.");
+    }
+  });
+}
+
 function amendmentModal(sectionId,studentId){
   const modal=core().openModal({
     eyebrow:"Academic Record Amendment",
@@ -596,7 +750,7 @@ async function renderStudentRecord(sectionId,targetSelector="#phase4SectionTab")
 }
 
 function formalRecordHtml(record,portfolio,mastery,studentView=false){
-  return '<article class="formal-record" id="formalAcademicRecord"><div class="record-seal">Θ</div><div class="record-heading"><div class="eyebrow">Theoria Academic Record</div><h2>'+esc(record.courseCode)+' — '+esc(record.courseTitle)+'</h2><p>'+esc(record.sectionName)+' • '+esc(record.term)+'</p></div><div class="record-identity"><div><span>Student</span><strong>'+esc(record.studentName)+'</strong></div><div><span>Record ID</span><strong>'+esc(record.recordId)+'</strong></div><div><span>Status</span><strong>'+esc(record.status)+'</strong></div><div><span>Version</span><strong>'+esc(record.version||1)+'</strong></div></div><div class="record-final"><div><span>Certified Final Grade</span><strong>'+esc(record.letterGrade)+'</strong><small>'+esc(record.finalPercent)+'%</small></div><div><span>Academic Mastery</span><strong>'+(record.masteryPercent===null||record.masteryPercent===undefined?"—":esc(record.masteryPercent)+"%")+'</strong><small>Separate from grade</small></div><div><span>Grading Pathway</span><strong class="record-path">'+esc(record.pathway==="examination"?"Examination":"Composite")+'</strong></div></div><div class="record-breakdown"><div><span>Coursework</span><strong>'+(record.courseworkPercent===null?"N/A":esc(record.courseworkPercent)+"%")+'</strong></div><div><span>Semester I Examination</span><strong>'+esc(record.semesterExamPercent)+'%</strong></div><div><span>Comprehensive Final Examination</span><strong>'+esc(record.comprehensiveExamPercent)+'%</strong></div></div>'+(record.courseVersion?'<div class="notice" style="margin-top:14px"><strong>Course Version</strong><p>'+esc(record.courseVersion)+'</p></div>':'')+(record.narrativeEvaluation?'<div class="record-narrative"><div><span>Instructor Narrative — Strengths</span><p>'+esc(record.narrativeEvaluation.strengths||"")+'</p></div><div><span>Growth / Recommendations</span><p>'+esc(record.narrativeEvaluation.recommendations||"")+'</p></div></div>':'')+'<div class="record-footer"><p>This record documents academic performance within Theoria. It does not represent outside accreditation unless separately established by the issuing institution.</p><div class="inline-actions"><button class="secondary-btn small-btn" data-phase4-action="print-record">Print Record</button>'+(studentView?'<button class="text-btn" data-phase4-action="record-history" data-section="'+esc(record.sectionId||"")+'" data-student="'+esc(record.studentId)+'">View Amendment History</button>':'')+'</div></div></article>';
+  return '<article class="formal-record" id="formalAcademicRecord"><div class="record-seal">Θ</div><div class="record-heading"><div class="eyebrow">Theoria Academic Record</div><h2>'+esc(record.courseCode)+' — '+esc(record.courseTitle)+'</h2><p>'+esc(record.sectionName)+' • '+esc(record.term)+'</p></div><div class="record-identity"><div><span>Student</span><strong>'+esc(record.studentName)+'</strong></div><div><span>Record ID</span><strong>'+esc(record.recordId)+'</strong></div><div><span>Status</span><strong>'+esc(record.status)+'</strong></div><div><span>Version</span><strong>'+esc(record.version||1)+'</strong></div></div><div class="record-final"><div><span>Certified Final Grade</span><strong>'+esc(record.letterGrade)+'</strong><small>'+esc(record.finalPercent)+'%</small></div><div><span>Academic Mastery</span><strong>'+(record.masteryPercent===null||record.masteryPercent===undefined?"—":esc(record.masteryPercent)+"%")+'</strong><small>Separate from grade</small></div><div><span>Grading Basis</span><strong class="record-path">'+esc(record.pathway==="examination"?"Examination":record.pathway==="withdrawal-coursework"?"Withdrawal Coursework":"Composite")+'</strong></div></div><div class="record-breakdown"><div><span>Coursework</span><strong>'+(record.courseworkPercent===null?"N/A":esc(record.courseworkPercent)+"%")+'</strong></div><div><span>Semester I Examination</span><strong>'+(record.semesterExamPercent===null||record.semesterExamPercent===undefined?"Waived":esc(record.semesterExamPercent)+"%")+'</strong></div><div><span>Comprehensive Final Examination</span><strong>'+(record.comprehensiveExamPercent===null||record.comprehensiveExamPercent===undefined?"Waived":esc(record.comprehensiveExamPercent)+"%")+'</strong></div></div>'+(record.courseVersion?'<div class="notice" style="margin-top:14px"><strong>Course Version</strong><p>'+esc(record.courseVersion)+'</p></div>':'')+(record.narrativeEvaluation?'<div class="record-narrative"><div><span>Instructor Narrative — Strengths</span><p>'+esc(record.narrativeEvaluation.strengths||"")+'</p></div><div><span>Growth / Recommendations</span><p>'+esc(record.narrativeEvaluation.recommendations||"")+'</p></div></div>':'')+'<div class="record-footer"><p>This record documents academic performance within Theoria. It does not represent outside accreditation unless separately established by the issuing institution.</p><div class="inline-actions"><button class="secondary-btn small-btn" data-phase4-action="print-record">Print Record</button>'+(studentView?'<button class="text-btn" data-phase4-action="record-history" data-section="'+esc(record.sectionId||"")+'" data-student="'+esc(record.studentId)+'">View Amendment History</button>':'')+'</div></div></article>';
 }
 
 function portfolioHtml(portfolio){
@@ -722,6 +876,6 @@ document.addEventListener("click",async e=>{
   if(a==="print-record"){window.print();return;}
 });
 
-window.TheoriaPhase4={renderSectionTab,renderMasteryPage,renderReportsPage,recomputeMastery,invalidate};
+window.TheoriaPhase4={renderSectionTab,renderMasteryPage,renderReportsPage,recomputeMastery,invalidate,withdrawalCertificationModal};
 
 if(window.TheoriaCore)onReady();
