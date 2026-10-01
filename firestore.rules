@@ -239,6 +239,50 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/assessments/$(assessmentId)/submissions/$(uid())).data.status == 'in_progress';
     }
 
+    function assessmentRequiresAccessCode(assessmentId) {
+      return ('securityPolicy' in assessmentData(assessmentId))
+        && ('accessCodeConfigured' in assessmentData(assessmentId).securityPolicy)
+        && assessmentData(assessmentId).securityPolicy.accessCodeConfigured == true;
+    }
+
+    function assessmentAccessAuthorized(assessmentId) {
+      return !assessmentRequiresAccessCode(assessmentId)
+        || (
+          exists(/databases/$(database)/documents/assessments/$(assessmentId)/securityPrivate/config)
+          && exists(/databases/$(database)/documents/assessments/$(assessmentId)/accessAuthorizations/$(uid()))
+          && get(/databases/$(database)/documents/assessments/$(assessmentId)/accessAuthorizations/$(uid())).data.version
+            == get(/databases/$(database)/documents/assessments/$(assessmentId)/securityPrivate/config).data.version
+        );
+    }
+
+    function assessmentAttemptCountAllowed(assessmentId, count) {
+      return !('securityPolicy' in assessmentData(assessmentId))
+        || !('maxAttempts' in assessmentData(assessmentId).securityPolicy)
+        || count <= assessmentData(assessmentId).securityPolicy.maxAttempts;
+    }
+
+    function assessmentLateEntryAllowed(assessmentId) {
+      return !('securityPolicy' in assessmentData(assessmentId))
+        || !('lateEntryPolicy' in assessmentData(assessmentId).securityPolicy)
+        || assessmentData(assessmentId).securityPolicy.lateEntryPolicy != 'deny-after-start'
+        || assessmentData(assessmentId).opensAt == null
+        || (
+          ('lateEntryGraceMinutes' in assessmentData(assessmentId).securityPolicy)
+          && request.time <= assessmentData(assessmentId).opensAt
+            + duration.value(int(assessmentData(assessmentId).securityPolicy.lateEntryGraceMinutes), 'm')
+        );
+    }
+
+    function assessmentHonorSatisfied(assessmentId) {
+      return !('securityPolicy' in assessmentData(assessmentId))
+        || !('honorAcknowledgement' in assessmentData(assessmentId).securityPolicy)
+        || assessmentData(assessmentId).securityPolicy.honorAcknowledgement != true
+        || (
+          ('honorAcknowledged' in request.resource.data)
+          && request.resource.data.honorAcknowledged == true
+        );
+    }
+
     function gradingSelectionOpen(sectionId) {
       return sectionMember(sectionId)
         && get(/databases/$(database)/documents/sections/$(sectionId)).data.gradingPolicy.selectionOpen == true
@@ -788,6 +832,43 @@ service cloud.firestore {
         allow create, update, delete: if assessmentOwner(assessmentId);
       }
 
+      match /securityPrivate/{securityDoc} {
+        allow read, create, update, delete: if assessmentOwner(assessmentId)
+          || (
+            assessmentData(assessmentId).sectionId != ''
+            && sectionAcademicManager(assessmentData(assessmentId).sectionId)
+          );
+      }
+
+      match /accessAuthorizations/{studentId} {
+        allow read: if assessmentOwner(assessmentId)
+          || (
+            assessmentData(assessmentId).sectionId != ''
+            && sectionGrader(assessmentData(assessmentId).sectionId)
+          );
+        allow create, update: if isSelf(studentId)
+          && assessmentOpen(assessmentId)
+          && assessmentRequiresAccessCode(assessmentId)
+          && exists(/databases/$(database)/documents/assessments/$(assessmentId)/securityPrivate/config)
+          && request.resource.data.keys().hasOnly([
+            'studentId',
+            'accessCode',
+            'version',
+            'authorizedAt',
+            'updatedAt'
+          ])
+          && request.resource.data.studentId == uid()
+          && request.resource.data.accessCode
+            == get(/databases/$(database)/documents/assessments/$(assessmentId)/securityPrivate/config).data.accessCode
+          && request.resource.data.version
+            == get(/databases/$(database)/documents/assessments/$(assessmentId)/securityPrivate/config).data.version;
+        allow delete: if assessmentOwner(assessmentId)
+          || (
+            assessmentData(assessmentId).sectionId != ''
+            && sectionAcademicManager(assessmentData(assessmentId).sectionId)
+          );
+      }
+
       match /submissions/{studentId} {
         allow read: if assessmentOwner(assessmentId)
           || (
@@ -800,6 +881,8 @@ service cloud.firestore {
           || (
             isSelf(studentId)
             && assessmentOpen(assessmentId)
+            && assessmentLateEntryAllowed(assessmentId)
+            && assessmentAccessAuthorized(assessmentId)
             && request.resource.data.studentId == uid()
             && request.resource.data.status == 'in_progress'
             && request.resource.data.keys().hasOnly([
@@ -814,9 +897,18 @@ service cloud.firestore {
               'elapsedSeconds',
               'questionOrder',
               'acknowledgedAt',
+              'honorAcknowledged',
+              'securityPolicySnapshot',
+              'securityViolationCount',
               'accommodationsApplied',
               'attemptNumber'
             ])
+            && assessmentHonorSatisfied(assessmentId)
+            && request.resource.data.securityViolationCount == 0
+            && exists(/databases/$(database)/documents/assessments/$(assessmentId)/attemptCounters/$(uid()))
+            && get(/databases/$(database)/documents/assessments/$(assessmentId)/attemptCounters/$(uid())).data.count
+              == request.resource.data.attemptNumber
+            && assessmentAttemptCountAllowed(assessmentId, request.resource.data.attemptNumber)
           );
 
         allow update: if assessmentOwner(assessmentId)
@@ -838,8 +930,22 @@ service cloud.firestore {
               'elapsedSeconds',
               'status',
               'submittedAt',
-              'updatedAt'
+              'updatedAt',
+              'securityViolationCount'
             ])
+            && (
+              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['securityViolationCount'])
+              || (
+                (
+                  !('securityViolationCount' in resource.data)
+                  && request.resource.data.securityViolationCount == 1
+                )
+                || (
+                  ('securityViolationCount' in resource.data)
+                  && request.resource.data.securityViolationCount == resource.data.securityViolationCount + 1
+                )
+              )
+            )
           );
 
         allow delete: if assessmentOwner(assessmentId)
@@ -893,12 +999,18 @@ service cloud.firestore {
           );
         allow create: if isSelf(studentId)
           && assessmentOpen(assessmentId)
+          && assessmentLateEntryAllowed(assessmentId)
+          && assessmentAccessAuthorized(assessmentId)
           && request.resource.data.studentId == uid()
-          && request.resource.data.count == 1;
+          && request.resource.data.count == 1
+          && assessmentAttemptCountAllowed(assessmentId, request.resource.data.count);
         allow update: if isSelf(studentId)
           && assessmentOpen(assessmentId)
+          && assessmentLateEntryAllowed(assessmentId)
+          && assessmentAccessAuthorized(assessmentId)
           && request.resource.data.studentId == uid()
-          && request.resource.data.count == resource.data.count + 1;
+          && request.resource.data.count == resource.data.count + 1
+          && assessmentAttemptCountAllowed(assessmentId, request.resource.data.count);
         allow delete: if assessmentOwner(assessmentId)
           || (
             assessmentData(assessmentId).sectionId != ''
