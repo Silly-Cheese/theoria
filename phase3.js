@@ -1856,6 +1856,9 @@ async function authorizeRetakeModal(studentId){
       },{merge:true});
       if(sub)batch.set(doc(db,"assessments",a.id,"attemptSubmissions",archiveId),{...sub,studentId,attemptNumber,archivedAt:serverTimestamp(),archivedBy:state().user.uid},{merge:false});
       if(res)batch.set(doc(db,"assessments",a.id,"attemptResults",archiveId),{...res,studentId,attemptNumber,archivedAt:serverTimestamp(),archivedBy:state().user.uid},{merge:false});
+      batch.set(doc(db,"assessments",a.id,"attemptCounters",studentId),{
+        studentId,count:Math.max(attemptNumber,counterCount),updatedAt:serverTimestamp()
+      },{merge:true});
       batch.set(doc(db,"assessments",a.id,"retakes",studentId),{
         studentId,active:true,authorizedAttemptNumber:nextAttempt,
         scorePolicy,retakeWeightPercent,
@@ -3692,7 +3695,7 @@ async function persistResult(sub,grading,existing,overallComment=existing?.overa
   if(!a.entranceExam&&Number(sub.attemptNumber||1)>1){
     try{
       const snap=await getDoc(doc(db,"assessments",a.id,"retakes",sub.studentId));
-      if(snap.exists()&&snap.data().active===true&&Number(snap.data().authorizedAttemptNumber||0)===Number(sub.attemptNumber||0)){
+      if(snap.exists()&&Number(snap.data().authorizedAttemptNumber||0)===Number(sub.attemptNumber||0)){
         retakeAuthorization={id:snap.id,...snap.data()};
       }
     }catch(error){console.warn("Unable to load retake scoring policy:",error);}
