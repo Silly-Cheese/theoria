@@ -983,7 +983,8 @@ async function studentAssessmentResults(id){
     if(!root)throw new Error("Assessment results workspace is unavailable.");
     root.innerHTML=
       '<div class="student-results-shell"><button class="text-btn" data-phase3-action="back-assessments">← Assessments</button>'+
-      '<div class="student-results-hero"><div><div class="eyebrow">'+esc(a.courseCode||"")+' • '+esc(a.type||"Assessment")+'</div><h1>'+esc(a.title||"Assessment")+'</h1><p>Grading is complete. This summary shows your performance without exposing answer keys.</p></div><div class="result-score-mark"><strong>'+esc(result.percent??"—")+(result.percent!==undefined&&result.percent!==null?"%":"")+'</strong><span>'+esc(result.totalScore??"—")+' / '+esc(result.maxScore??a.totalPoints??"—")+' points</span></div></div>'+
+      '<div class="student-results-hero"><div><div class="eyebrow">'+esc(a.courseCode||"")+' • '+esc(a.type||"Assessment")+(Number(result.attemptNumber||1)>1?' • RETAKE '+esc(result.attemptNumber):'')+'</div><h1>'+esc(a.title||"Assessment")+'</h1><p>Grading is complete. This summary shows your performance without exposing answer keys.</p></div><div class="result-score-mark"><strong>'+esc(result.percent??"—")+(result.percent!==undefined&&result.percent!==null?"%":"")+'</strong><span>'+(Number(result.attemptNumber||1)>1?'Official grade':'Assessment grade')+'</span></div></div>'+
+      (Number(result.attemptNumber||1)>1?'<div class="retake-result-summary"><div><span>Retake Raw Score</span><strong>'+esc(result.attemptPercent??result.percent)+'%</strong></div><div><span>Official Grade</span><strong>'+esc(result.percent)+'%</strong></div><div><span>Policy</span><strong>'+esc(retakePolicyLabel(result.retakePolicy,result.retakeWeightPercent))+'</strong></div></div>':'')+
       '<div class="receipt-grid student-result-meta"><div><span>Candidate Number</span><strong>'+esc(result.candidateNumber||sub.candidateNumber||"—")+'</strong></div><div><span>Status</span><strong>Graded</strong></div><div><span>Submitted</span><strong>'+esc(dateText(sub.submittedAt))+'</strong></div><div><span>Graded</span><strong>'+esc(dateText(result.gradedAt))+'</strong></div></div>'+
       (parts.length?'<section class="student-result-section"><div class="panel-title">Assessment Part Performance</div><div class="result-domain-grid">'+parts.map(x=>'<div><span>'+esc(x?.title||"Assessment Part")+'</span><strong>'+esc(x?.percent??"—")+(x?.percent!==undefined&&x?.percent!==null?"%":"")+'</strong><small>'+esc(x?.score??"—")+' / '+esc(x?.max??"—")+' pts</small></div>').join("")+'</div></section>':'')+
       (questionRows?'<section class="student-result-section"><div class="panel-title">Question Performance</div><p class="student-result-note">Question text and answer keys are not displayed in this results summary.</p><div class="student-result-question-list">'+questionRows+'</div></section>':'<section class="student-result-section"><div class="panel-title">Question Performance</div><p class="student-result-note">Per-question metadata is unavailable for this legacy attempt, but your overall and assessment-part results are shown above.</p></section>')+
@@ -3560,7 +3561,8 @@ async function receipt(id,auto=false){
     const domains=result?.partScores?'<div class="receipt-domains"><div class="panel-title">Examination Domain Performance</div>'+Object.values(result.partScores).map(x=>'<div class="blueprint-row"><span>'+esc(x.title)+'</span><strong>'+esc(x.percent)+'%</strong></div>').join("")+'</div>':'';
     core().setPage("exam",assessment.title||"Submission Receipt");
     const entranceResult=assessment.entranceExam&&result?'<div class="notice '+(Number(result.percent||0)>=Number(assessment.entrancePassPercent||70)?'':'danger-notice')+'" style="margin-top:16px"><strong>'+(Number(result.percent||0)>=Number(assessment.entrancePassPercent||70)?'Entrance requirement passed.':'Entrance requirement not yet met.')+'</strong><p>Score: '+esc(result.percent)+'% • Required: '+esc(assessment.entrancePassPercent||70)+'%'+(Number(result.percent||0)>=Number(assessment.entrancePassPercent||70)?'. Return to enrollment and enter the section join code to finish enrolling.':'. Contact the instructor if a retake should be authorized.')+'</p></div>':'';
-    $("#examRoot").innerHTML='<div class="receipt-shell"><div class="receipt-mark">Θ</div><div class="eyebrow">'+(assessment.entranceExam?'Entrance Examination':'Examination Receipt')+'</div><h1>'+esc(assessment.title||"Assessment")+'</h1><p>Your response has been recorded'+(auto?" automatically when time expired":"")+'.</p><div class="receipt-grid"><div><span>Candidate Number</span><strong>'+esc(sub.candidateNumber||"—")+'</strong></div><div><span>Status</span><strong>'+esc(sub.status||"submitted")+'</strong></div><div><span>Submitted</span><strong>'+esc(dateText(sub.submittedAt))+'</strong></div><div><span>Result</span><strong>'+(result?esc(result.percent)+"%":"Awaiting evaluation")+'</strong></div></div>'+domains+entranceResult+(result?.overallComment?'<div class="academic-banner"><div class="kicker">Instructor Comment</div><p>'+esc(result.overallComment)+'</p></div>':'')+'<button class="primary-btn" data-phase3-action="'+(assessment.entranceExam?'entrance-return':'back-assessments')+'">'+(assessment.entranceExam?'Return to Enrollment':'Return to Assessments')+'</button></div>';
+    const retakeResult=result&&Number(result.attemptNumber||1)>1?'<div class="retake-result-summary" style="margin-top:16px"><div><span>Retake '+esc(result.attemptNumber)+' Raw Score</span><strong>'+esc(result.attemptPercent??result.percent)+'%</strong></div><div><span>Official Grade</span><strong>'+esc(result.percent)+'%</strong></div><div><span>Policy</span><strong>'+esc(retakePolicyLabel(result.retakePolicy,result.retakeWeightPercent))+'</strong></div></div>':'';
+    $("#examRoot").innerHTML='<div class="receipt-shell"><div class="receipt-mark">Θ</div><div class="eyebrow">'+(assessment.entranceExam?'Entrance Examination':Number(sub.attemptNumber||1)>1?'Assessment Retake Receipt':'Examination Receipt')+'</div><h1>'+esc(assessment.title||"Assessment")+'</h1><p>Your response has been recorded'+(auto?" automatically when time expired":"")+'.</p><div class="receipt-grid"><div><span>Candidate Number</span><strong>'+esc(sub.candidateNumber||"—")+'</strong></div><div><span>Status</span><strong>'+esc(sub.status||"submitted")+'</strong></div><div><span>Attempt</span><strong>'+esc(sub.attemptNumber||1)+'</strong></div><div><span>Result</span><strong>'+(result?esc(result.percent)+"%":"Awaiting evaluation")+'</strong></div></div>'+retakeResult+domains+entranceResult+(result?.overallComment?'<div class="academic-banner"><div class="kicker">Instructor Comment</div><p>'+esc(result.overallComment)+'</p></div>':'')+'<button class="primary-btn" data-phase3-action="'+(assessment.entranceExam?'entrance-return':'back-assessments')+'">'+(assessment.entranceExam?'Return to Enrollment':'Return to Assessments')+'</button></div>';
   }catch(_){toast("Unable to load the submission receipt.");}
 }
 
@@ -3637,21 +3639,46 @@ function metrics(a,d,grading,sub){
 }
 
 async function persistResult(sub,grading,existing,overallComment=existing?.overallComment||""){
-  const d=P3.detail,a=d.assessment,m=metrics(a,d,grading,sub),released=m.complete?true:(existing?.released||false),batch=writeBatch(db);
-  batch.set(doc(db,"assessments",a.id,"results",sub.studentId),{studentId:sub.studentId,candidateNumber:sub.candidateNumber,totalScore:m.total,maxScore:m.max,percent:m.percent,grading,partScores:m.partScores,released,complete:m.complete,overallComment,gradedAt:serverTimestamp(),gradedBy:state().user.uid},{merge:true});
+  const d=P3.detail,a=d.assessment,m=metrics(a,d,grading,sub),released=m.complete?true:(existing?.released||false);
+  let retakeAuthorization=null;
+  if(!a.entranceExam&&Number(sub.attemptNumber||1)>1){
+    try{
+      const snap=await getDoc(doc(db,"assessments",a.id,"retakes",sub.studentId));
+      if(snap.exists()&&snap.data().active===true&&Number(snap.data().authorizedAttemptNumber||0)===Number(sub.attemptNumber||0)){
+        retakeAuthorization={id:snap.id,...snap.data()};
+      }
+    }catch(error){console.warn("Unable to load retake scoring policy:",error);}
+  }
+
+  const officialPercent=m.complete&&retakeAuthorization?retakeOfficialPercent(m.percent,retakeAuthorization):m.percent;
+  const officialScore=m.max?Math.round((m.max*officialPercent/100)*100)/100:m.total;
+  const batch=writeBatch(db);
+
+  batch.set(doc(db,"assessments",a.id,"results",sub.studentId),{
+    studentId:sub.studentId,
+    candidateNumber:sub.candidateNumber,
+    totalScore:officialScore,
+    maxScore:m.max,
+    percent:officialPercent,
+    officialPercent,
+    attemptScore:m.total,
+    attemptMaxScore:m.max,
+    attemptPercent:m.percent,
+    attemptNumber:Number(sub.attemptNumber||1),
+    retakePolicy:retakeAuthorization?.scorePolicy||"",
+    retakeWeightPercent:retakeAuthorization?.retakeWeightPercent??null,
+    grading,partScores:m.partScores,released,complete:m.complete,overallComment,
+    gradedAt:serverTimestamp(),gradedBy:state().user.uid
+  },{merge:true});
+
   if(m.complete){
     batch.update(doc(db,"assessments",a.id,"submissions",sub.studentId),{status:"graded",updatedAt:serverTimestamp()});
     if(a.entranceExam===true){
       const passPercent=Number(a.entrancePassPercent||70);
       batch.set(doc(db,"sections",a.sectionId,"entranceCandidates",sub.studentId),{
         status:m.percent>=passPercent?"passed":"failed",
-        score:m.total,
-        maxScore:m.max,
-        percent:m.percent,
-        passPercent,
-        assessmentId:a.id,
-        gradedAt:serverTimestamp(),
-        updatedAt:serverTimestamp()
+        score:m.total,maxScore:m.max,percent:m.percent,passPercent,assessmentId:a.id,
+        gradedAt:serverTimestamp(),updatedAt:serverTimestamp()
       },{merge:true});
       batch.set(doc(db,"users",sub.studentId,"entranceAttempts",a.sectionId),{
         sectionId:a.sectionId,courseId:a.courseId,courseCode:a.courseCode||"",courseTitle:a.courseTitle||"",
@@ -3660,12 +3687,31 @@ async function persistResult(sub,grading,existing,overallComment=existing?.overa
         gradedAt:serverTimestamp(),updatedAt:serverTimestamp()
       },{merge:true});
     }else{
-      batch.set(doc(db,"sections",a.sectionId,"assessmentGrades",a.id+"_"+sub.studentId),{assessmentId:a.id,assessmentTitle:a.title,assessmentType:a.type,studentId:sub.studentId,score:m.total,maxScore:m.max,percent:m.percent,partScores:m.partScores,released,updatedAt:serverTimestamp()},{merge:true});
+      batch.set(doc(db,"sections",a.sectionId,"assessmentGrades",a.id+"_"+sub.studentId),{
+        assessmentId:a.id,assessmentTitle:a.title,assessmentType:a.type,studentId:sub.studentId,
+        score:officialScore,maxScore:m.max,percent:officialPercent,
+        attemptScore:m.total,attemptPercent:m.percent,attemptNumber:Number(sub.attemptNumber||1),
+        retakePolicy:retakeAuthorization?.scorePolicy||"",retakeWeightPercent:retakeAuthorization?.retakeWeightPercent??null,
+        retakePending:false,partScores:m.partScores,released,updatedAt:serverTimestamp()
+      },{merge:true});
+      if(retakeAuthorization){
+        batch.set(doc(db,"assessments",a.id,"retakes",sub.studentId),{
+          active:false,completedAt:serverTimestamp(),
+          lastAttemptPercent:m.percent,lastOfficialPercent:officialPercent,
+          completedAttemptNumber:Number(sub.attemptNumber||1),
+          updatedAt:serverTimestamp()
+        },{merge:true});
+      }
     }
   }
+
   await batch.commit();
   if(a.sectionId&&window.TheoriaPhase5?.logSectionEvent){
-    await window.TheoriaPhase5.logSectionEvent(a.sectionId,"assessment_result_updated","student",sub.studentId,{assessmentId:a.id,assessmentTitle:a.title||"",percent:m.percent,complete:m.complete,entranceExam:a.entranceExam===true});
+    await window.TheoriaPhase5.logSectionEvent(a.sectionId,"assessment_result_updated","student",sub.studentId,{
+      assessmentId:a.id,assessmentTitle:a.title||"",attemptNumber:Number(sub.attemptNumber||1),
+      attemptPercent:m.percent,officialPercent,retakePolicy:retakeAuthorization?.scorePolicy||"",
+      complete:m.complete,entranceExam:a.entranceExam===true
+    });
   }
 }
 
