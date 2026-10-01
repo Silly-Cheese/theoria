@@ -252,6 +252,8 @@ service cloud.firestore {
           && exists(/databases/$(database)/documents/assessments/$(assessmentId)/accessAuthorizations/$(uid()))
           && get(/databases/$(database)/documents/assessments/$(assessmentId)/accessAuthorizations/$(uid())).data.version
             == get(/databases/$(database)/documents/assessments/$(assessmentId)/securityPrivate/config).data.version
+          && get(/databases/$(database)/documents/assessments/$(assessmentId)/securityPrivate/config).data.version
+            == assessmentData(assessmentId).securityPolicy.accessCodeVersion
         );
     }
 
@@ -861,7 +863,9 @@ service cloud.firestore {
           && request.resource.data.accessCode
             == get(/databases/$(database)/documents/assessments/$(assessmentId)/securityPrivate/config).data.accessCode
           && request.resource.data.version
-            == get(/databases/$(database)/documents/assessments/$(assessmentId)/securityPrivate/config).data.version;
+            == get(/databases/$(database)/documents/assessments/$(assessmentId)/securityPrivate/config).data.version
+          && request.resource.data.version
+            == assessmentData(assessmentId).securityPolicy.accessCodeVersion;
         allow delete: if assessmentOwner(assessmentId)
           || (
             assessmentData(assessmentId).sectionId != ''
