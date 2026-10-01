@@ -547,7 +547,7 @@ async function renderAssessmentSecurity(detail){
     '</section>'+
     '<section class="form-section"><div class="form-section-head"><div><span>03</span><h3>Server-Enforced Access Code</h3><p>The access secret is stored in an instructor-only document. Firestore will reject a new attempt unless the student has supplied the correct code.</p></div></div>'+
       '<label class="policy-card"><input type="checkbox" name="accessCodeConfigured" '+(p.accessCodeConfigured?'checked':'')+'><div><strong>Require Access Code</strong><span>The code is validated by Firestore before an attempt can be created.</span></div></label>'+
-      '<div class="field" style="margin-top:12px"><label>'+(secureCodeReady?'Replace Access Code (leave blank to keep current)':'Set / Re-enter Access Code')+'</label><input name="accessCode" type="password" autocomplete="new-password"></div>'+
+      '<div class="field" style="margin-top:12px"><label>'+(secureCodeReady?'Replace Access Code (leave blank to keep current)':'Set / Re-enter Access Code')+'</label><input name="accessCode" type="password" minlength="6" autocomplete="new-password" placeholder="At least 6 characters"></div>'+
       (p.accessCodeConfigured&&!secureCodeReady?'<div class="notice danger-notice"><strong>Access code is not yet server-enforced.</strong><p>This assessment still has a legacy client-only code. Re-enter a code and save this policy to activate enforced access authorization.</p></div>':'')+
       (secureCodeReady?'<div class="notice"><strong>Server enforcement active.</strong><p>New attempts require a valid authorization matching access-code version '+esc(p.accessCodeVersion||privateConfig?.version||1)+'.</p></div>':'')+
     '</section>'+
@@ -566,20 +566,25 @@ async function renderAssessmentSecurity(detail){
   form.onsubmit=async e=>{
     e.preventDefault();
     const fd=new FormData(form),code=String(fd.get("accessCode")||"").trim(),configured=form.elements.accessCodeConfigured.checked;
-    let accessCodeVersion=Number(p.accessCodeVersion||privateConfig?.version||0);
+    let accessCodeVersion=Math.max(Number(p.accessCodeVersion||0),Number(privateConfig?.version||0));
 
     if(configured){
       if(code){
-        accessCodeVersion=Math.max(accessCodeVersion,Number(privateConfig?.version||0))+1;
+        if(code.length<6)return toast("Use an access code with at least 6 characters.");
+        accessCodeVersion+=1;
       }else if(!privateConfig?.accessCode||Number(privateConfig?.version||0)!==accessCodeVersion){
         return toast("Re-enter an access code so Theoria can activate server-enforced authorization.");
       }
+    }else if(p.accessCodeConfigured===true||privateConfig){
+      // Never reuse an old authorization version after a code is disabled
+      // and later enabled again.
+      accessCodeVersion+=1;
     }
 
     const policy={
       maxAttempts:Math.max(1,Math.floor(Number(fd.get("maxAttempts")||1))),
       lateEntryPolicy:String(fd.get("lateEntryPolicy")||"allow"),
-      lateEntryGraceMinutes:Math.max(0,Number(fd.get("lateEntryGraceMinutes")||0)),
+      lateEntryGraceMinutes:Math.max(0,Math.floor(Number(fd.get("lateEntryGraceMinutes")||0))),
       honorAcknowledgement:form.elements.honorAcknowledgement.checked,
       fullscreenRequired:form.elements.fullscreenRequired.checked,
       fullscreenExpectation:form.elements.fullscreenRequired.checked,
@@ -593,7 +598,7 @@ async function renderAssessmentSecurity(detail){
       logCopy:form.elements.logCopy.checked,
       accessCodeConfigured:configured,
       accessCodeEnforced:configured,
-      accessCodeVersion:configured?accessCodeVersion:0,
+      accessCodeVersion,
       updatedAt:serverTimestamp()
     };
 
