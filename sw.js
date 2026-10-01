@@ -45,15 +45,22 @@ self.addEventListener("fetch",event=>{
     return;
   }
 
-  if(["script","style","image","font"].includes(request.destination)){
+  if(["script","style"].includes(request.destination)){
     event.respondWith(
-      caches.match(request,{ignoreSearch:true}).then(cached=>{
-        const network=fetch(request).then(response=>{
-          if(response&&response.ok)caches.open(CACHE).then(cache=>cache.put(request,response.clone())).catch(()=>{});
-          return response;
-        }).catch(()=>cached);
-        return cached||network;
-      })
+      fetch(request).then(response=>{
+        if(response&&response.ok)caches.open(CACHE).then(cache=>cache.put(request,response.clone())).catch(()=>{});
+        return response;
+      }).catch(()=>caches.match(request,{ignoreSearch:true}))
+    );
+    return;
+  }
+
+  if(["image","font"].includes(request.destination)){
+    event.respondWith(
+      caches.match(request,{ignoreSearch:true}).then(cached=>cached||fetch(request).then(response=>{
+        if(response&&response.ok)caches.open(CACHE).then(cache=>cache.put(request,response.clone())).catch(()=>{});
+        return response;
+      }))
     );
   }
 });
