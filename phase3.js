@@ -2946,17 +2946,21 @@ async function startExam(id,confirmed=false){
       const sync=()=>{begin.disabled=!ack.checked||(honor&&!honor.checked);};ack.onchange=sync;if(honor)honor.onchange=sync;sync();
       begin.onclick=async()=>{
         begin.disabled=true;begin.textContent="Authorizing…";
-        if(security.accessCodeConfigured){
-          const code=modal.querySelector("#examAccessCode")?.value||"";
-          const authorized=await window.TheoriaPlatform?.authorizeAssessmentAccess?.(a,code);
-          if(!authorized){begin.disabled=false;begin.textContent="Begin Assessment";return;}
-        }
-        if((security.fullscreenRequired||security.fullscreenExpectation)&&!document.fullscreenElement){
+        const fullscreenRequired=security.fullscreenRequired||security.fullscreenExpectation;
+        if(fullscreenRequired&&!document.fullscreenElement){
           try{
             await document.documentElement.requestFullscreen();
           }catch(error){
             begin.disabled=false;begin.textContent="Begin Assessment";
             return toast("Fullscreen is required for this assessment. Allow fullscreen, then begin again.");
+          }
+        }
+        if(security.accessCodeConfigured){
+          const code=modal.querySelector("#examAccessCode")?.value||"";
+          const authorized=await window.TheoriaPlatform?.authorizeAssessmentAccess?.(a,code);
+          if(!authorized){
+            if(fullscreenRequired&&document.fullscreenElement&&document.exitFullscreen)document.exitFullscreen().catch(()=>{});
+            begin.disabled=false;begin.textContent="Begin Assessment";return;
           }
         }
         core().closeModal();startExam(id,true);
@@ -2968,11 +2972,14 @@ async function startExam(id,confirmed=false){
       try{order=buildAttemptQuestionOrder(a);}catch(error){return toast(error.message||"Unable to build your assessment version.");}
       if(!order.length)return toast("This assessment has no published questions.");
       const nextAttempt=attemptCount+1;
-      await setDoc(doc(db,"assessments",id,"attemptCounters",s.user.uid),{studentId:s.user.uid,count:nextAttempt,lastStartedAt:serverTimestamp(),updatedAt:serverTimestamp()},{merge:true});
-      await setDoc(doc(db,"assessments",id,"submissions",s.user.uid),{
+      const attemptBatch=writeBatch(db);
+      attemptBatch.set(doc(db,"assessments",id,"attemptCounters",s.user.uid),{
+        studentId:s.user.uid,count:nextAttempt,lastStartedAt:serverTimestamp(),updatedAt:serverTimestamp()
+      },{merge:true});
+      attemptBatch.set(doc(db,"assessments",id,"submissions",s.user.uid),{
         studentId:s.user.uid,candidateNumber:newCandidateNumber(),status:"in_progress",attemptNumber:nextAttempt,
         startedAt:serverTimestamp(),acknowledgedAt:serverTimestamp(),honorAcknowledged:security.honorAcknowledgement?true:false,updatedAt:serverTimestamp(),
-        answers:{},marked:[],currentIndex:0,elapsedSeconds:0,questionOrder:order,
+        answers:{},marked:[],currentIndex:0,elapsedSeconds:0,questionOrder:order,securityViolationCount:0,
         securityPolicySnapshot:{
           maxAttempts:Math.max(1,Number(security.maxAttempts||1)),
           lateEntryPolicy:String(security.lateEntryPolicy||"allow"),
@@ -2991,6 +2998,7 @@ async function startExam(id,confirmed=false){
         },
         accommodationsApplied:{timeMultiplier:Number(acc.timeMultiplier||1),breaks:!!acc.breaks,calculator:!!acc.calculator,largeText:!!acc.largeText,reducedDistractions:!!acc.reducedDistractions}
       });
+      await attemptBatch.commit();
       if(a.entranceExam===true){
         await setDoc(doc(db,"users",s.user.uid,"entranceAttempts",a.sectionId),{status:"in_progress",assessmentId:a.id,updatedAt:serverTimestamp()},{merge:true});
       }
