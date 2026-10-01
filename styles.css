@@ -1977,3 +1977,24 @@ html{font-size:calc(16px * var(--user-font-scale,1))}
   .recovery-row{align-items:flex-start;flex-direction:column}
   .record-narrative{grid-template-columns:1fr}
 }
+
+/* Enforced assessment security */
+.exam-security-lock{position:fixed;inset:0;z-index:5000;display:grid;place-items:center;padding:24px;background:rgba(20,18,17,.94);backdrop-filter:blur(10px)}
+.exam-security-lock-card{width:min(560px,100%);padding:30px;border:1px solid rgba(255,255,255,.18);border-radius:14px;background:#f7f3ec;box-shadow:0 24px 80px rgba(0,0,0,.45);text-align:center}
+.security-lock-mark{display:grid;place-items:center;width:58px;height:58px;margin:0 auto 16px;border:1px solid var(--lineDark);border-radius:50%;font-family:"Libre Baskerville",serif;font-size:24px;color:var(--burgundy)}
+.exam-security-lock-card h2{margin:7px 0 10px;font-family:"Libre Baskerville",serif;font-size:22px;font-weight:400;color:var(--ink)}
+.exam-security-lock-card p{max-width:460px;margin:0 auto 16px;font-size:10px;line-height:1.65;color:var(--slate)}
+.exam-security-lock-card .primary-btn{min-width:230px;margin-top:14px}
+.exam-security-lock-card>small{display:block;margin-top:12px;font-size:7px;line-height:1.5;color:var(--muted)}
+.security-lock-status{display:flex;align-items:center;justify-content:space-between;gap:16px;max-width:320px;margin:16px auto 0;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:#fff}
+.security-lock-status span{font-size:7px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.security-lock-status strong{font-family:"Libre Baskerville",serif;font-size:18px;color:var(--burgundy)}
+.security-signal-panel .data-table td,.security-signal-panel .data-table th{text-align:center}
+.security-signal-panel .data-table td:first-child,.security-signal-panel .data-table th:first-child{text-align:left}
+#phase6SecurityForm .policy-card:has(input:checked){border-color:rgba(107,35,50,.35);background:#fffafa}
+#phase6SecurityForm input:disabled{opacity:.55;cursor:not-allowed}
+@media(max-width:700px){
+  .exam-security-lock{padding:14px}
+  .exam-security-lock-card{padding:24px 18px}
+  .exam-security-lock-card h2{font-size:19px}
+}
