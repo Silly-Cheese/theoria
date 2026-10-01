@@ -3194,7 +3194,19 @@ async function toggleGradingPeriodLock(period){
   const s=state(),section=s?.currentSection;if(!section||s.role!=="instructor")return;
   const snap=await getDoc(doc(db,"sections",section.id));if(!snap.exists())return toast("Section not found.");
   const data=snap.data(),policy=data.gradingPolicy||{},settings={...(policy.gradingPeriodSettings||{})},current=settings[period]||{},nextLocked=current.locked!==true;
-  if(nextLocked&&!confirm("Finalize and lock "+period+"? Grade edits for assignments in this period will be blocked until an instructor reopens it."))return;
+  if(nextLocked){
+    const sectionData=s.sectionData||{},assignments=(sectionData.assignments||[]).filter(a=>a.status!=="Draft"&&(a.gradingPeriod||"Overall")===period),members=sectionData.members||[],grades=sectionData.grades||[];
+    let ungraded=0,markedMissing=0;
+    for(const assignment of assignments){
+      for(const member of members){
+        const grade=grades.find(g=>g.assignmentId===assignment.id&&g.studentId===member.id);
+        if(!grade||grade.score===null||grade.score===undefined)ungraded++;
+        if(String(grade?.gradeStatus||"")==="Missing")markedMissing++;
+      }
+    }
+    const review="Finalize and lock "+period+"?\n\nFinalization review:\n• "+assignments.length+" coursework item"+(assignments.length===1?"":"s")+"\n• "+members.length+" student"+(members.length===1?"":"s")+"\n• "+ungraded+" ungraded cell"+(ungraded===1?"":"s")+"\n• "+markedMissing+" explicitly marked Missing\n\nGrade edits will be blocked until an instructor reopens the period.";
+    if(!confirm(review))return;
+  }
   if(!nextLocked&&!confirm("Reopen "+period+" for grade changes? The audit log will record this action."))return;
   settings[period]={
     ...current,
