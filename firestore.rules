@@ -220,16 +220,41 @@ service cloud.firestore {
         );
     }
 
-    function assessmentOpen(assessmentId) {
-      return assessmentMember(assessmentId)
-        && assessmentData(assessmentId).status == 'Published'
+    function activeRetakeAuthorization(assessmentId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/assessments/$(assessmentId)/retakes/$(uid()))
+        && get(/databases/$(database)/documents/assessments/$(assessmentId)/retakes/$(uid())).data.active == true;
+    }
+
+    function retakeWindowOpen(assessmentId) {
+      return activeRetakeAuthorization(assessmentId)
         && (
-          assessmentData(assessmentId).opensAt == null
-          || request.time >= assessmentData(assessmentId).opensAt
+          !('opensAt' in get(/databases/$(database)/documents/assessments/$(assessmentId)/retakes/$(uid())).data)
+          || get(/databases/$(database)/documents/assessments/$(assessmentId)/retakes/$(uid())).data.opensAt == null
+          || request.time >= get(/databases/$(database)/documents/assessments/$(assessmentId)/retakes/$(uid())).data.opensAt
         )
         && (
-          assessmentData(assessmentId).closesAt == null
-          || request.time <= assessmentData(assessmentId).closesAt
+          !('closesAt' in get(/databases/$(database)/documents/assessments/$(assessmentId)/retakes/$(uid())).data)
+          || get(/databases/$(database)/documents/assessments/$(assessmentId)/retakes/$(uid())).data.closesAt == null
+          || request.time <= get(/databases/$(database)/documents/assessments/$(assessmentId)/retakes/$(uid())).data.closesAt
+        );
+    }
+
+    function assessmentOpen(assessmentId) {
+      return assessmentMember(assessmentId)
+        && (
+          (
+            assessmentData(assessmentId).status == 'Published'
+            && (
+              assessmentData(assessmentId).opensAt == null
+              || request.time >= assessmentData(assessmentId).opensAt
+            )
+            && (
+              assessmentData(assessmentId).closesAt == null
+              || request.time <= assessmentData(assessmentId).closesAt
+            )
+          )
+          || retakeWindowOpen(assessmentId)
         );
     }
 
@@ -260,20 +285,27 @@ service cloud.firestore {
     function assessmentAttemptCountAllowed(assessmentId, count) {
       return (
           (
-            !('securityPolicy' in assessmentData(assessmentId))
-            || !('maxAttempts' in assessmentData(assessmentId).securityPolicy)
+            (
+              !('securityPolicy' in assessmentData(assessmentId))
+              || !('maxAttempts' in assessmentData(assessmentId).securityPolicy)
+            )
+            && count <= 1
           )
-          && count <= 1
+          || (
+            ('securityPolicy' in assessmentData(assessmentId))
+            && ('maxAttempts' in assessmentData(assessmentId).securityPolicy)
+            && count <= assessmentData(assessmentId).securityPolicy.maxAttempts
+          )
         )
         || (
-          ('securityPolicy' in assessmentData(assessmentId))
-          && ('maxAttempts' in assessmentData(assessmentId).securityPolicy)
-          && count <= assessmentData(assessmentId).securityPolicy.maxAttempts
+          activeRetakeAuthorization(assessmentId)
+          && get(/databases/$(database)/documents/assessments/$(assessmentId)/retakes/$(uid())).data.authorizedAttemptNumber == count
         );
     }
 
     function assessmentLateEntryAllowed(assessmentId) {
-      return !('securityPolicy' in assessmentData(assessmentId))
+      return retakeWindowOpen(assessmentId)
+        || !('securityPolicy' in assessmentData(assessmentId))
         || !('lateEntryPolicy' in assessmentData(assessmentId).securityPolicy)
         || assessmentData(assessmentId).securityPolicy.lateEntryPolicy != 'deny-after-start'
         || assessmentData(assessmentId).opensAt == null
@@ -587,7 +619,38 @@ service cloud.firestore {
           || (sectionMember(sectionId) && resource.data.status == 'Published');
         allow create, update, delete: if sectionCourseworkManager(sectionId);
 
-        match /submissions/{studentId} {
+        match /retakes/{studentId} {
+        allow read: if isSelf(studentId)
+          || assessmentOwner(assessmentId)
+          || (
+            assessmentData(assessmentId).sectionId != ''
+            && sectionGrader(assessmentData(assessmentId).sectionId)
+          );
+        allow create, update, delete: if assessmentOwner(assessmentId)
+          || (
+            assessmentData(assessmentId).sectionId != ''
+            && sectionAcademicManager(assessmentData(assessmentId).sectionId)
+          );
+      }
+
+      match /attemptHistory/{historyId} {
+        allow read: if assessmentOwner(assessmentId)
+          || (
+            assessmentData(assessmentId).sectionId != ''
+            && sectionGrader(assessmentData(assessmentId).sectionId)
+          )
+          || (
+            signedIn()
+            && resource.data.studentId == uid()
+          );
+        allow create, update, delete: if assessmentOwner(assessmentId)
+          || (
+            assessmentData(assessmentId).sectionId != ''
+            && sectionAcademicManager(assessmentData(assessmentId).sectionId)
+          );
+      }
+
+      match /submissions/{studentId} {
           allow read: if sectionGrader(sectionId) || isSelf(studentId);
           allow create: if isSelf(studentId)
             && sectionMember(sectionId)
