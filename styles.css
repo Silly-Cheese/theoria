@@ -2017,3 +2017,311 @@ html{font-size:calc(16px * var(--user-font-scale,1))}
   .retake-policy-grid .span-2{grid-column:auto}
   .attempt-history-row{grid-template-columns:1fr}
 }
+
+
+/* =========================================================
+   ADVANCED GRADEBOOK WORKSPACE
+   ========================================================= */
+.gradebook-control-panel{
+  display:grid;
+  grid-template-columns:minmax(180px,1.3fr) minmax(160px,1fr) minmax(160px,1fr) 130px auto;
+  gap:10px;
+  align-items:end;
+  margin:12px 0;
+  padding:12px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:#faf8f4
+}
+.gradebook-control-panel .field{margin:0}
+.gradebook-control-actions{display:flex;gap:7px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
+.compact-threshold .input-with-suffix{min-width:105px}
+.advanced-period-toolbar{gap:10px;flex-wrap:wrap}
+.advanced-period-toolbar>div:first-child{min-width:150px}
+.advanced-period-toolbar small{display:block;margin-top:3px;font-size:7px;color:var(--muted)}
+
+.advanced-gradebook-summary{grid-template-columns:repeat(6,1fr)}
+.gradebook-select-col{
+  width:42px!important;
+  min-width:42px!important;
+  max-width:42px!important;
+  padding:6px!important;
+  text-align:center!important;
+  position:sticky!important;
+  left:0!important;
+  z-index:15!important;
+  background:#f4f0e9!important
+}
+.advanced-gradebook-table .student-sticky{left:42px!important}
+.advanced-gradebook-table tbody .gradebook-select-col{background:#fff!important}
+.advanced-gradebook-table tbody tr:hover .gradebook-select-col{background:#faf6ef!important}
+.gradebook-student-link{
+  display:block;
+  width:100%;
+  padding:0;
+  border:0;
+  background:transparent;
+  color:#282521;
+  text-align:left;
+  font:inherit;
+  font-weight:800;
+  cursor:pointer
+}
+.gradebook-student-link:hover{color:var(--burgundy);text-decoration:underline;text-underline-offset:2px}
+
+.gradebook-column-title{
+  display:-webkit-box;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:4;
+  width:100%;
+  overflow:hidden;
+  padding:0;
+  border:0;
+  background:transparent;
+  color:#3c3934;
+  text-align:left;
+  font-size:8px;
+  font-weight:800;
+  line-height:1.32;
+  cursor:pointer
+}
+.gradebook-column-title:hover{color:var(--burgundy);text-decoration:underline;text-underline-offset:2px}
+
+.gradebook-inline-cell{padding:6px!important}
+.gradebook-inline-score{
+  display:block;
+  width:72px;
+  max-width:100%;
+  margin:0 auto 2px;
+  padding:6px 5px;
+  border:1px solid transparent;
+  border-radius:7px;
+  background:transparent;
+  color:#292622;
+  text-align:center;
+  font-size:11px;
+  font-weight:800;
+  outline:none
+}
+.gradebook-inline-score:hover{border-color:#d9c8a5;background:#fffdf8}
+.gradebook-inline-score:focus{border-color:#b89b64;background:#fff;box-shadow:0 0 0 2px rgba(184,155,100,.13)}
+.gradebook-inline-score:disabled{opacity:.5;cursor:not-allowed}
+.gradebook-inline-cell .grade-cell-percent{font-size:8px}
+.gradebook-inline-cell .grade-status-note{
+  display:inline-flex;
+  margin-top:4px;
+  padding:2px 5px;
+  border-radius:999px;
+  background:#f3ede3;
+  color:#735e39;
+  font-size:6px;
+  font-weight:800;
+  text-transform:uppercase;
+  letter-spacing:.05em
+}
+.gradebook-jump.collapsed{border-style:dashed;background:#f0ece5}
+.gradebook-jump.collapsed small{color:var(--burgundy)}
+
+.grade-summary-sticky{
+  position:sticky!important;
+  z-index:9!important;
+  min-width:104px!important;
+  width:104px!important;
+  max-width:104px!important;
+  padding:8px!important;
+  background:#f8f5ef!important;
+  border-left:1px solid #d8d0c5!important;
+  text-align:center!important
+}
+.coursework-summary-col{right:462px!important;border-left:2px solid #cabda9!important}
+.semester-summary-col{right:358px!important}
+.comprehensive-summary-col{right:254px!important}
+.final-summary-col{
+  right:138px!important;
+  min-width:116px!important;
+  width:116px!important;
+  max-width:116px!important;
+  background:#f8edf0!important
+}
+.status-summary-col{
+  right:0!important;
+  min-width:138px!important;
+  width:138px!important;
+  max-width:138px!important;
+  background:#f1e7e9!important;
+  box-shadow:-5px 0 10px rgba(45,38,31,.07)
+}
+.advanced-gradebook-table thead .grade-summary-sticky{z-index:14!important;background:#ece6dd!important}
+.advanced-gradebook-table thead .final-summary-col,
+.advanced-gradebook-table thead .status-summary-col{background:#eadde0!important;color:#56363d!important}
+.advanced-gradebook-table tfoot .grade-summary-sticky{z-index:13!important;background:#ede7de!important}
+.advanced-gradebook-table tfoot .final-summary-col,
+.advanced-gradebook-table tfoot .status-summary-col{background:#e9dfe1!important}
+.gradebook-summary-cell{
+  text-align:center!important;
+  vertical-align:middle!important
+}
+.gradebook-summary-cell strong{
+  display:block;
+  font-family:"Libre Baskerville",serif;
+  font-size:12px;
+  font-weight:400;
+  color:#302b27
+}
+.gradebook-summary-cell span{
+  display:block;
+  margin-top:3px;
+  color:var(--muted);
+  font-size:6px;
+  text-transform:uppercase;
+  letter-spacing:.06em
+}
+.final-projection-cell b{
+  display:inline-flex;
+  margin-top:3px;
+  padding:2px 6px;
+  border-radius:999px;
+  background:#6d2738;
+  color:#fff;
+  font-size:7px
+}
+.gradebook-status-cell{text-align:center!important;vertical-align:middle!important}
+.gradebook-status-cell .badge{
+  white-space:normal;
+  line-height:1.25;
+  cursor:pointer
+}
+.gradebook-status-cell>strong{display:block;font-size:12px}
+.gradebook-status-cell>span{display:block;margin-top:3px;font-size:6px;color:var(--muted)}
+
+.grade-impact-preview{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:8px;
+  margin:12px 0 16px
+}
+.grade-impact-preview>div{
+  padding:11px 12px;
+  border:1px solid var(--line);
+  border-radius:10px;
+  background:#faf8f3
+}
+.grade-impact-preview span{
+  display:block;
+  margin-bottom:5px;
+  color:var(--muted);
+  font-size:7px;
+  font-weight:800;
+  text-transform:uppercase;
+  letter-spacing:.07em
+}
+.grade-impact-preview strong{font-family:"Libre Baskerville",serif;font-size:13px;font-weight:400}
+.gradebook-certified-warning{
+  display:grid;
+  gap:3px;
+  border-color:#c9939f!important;
+  background:#fbf0f2!important
+}
+.gradebook-certified-warning strong{color:var(--burgundy)}
+.gradebook-certified-warning span{font-size:8px;line-height:1.45}
+
+.feedback-preset-row{display:flex;flex-wrap:wrap;gap:6px}
+.feedback-preset{
+  padding:6px 9px;
+  border:1px solid var(--line);
+  border-radius:999px;
+  background:#fff;
+  color:#5e554d;
+  font-size:7px;
+  font-weight:700;
+  cursor:pointer
+}
+.feedback-preset:hover{border-color:#b89b64;background:#faf6ed;color:#3d352e}
+
+.gradebook-column-stats{
+  display:flex;
+  flex-wrap:wrap;
+  gap:7px;
+  margin-top:12px
+}
+.gradebook-column-stats span{
+  padding:6px 9px;
+  border:1px solid var(--line);
+  border-radius:999px;
+  background:#faf8f4;
+  color:#655d55;
+  font-size:7px;
+  font-weight:700
+}
+
+.gradebook-drawer-modal{
+  width:min(920px,92vw)!important;
+  max-height:92vh;
+  margin-left:auto!important;
+  margin-right:18px!important;
+  border-radius:18px 0 0 18px!important
+}
+.gradebook-drawer-summary{grid-template-columns:repeat(4,1fr)}
+.gradebook-drawer-modal .modal-body{padding-bottom:20px}
+
+.student-grade-dashboard{display:grid;gap:16px}
+.advanced-student-grade-summary{
+  display:grid;
+  grid-template-columns:repeat(6,minmax(0,1fr));
+  border:1px solid var(--line);
+  border-radius:14px;
+  overflow:hidden;
+  background:#fff
+}
+.advanced-student-grade-summary>div{
+  min-height:92px;
+  padding:13px;
+  border-right:1px solid var(--line);
+  display:flex;
+  flex-direction:column;
+  justify-content:center
+}
+.advanced-student-grade-summary>div:last-child{border-right:0}
+.advanced-student-grade-summary span{
+  font-size:7px;
+  font-weight:800;
+  text-transform:uppercase;
+  letter-spacing:.07em;
+  color:var(--muted)
+}
+.advanced-student-grade-summary strong{
+  display:block;
+  margin-top:7px;
+  font-family:"Libre Baskerville",serif;
+  font-size:17px;
+  font-weight:400;
+  color:#302b27
+}
+.advanced-student-grade-summary small{margin-top:4px;color:var(--burgundy);font-weight:800}
+.student-certified-record{display:flex;justify-content:space-between;gap:12px;align-items:center}
+
+@media(max-width:1250px){
+  .gradebook-control-panel{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .gradebook-control-actions{justify-content:flex-start;grid-column:1/-1}
+  .advanced-gradebook-summary{grid-template-columns:repeat(3,1fr)}
+  .advanced-student-grade-summary{grid-template-columns:repeat(3,1fr)}
+  .advanced-student-grade-summary>div:nth-child(3n){border-right:0}
+}
+@media(max-width:1050px){
+  .advanced-gradebook-table .grade-summary-sticky{
+    position:static!important;
+    box-shadow:none!important
+  }
+  .advanced-gradebook-table .student-sticky{left:42px!important}
+}
+@media(max-width:700px){
+  .gradebook-control-panel{grid-template-columns:1fr}
+  .gradebook-control-actions{grid-column:auto}
+  .advanced-gradebook-summary{grid-template-columns:repeat(2,1fr)}
+  .advanced-student-grade-summary{grid-template-columns:repeat(2,1fr)}
+  .advanced-student-grade-summary>div{border-bottom:1px solid var(--line)}
+  .advanced-student-grade-summary>div:nth-child(2n){border-right:0}
+  .gradebook-drawer-modal{width:96vw!important;margin:0 auto!important;border-radius:16px!important}
+  .grade-impact-preview{grid-template-columns:1fr}
+  .student-certified-record{align-items:flex-start;flex-direction:column}
+}
