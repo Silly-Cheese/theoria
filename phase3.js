@@ -1955,6 +1955,7 @@ async function attemptHistoryModal(studentId){
 
 function candidatesView(){
   const d=P3.detail,a=d.assessment,subMap=new Map(d.submissions.map(x=>[x.studentId,x])),resMap=new Map(d.results.map(x=>[x.studentId,x])),retakeMap=new Map((d.retakes||[]).map(x=>[x.studentId||x.id,x]));
+  const section=state()?.sections?.find(x=>x.id===a.sectionId),canManageRetakes=a.ownerId===state()?.user?.uid||["owner","coordinator"].includes(section?.staffRole||"");
   if(!d.members.length)return '<div class="empty-state"><div class="empty-symbol">C</div><h3>No enrolled candidates.</h3></div>';
   return '<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Candidate</th><th>Status</th><th>Result</th><th>Student Visibility</th><th>Action</th></tr></thead><tbody>'+d.members.map(m=>{
     const sub=subMap.get(m.id),res=resMap.get(m.id),retake=retakeMap.get(m.id),history=(d.attemptHistory||[]).filter(x=>x.studentId===m.id),name=a.anonymousGrading!==false?(sub?.candidateNumber||m.displayName||"Candidate"):m.displayName;
@@ -1966,8 +1967,8 @@ function candidatesView(){
     else if(!a.entranceExam){
       const controls=[];
       if(sub)controls.push('<button class="secondary-btn small-btn" data-phase3-action="grade-candidate" data-student="'+m.id+'">Grade</button>');
-      if(res?.complete)controls.push('<button class="secondary-btn small-btn" data-phase3-action="authorize-retake" data-student="'+m.id+'">Authorize Retake</button>');
-      if(retake?.active)controls.push('<button class="text-btn danger-text" data-phase3-action="revoke-retake" data-student="'+m.id+'">Revoke Retake</button>');
+      if(res?.complete&&canManageRetakes)controls.push('<button class="secondary-btn small-btn" data-phase3-action="authorize-retake" data-student="'+m.id+'">Authorize Retake</button>');
+      if(retake?.active&&canManageRetakes)controls.push('<button class="text-btn danger-text" data-phase3-action="revoke-retake" data-student="'+m.id+'">Revoke Retake</button>');
       if(history.length||res||retake)controls.push('<button class="text-btn" data-phase3-action="attempt-history" data-student="'+m.id+'">Attempts</button>');
       action=controls.length?'<div class="inline-actions">'+controls.join("")+'</div>':action;
     }
