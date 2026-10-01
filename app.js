@@ -4161,12 +4161,12 @@ document.addEventListener("input",e=>{
 document.addEventListener("keydown",async e=>{
   const input=e.target.closest?.(".gradebook-inline-score");if(!input)return;
   const key=e.key;
-  if(!["Enter","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(key))return;
+  if(!["Enter","Tab","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(key))return;
   e.preventDefault();
   const row=Number(input.dataset.row||0),col=Number(input.dataset.col||0);
   const ok=await saveInlineGrade(input.dataset.assignment,input.dataset.student,input.value);
   if(!ok)return;
-  const delta=key==="ArrowUp"?[-1,0]:key==="ArrowDown"||key==="Enter"?[1,0]:key==="ArrowLeft"?[0,-1]:[0,1];
+  const delta=key==="ArrowUp"?[-1,0]:key==="ArrowDown"||key==="Enter"?[1,0]:key==="ArrowLeft"||key==="Tab"&&e.shiftKey?[0,-1]:[0,1];
   const nextRow=row+delta[0],nextCol=col+delta[1];
   renderSectionDetail("gradebook");
   setTimeout(()=>{
