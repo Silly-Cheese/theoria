@@ -1795,8 +1795,9 @@ async function authorizeRetakeModal(studentId){
     history=snap.docs.map(x=>({id:x.id,...x.data()})).filter(x=>x.studentId===studentId).sort((x,y)=>Number(x.attemptNumber||0)-Number(y.attemptNumber||0));
   }catch(_){}
 
+  const currentAttemptNumber=Math.max(1,Number(sub?.attemptNumber||counterCount||1));
   const previousPercents=[
-    ...history.map(x=>Number(x.attemptPercent??x.result?.attemptPercent??x.result?.percent)).filter(Number.isFinite),
+    ...history.filter(x=>Number(x.attemptNumber||0)!==currentAttemptNumber).map(x=>Number(x.attemptPercent??x.result?.attemptPercent??x.result?.percent)).filter(Number.isFinite),
     Number(res.attemptPercent??res.percent)
   ].filter(Number.isFinite);
   const baselineOfficial=Number(res.officialPercent??res.percent??0);
@@ -1837,7 +1838,7 @@ async function authorizeRetakeModal(studentId){
     if(opensAt&&closesAt&&opensAt.toMillis()>=closesAt.toMillis())return toast("The retake deadline must be after the retake start time.");
     const button=form.querySelector('button[type="submit"]');button.disabled=true;button.textContent="Authorizing…";
     try{
-      const attemptNumber=Math.max(1,Number(sub?.attemptNumber||counterCount||1));
+      const attemptNumber=currentAttemptNumber;
       const archiveId=studentId+"_attempt_"+attemptNumber;
       const historyRef=doc(db,"assessments",a.id,"attemptHistory",archiveId);
       const batch=writeBatch(db);
@@ -1932,7 +1933,11 @@ async function attemptHistoryModal(studentId){
     archived:true
   }));
   const currentSub=d.submissions.find(x=>x.studentId===studentId),currentResult=d.results.find(x=>x.studentId===studentId);
-  if(currentSub||currentResult)rows.push({attemptNumber:Number(currentSub?.attemptNumber||currentResult?.attemptNumber||rows.length+1),result:currentResult||{},submission:currentSub||{},archived:false});
+  if(currentSub||currentResult){
+    const currentAttemptNumber=Number(currentSub?.attemptNumber||currentResult?.attemptNumber||rows.length+1);
+    rows=rows.filter(row=>row.attemptNumber!==currentAttemptNumber);
+    rows.push({attemptNumber:currentAttemptNumber,result:currentResult||{},submission:currentSub||{},archived:false});
+  }
   rows.sort((x,y)=>x.attemptNumber-y.attemptNumber);
   const auth=d.retakes.find(x=>x.id===studentId||x.studentId===studentId);
   core().openModal({
