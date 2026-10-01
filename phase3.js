@@ -1041,12 +1041,16 @@ async function renderAssessments(){
   }
   const cards=[];
   for(const a of P3.assessments){
-    let sub=null,result=null;
+    let sub=null,result=null,retake=null;
     try{const x=await getDoc(doc(db,"assessments",a.id,"submissions",s.user.uid));if(x.exists())sub=x.data();}catch(_){}
     try{const x=await getDoc(doc(db,"assessments",a.id,"results",s.user.uid));if(x.exists())result=x.data();}catch(_){}
-    const status=availability(a),graded=result?.complete===true;
+    try{const x=await getDoc(doc(db,"assessments",a.id,"retakes",s.user.uid));if(x.exists()&&x.data().active===true)retake=x.data();}catch(_){}
+    const status=retake?"Retake Authorized":availability(a),graded=result?.complete===true;
     let actions='<button class="secondary-btn small-btn" data-phase3-action="student-assessment-details" data-id="'+a.id+'">View Details</button>';
-    if(graded){
+    if(retake&&!sub){
+      actions='<button class="primary-btn small-btn" data-phase3-action="start-exam" data-id="'+a.id+'">Begin Retake</button>'+
+        '<button class="secondary-btn small-btn" data-phase3-action="student-assessment-details" data-id="'+a.id+'">Details</button>';
+    }else if(graded){
       actions='<button class="primary-btn small-btn" data-phase3-action="student-assessment-results" data-id="'+a.id+'">View Results</button>'+
         '<button class="secondary-btn small-btn" data-phase3-action="student-assessment-details" data-id="'+a.id+'">Details</button>';
     }else if(a.mode==="oral"){
@@ -1062,7 +1066,7 @@ async function renderAssessments(){
     cards.push('<article class="assessment-card student-assessment-card"><div class="assessment-card-topline"><div class="assessment-type">'+esc(a.type)+'</div><span class="badge '+(status==="Open"?"live":status==="Scheduled"?"gold":"")+'">'+esc(status)+'</span></div><h3>'+esc(a.title)+'</h3><p>'+esc(a.courseCode||"")+' • '+esc(a.sectionName||"")+'</p>'+
       '<div class="assessment-card-stats"><span>'+esc(a.durationMinutes||0)+' min</span><span>'+esc(a.totalPoints||0)+' pts</span><span>'+esc(a.questionCount||0)+' questions</span></div>'+
       (types.length?'<div class="student-card-type-list">'+types.slice(0,4).map(row=>'<span>'+esc(row.count)+' '+esc(row.type)+'</span>').join("")+(types.length>4?'<span>+'+(types.length-4)+' more</span>':'')+'</div>':'')+
-      (graded?'<div class="released-result"><strong>'+esc(result.percent)+'%</strong><span>Graded result available</span></div>':'')+
+      (retake?'<div class="released-result retake-authorized"><strong>Retake '+esc(retake.authorizedAttemptNumber||"")+'</strong><span>'+esc(retakePolicyLabel(retake.scorePolicy,retake.retakeWeightPercent))+'</span></div>':graded?'<div class="released-result"><strong>'+esc(result.percent)+'%</strong><span>Graded result available</span></div>':'')+
       '<div class="card-actions">'+actions+'</div></article>');
   }
   el.innerHTML='<div class="assessment-grid">'+cards.join("")+'</div>';
@@ -3079,14 +3083,25 @@ async function startExam(id,confirmed=false){
     const snap=await getDoc(doc(db,"assessments",id));if(!snap.exists())return toast("Assessment not found.");
     const a={id:snap.id,...snap.data()};
     if(a.mode==="oral")return toast("This oral examination is instructor administered.");
-    if(a.status!=="Published"&&a.status!=="Closed")return toast("This assessment has not been published to students.");
-    if(a.status==="Closed")return toast("This assessment has been closed by the instructor.");
+    let retakeAuth=null;
+    try{
+      const rt=await getDoc(doc(db,"assessments",id,"retakes",s.user.uid));
+      if(rt.exists()&&rt.data().active===true)retakeAuth={id:rt.id,...rt.data()};
+    }catch(_){}
     const now=Date.now(),opens=a.opensAt?.toMillis?.()||0,closes=a.closesAt?.toMillis?.()||0;
-    if(opens&&now<opens)return toast("This assessment opens "+dateText(a.opensAt)+".");
-    if(closes&&now>closes)return toast("The assessment window closed "+dateText(a.closesAt)+".");
+    const retakeOpens=retakeAuth?.opensAt?.toMillis?.()||0,retakeCloses=retakeAuth?.closesAt?.toMillis?.()||0;
+    if(!retakeAuth){
+      if(a.status!=="Published"&&a.status!=="Closed")return toast("This assessment has not been published to students.");
+      if(a.status==="Closed")return toast("This assessment has been closed by the instructor.");
+      if(opens&&now<opens)return toast("This assessment opens "+dateText(a.opensAt)+".");
+      if(closes&&now>closes)return toast("The assessment window closed "+dateText(a.closesAt)+".");
+    }else{
+      if(retakeOpens&&now<retakeOpens)return toast("Your authorized retake opens "+dateText(retakeAuth.opensAt)+".");
+      if(retakeCloses&&now>retakeCloses)return toast("Your authorized retake window closed "+dateText(retakeAuth.closesAt)+".");
+    }
     const security=a.securityPolicy||{};
     let subSnap=await getDoc(doc(db,"assessments",id,"submissions",s.user.uid)),sub=subSnap.exists()?{id:subSnap.id,...subSnap.data()}:null;
-    if(!sub&&security.lateEntryPolicy==="deny-after-start"&&opens){
+    if(!sub&&!retakeAuth&&security.lateEntryPolicy==="deny-after-start"&&opens){
       const grace=Math.max(0,Number(security.lateEntryGraceMinutes||0))*60000;
       if(now>opens+grace)return toast("Late entry is not permitted for this assessment.");
     }
@@ -3104,7 +3119,9 @@ async function startExam(id,confirmed=false){
       const counter=await getDoc(doc(db,"assessments",id,"attemptCounters",s.user.uid));
       if(counter.exists())attemptCount=Number(counter.data().count||0);
     }catch(_){}
-    if(!sub&&attemptCount>=Math.max(1,Number(security.maxAttempts||1)))return toast("You have reached the maximum number of attempts for this assessment.");
+    const nextAttemptNumber=attemptCount+1;
+    const retakeAllowed=!!retakeAuth&&Number(retakeAuth.authorizedAttemptNumber||0)===nextAttemptNumber;
+    if(!sub&&attemptCount>=Math.max(1,Number(security.maxAttempts||1))&&!retakeAllowed)return toast("You have reached the maximum number of attempts for this assessment.");
     let persistentDefaults=s.profile?.defaultAccommodations||{};
     try{
       const accessSnap=await getDoc(doc(db,"academicAccess",s.user.uid));
@@ -3116,18 +3133,19 @@ async function startExam(id,confirmed=false){
     if(!sub&&!confirmed){
       const minutes=Math.round(Number(a.durationMinutes||0)*Number(acc.timeMultiplier||1));
       const modal=core().openModal({
-        eyebrow:a.entranceExam?"Entrance Examination":"Formal Assessment",
+        eyebrow:retakeAllowed?"Authorized Retake":a.entranceExam?"Entrance Examination":"Formal Assessment",
         title:a.title,
         wide:true,
-        body:'<div class="exam-preflight"><div class="preflight-warning"><strong>Before you begin</strong><p>'+(a.entranceExam?"This examination is required before enrollment. Beginning creates your entrance candidate record and starts the examination timer.":"Beginning creates your official candidate record and starts the examination timer.")+' Refreshing the browser does not create a new attempt.</p></div>'+
-          '<div class="detail-list"><div><span>Assessment</span><strong>'+esc(a.type)+'</strong></div><div><span>Time Allowed</span><strong>'+(minutes?minutes+" minutes":"Untimed")+'</strong></div><div><span>Closes</span><strong>'+esc(dateText(a.closesAt))+'</strong></div><div><span>Backtracking</span><strong>'+(a.backtracking!==false?"Permitted":"Restricted")+'</strong></div><div><span>Grading</span><strong>'+(a.anonymousGrading!==false?"Anonymous candidate number":"Named")+'</strong></div><div><span>Attempt</span><strong>'+(attemptCount+1)+' of '+Math.max(1,Number(security.maxAttempts||1))+'</strong></div></div>'+
+        body:'<div class="exam-preflight"><div class="preflight-warning"><strong>Before you begin</strong><p>'+(retakeAllowed?"Your instructor authorized this retake. Beginning creates attempt "+nextAttemptNumber+" and starts the assessment timer. The retake will be graded under the policy shown below.":a.entranceExam?"This examination is required before enrollment. Beginning creates your entrance candidate record and starts the examination timer.":"Beginning creates your official candidate record and starts the examination timer.")+' Refreshing the browser does not create a new attempt.</p></div>'+
+          (retakeAllowed?'<div class="notice"><strong>'+esc(retakePolicyLabel(retakeAuth.scorePolicy,retakeAuth.retakeWeightPercent))+'</strong><p>'+(retakeAuth.note?esc(retakeAuth.note):'Your previous attempt remains preserved in academic attempt history.')+'</p></div>':'')+
+          '<div class="detail-list"><div><span>Assessment</span><strong>'+esc(a.type)+'</strong></div><div><span>Time Allowed</span><strong>'+(minutes?minutes+" minutes":"Untimed")+'</strong></div><div><span>Closes</span><strong>'+esc(dateText(retakeAllowed?(retakeAuth.closesAt||a.closesAt):a.closesAt))+'</strong></div><div><span>Backtracking</span><strong>'+(a.backtracking!==false?"Permitted":"Restricted")+'</strong></div><div><span>Grading</span><strong>'+(a.anonymousGrading!==false?"Anonymous candidate number":"Named")+'</strong></div><div><span>Attempt</span><strong>'+(retakeAllowed?("Retake "+nextAttemptNumber+" • instructor authorized"):(nextAttemptNumber+" of "+Math.max(1,Number(security.maxAttempts||1))))+'</strong></div></div>'+
           ((security.fullscreenRequired||security.fullscreenExpectation)?'<div class="notice"><strong>Fullscreen required.</strong><p>The assessment will lock if fullscreen is exited and will remain hidden until fullscreen is restored.</p></div>':'')+
           (security.accessCodeConfigured?'<div class="field"><label>Assessment Access Code</label><input id="examAccessCode" type="password" autocomplete="off" required></div>':'')+
           (a.instructions?'<div class="preflight-instructions"><div class="eyebrow">Instructor Instructions</div><p>'+esc(a.instructions).replace(/\n/g,"<br>")+'</p></div>':'')+
           '<div class="accommodation-summary"><div class="eyebrow">Assessment Access</div><span>'+esc(acc.timeMultiplier||1)+'× time</span>'+(acc.breaks?'<span>Breaks permitted</span>':'')+(acc.calculator?'<span>Calculator permitted</span>':'')+(acc.largeText?'<span>Large text</span>':'')+'</div>'+
           '<label class="checkbox-line preflight-ack"><input id="examAck" type="checkbox"> I have read the instructions and understand that beginning starts my official attempt.</label>'+
           (security.honorAcknowledgement?'<label class="checkbox-line preflight-ack"><input id="honorAck" type="checkbox"> I affirm that I will complete this assessment according to the instructor\'s academic-integrity expectations.</label>':'')+'</div>',
-        footer:'<button class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" id="beginExamBtn" disabled>Begin Assessment</button>'
+        footer:'<button class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" id="beginExamBtn" disabled>'+(retakeAllowed?'Begin Retake':'Begin Assessment')+'</button>'
       });
       const ack=modal.querySelector("#examAck"),honor=modal.querySelector("#honorAck"),begin=modal.querySelector("#beginExamBtn");
       const sync=()=>{begin.disabled=!ack.checked||(honor&&!honor.checked);};ack.onchange=sync;if(honor)honor.onchange=sync;sync();
@@ -3235,6 +3253,7 @@ async function logEvent(type,details={}){
   try{
     await addDoc(collection(db,"assessments",P3.exam.assessment.id,"submissions",state().user.uid,"events"),{
       studentId:state().user.uid,
+      attemptNumber:Number(P3.exam?.submission?.attemptNumber||1),
       type,
       details,
       at:serverTimestamp()
