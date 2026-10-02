@@ -3226,10 +3226,31 @@ async function toggleGradingPeriodLock(period){
   }catch(error){toast(error.message||"Unable to update the grading period.");}
 }
 
+function compositePolicyWeights(policy={}){
+  const raw=policy.composite||{coursework:60,semester:15,comprehensive:25};
+  if(raw.assessments!==undefined&&raw.assessments!==null){
+    return {
+      coursework:Number(raw.coursework||0),
+      assessments:Number(raw.assessments||0),
+      semester:Number(raw.semester||0),
+      comprehensive:Number(raw.comprehensive||0)
+    };
+  }
+  const legacyCoursework=Number(raw.coursework??60);
+  const assessmentShare=Math.min(20,Math.max(0,legacyCoursework/2));
+  return {
+    coursework:Math.round((legacyCoursework-assessmentShare)*10)/10,
+    assessments:Math.round(assessmentShare*10)/10,
+    semester:Number(raw.semester??15),
+    comprehensive:Number(raw.comprehensive??25)
+  };
+}
+
 async function renderGradingPolicy(){
   const s=state(),section=s.currentSection,el=$("#phase3SectionTab");if(!section||!el)return;
   const secSnap=await getDoc(doc(db,"sections",section.id)),sec=secSnap.exists()?secSnap.data():section;
-  const policy=sec.gradingPolicy||{selectionOpen:true,selectionDeadline:null,gradingPeriods:["Overall"],examination:{semester:35,comprehensive:65},composite:{coursework:60,semester:15,comprehensive:25},courseworkRules:{dropLowest:0,missingAsZero:false,latePenaltyPercent:0,categoryWeights:{}}};
+  const policy=sec.gradingPolicy||{selectionOpen:true,selectionDeadline:null,gradingPeriods:["Overall"],examination:{semester:35,comprehensive:65},composite:{coursework:40,assessments:20,semester:15,comprehensive:25},courseworkRules:{dropLowest:0,missingAsZero:false,latePenaltyPercent:0,categoryWeights:{}}};
+  const compositePolicy=compositePolicyWeights(policy);
   const pathSnap=await getDocs(collection(db,"sections",section.id,"gradingPathways"));
   const selections=pathSnap.docs.map(d=>({id:d.id,...d.data()}));
   el.innerHTML='<div class="grid-2"><div class="panel"><div class="panel-head"><div class="panel-title">Grading Pathway Policy</div></div><div class="panel-body"><form id="gradingPolicyForm">'+
@@ -3237,16 +3258,16 @@ async function renderGradingPolicy(){
     '<div class="grading-period-locks">'+(policy.gradingPeriods?.length?policy.gradingPeriods:["Overall"]).map(period=>{const setting=policy.gradingPeriodSettings?.[period]||{};return '<div class="grading-period-lock-row"><div><strong>'+esc(period)+'</strong><span>'+(setting.locked?'Finalized'+(setting.finalizedAt?' • '+esc(dateText(setting.finalizedAt)):''):'Open for grading')+'</span></div><button type="button" class="'+(setting.locked?'secondary-btn':'danger-btn')+' small-btn" data-phase3-action="toggle-grading-period" data-period="'+esc(period)+'">'+(setting.locked?'Reopen':'Finalize & Lock')+'</button></div>';}).join("")+'</div>'+
     '<label class="checkbox-line" style="margin-bottom:16px"><input type="checkbox" name="selectionOpen" '+(policy.selectionOpen!==false?'checked':'')+'> Students may select/change pathways</label>'+
     '<div class="path-policy"><h4>Examination Pathway</h4><div class="form-grid"><div class="field"><label>Semester I Exam %</label><input name="examSemester" type="number" value="'+esc(policy.examination?.semester??35)+'"></div><div class="field"><label>Comprehensive Final %</label><input name="examFinal" type="number" value="'+esc(policy.examination?.comprehensive??65)+'"></div></div></div>'+
-    '<div class="path-policy"><h4>Composite Pathway</h4><div class="form-grid"><div class="field"><label>Coursework %</label><input name="compCoursework" type="number" value="'+esc(policy.composite?.coursework??60)+'"></div><div class="field"><label>Semester I Exam %</label><input name="compSemester" type="number" value="'+esc(policy.composite?.semester??15)+'"></div><div class="field"><label>Comprehensive Final %</label><input name="compFinal" type="number" value="'+esc(policy.composite?.comprehensive??25)+'"></div></div></div>'+
+    '<div class="path-policy"><h4>Composite Pathway</h4><p class="page-subtitle">General Assessments includes Unit Evaluations, Academic Exercises, Oral Examinations, Disputations, and other regular formal assessments. Semester and Comprehensive exams remain separate and are not double-counted.</p><div class="form-grid"><div class="field"><label>Coursework %</label><input name="compCoursework" type="number" min="0" max="100" step="0.1" value="'+esc(compositePolicy.coursework)+'"></div><div class="field"><label>General Assessments %</label><input name="compAssessments" type="number" min="0" max="100" step="0.1" value="'+esc(compositePolicy.assessments)+'"></div><div class="field"><label>Semester I Exam %</label><input name="compSemester" type="number" min="0" max="100" step="0.1" value="'+esc(compositePolicy.semester)+'"></div><div class="field"><label>Comprehensive Final %</label><input name="compFinal" type="number" min="0" max="100" step="0.1" value="'+esc(compositePolicy.comprehensive)+'"></div></div></div>'+
     '<div class="path-policy"><h4>Coursework Rules</h4><div class="compact-field-grid"><div class="field"><label>Drop Lowest</label><input name="dropLowest" type="number" min="0" max="20" value="'+esc(policy.courseworkRules?.dropLowest??0)+'"></div><div class="field"><label>Late Penalty</label><div class="input-with-suffix"><input name="latePenaltyPercent" type="number" min="0" max="100" value="'+esc(policy.courseworkRules?.latePenaltyPercent??0)+'"><span>%</span></div></div></div><label class="checkbox-line"><input type="checkbox" name="missingAsZero" '+(policy.courseworkRules?.missingAsZero?'checked':'')+'> Treat ungraded Missing items as zero in coursework calculations</label><div class="panel-subtitle" style="margin:12px 0 7px">Optional category weights. Leave all values at 0 for normal points-based grading.</div><div class="compact-field-grid">'+[...new Set((s.sectionData?.assignments||[]).map(a=>a.type||"Assignment"))].map(type=>'<div class="field"><label>'+esc(type)+' %</label><input class="category-weight-input" data-category="'+esc(type)+'" type="number" min="0" max="100" value="'+esc(policy.courseworkRules?.categoryWeights?.[type]??0)+'"></div>').join("")+'</div></div>'+
     '<button class="primary-btn" type="submit">Save Grading Policy</button></form></div></div>'+
     '<div class="panel"><div class="panel-head"><div class="panel-title">Student Selections</div></div><div class="panel-body">'+(selections.length?selections.map(x=>'<div class="selection-row"><div><strong>'+esc(x.studentName||x.studentId)+'</strong><span>'+esc(x.pathway==="examination"?"Examination Pathway":"Composite Pathway")+'</span></div><span class="badge '+(x.pathway==="examination"?'gold':'live')+'">'+esc(x.pathway)+'</span></div>').join(""):'<div class="empty-mini">No selections yet.</div>')+'</div></div></div>';
   $("#gradingPolicyForm").addEventListener("submit",async e=>{
     e.preventDefault();const fd=new FormData(e.currentTarget);
     const examination={semester:Number(fd.get("examSemester")),comprehensive:Number(fd.get("examFinal"))};
-    const composite={coursework:Number(fd.get("compCoursework")),semester:Number(fd.get("compSemester")),comprehensive:Number(fd.get("compFinal"))};
-    if(examination.semester+examination.comprehensive!==100)return toast("Examination Pathway must total 100%.");
-    if(composite.coursework+composite.semester+composite.comprehensive!==100)return toast("Composite Pathway must total 100%.");
+    const composite={coursework:Number(fd.get("compCoursework")),assessments:Number(fd.get("compAssessments")),semester:Number(fd.get("compSemester")),comprehensive:Number(fd.get("compFinal"))};
+    if(Math.abs(examination.semester+examination.comprehensive-100)>0.001)return toast("Examination Pathway must total 100%.");
+    if(Math.abs(composite.coursework+composite.assessments+composite.semester+composite.comprehensive-100)>0.001)return toast("Composite Pathway must total 100%.");
     const categoryWeights={};
     [...e.currentTarget.querySelectorAll(".category-weight-input")].forEach(input=>{categoryWeights[input.dataset.category]=Number(input.value||0);});
     const categoryTotal=Object.values(categoryWeights).reduce((n,x)=>n+Number(x||0),0);
@@ -3274,10 +3295,10 @@ async function renderStudentPathway(){
   const secSnap=await getDoc(doc(db,"sections",section.id)),sec=secSnap.exists()?secSnap.data():section,policy=sec.gradingPolicy;
   if(!policy){el.innerHTML='<div class="empty-state"><div class="empty-symbol">G</div><h3>Pathway selection is not open yet.</h3></div>';return;}
   let selection=null;try{const x=await getDoc(doc(db,"sections",section.id,"gradingPathways",s.user.uid));if(x.exists())selection=x.data();}catch(_){}
-  const deadline=policy.selectionDeadline?.toDate?.(),open=policy.selectionOpen!==false&&(!deadline||deadline.getTime()>=Date.now()),ex=policy.examination||{semester:35,comprehensive:65},co=policy.composite||{coursework:60,semester:15,comprehensive:25};
+  const deadline=policy.selectionDeadline?.toDate?.(),open=policy.selectionOpen!==false&&(!deadline||deadline.getTime()>=Date.now()),ex=policy.examination||{semester:35,comprehensive:65},co=compositePolicyWeights(policy);
   el.innerHTML='<div class="academic-banner"><div class="kicker">Final Grade Method</div><h3>'+(selection?"Current selection: "+(selection.pathway==="examination"?"Examination Pathway":"Composite Pathway"):"Choose your grading pathway")+'</h3><p>Coursework remains graded throughout the course. Selection deadline: '+esc(dateText(policy.selectionDeadline))+'</p></div>'+
     '<div class="pathway-grid"><label class="pathway-card '+(selection?.pathway==="examination"?'selected':'')+'"><input type="radio" name="pathwayChoice" value="examination" '+(selection?.pathway==="examination"?'checked':'')+' '+(!open?'disabled':'')+'><div class="pathway-letter">A</div><div><h3>Examination Pathway</h3><p>Final standing is determined entirely by cumulative examination performance.</p><div class="formula-row"><span>Semester I Examination</span><strong>'+ex.semester+'%</strong></div><div class="formula-row"><span>Comprehensive Final</span><strong>'+ex.comprehensive+'%</strong></div></div></label>'+
-    '<label class="pathway-card '+(selection?.pathway==="composite"?'selected':'')+'"><input type="radio" name="pathwayChoice" value="composite" '+(selection?.pathway==="composite"?'checked':'')+' '+(!open?'disabled':'')+'><div class="pathway-letter">B</div><div><h3>Composite Pathway</h3><p>Final standing combines sustained coursework and cumulative examinations.</p><div class="formula-row"><span>Coursework</span><strong>'+co.coursework+'%</strong></div><div class="formula-row"><span>Semester I Examination</span><strong>'+co.semester+'%</strong></div><div class="formula-row"><span>Comprehensive Final</span><strong>'+co.comprehensive+'%</strong></div></div></label></div>'+
+    '<label class="pathway-card '+(selection?.pathway==="composite"?'selected':'')+'"><input type="radio" name="pathwayChoice" value="composite" '+(selection?.pathway==="composite"?'checked':'')+' '+(!open?'disabled':'')+'><div class="pathway-letter">B</div><div><h3>Composite Pathway</h3><p>Final standing combines sustained coursework, regular formal assessments, and cumulative examinations.</p><div class="formula-row"><span>Coursework</span><strong>'+co.coursework+'%</strong></div><div class="formula-row"><span>General Assessments</span><strong>'+co.assessments+'%</strong></div><div class="formula-row"><span>Semester I Examination</span><strong>'+co.semester+'%</strong></div><div class="formula-row"><span>Comprehensive Final</span><strong>'+co.comprehensive+'%</strong></div></div></label></div>'+
     (open?'<div class="pathway-confirm"><label class="checkbox-line"><input id="pathwayAck" type="checkbox"> I understand this choice controls how my certified final grade will be calculated.</label><button class="primary-btn" data-phase3-action="save-pathway">Confirm Selection</button></div>':'<div class="notice">The selection period is closed.</div>');
 }
 
