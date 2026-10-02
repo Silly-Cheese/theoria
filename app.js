@@ -2072,8 +2072,41 @@ function gradebookAssessmentComponent(studentId,kind,assessmentGradeMap=null){
   }).filter(g=>g.percent!==null&&g.percent!==undefined);
   return {percent:gradebookAverage(rows.map(g=>g.percent)),rows};
 }
+function gradebookIsGeneralAssessment(type){
+  const value=String(type||"").trim().toLowerCase();
+  return value && !value.includes("semester") && !value.includes("comprehensive") && !value.includes("entrance");
+}
+function gradebookGeneralAssessmentComponent(studentId,assessmentGradeMap=null){
+  const refs=(state.sectionData?.assessmentRefs||[]).filter(ref=>gradebookIsGeneralAssessment(ref.assessmentType||ref.type));
+  const rows=refs.map(ref=>{
+    const grade=assessmentGradeMap
+      ? assessmentGradeMap.get(ref.id+"_"+studentId)
+      : (state.sectionData?.assessmentGrades||[]).find(g=>g.studentId===studentId&&g.assessmentId===ref.id);
+    return grade?{...grade,ref}:null;
+  }).filter(row=>row&&row.percent!==null&&row.percent!==undefined);
+  let percent=null;
+  if(rows.length){
+    const canWeight=rows.every(row=>Number(row.maxScore||row.ref?.totalPoints||0)>0&&row.score!==null&&row.score!==undefined);
+    if(canWeight){
+      const earned=rows.reduce((n,row)=>n+Number(row.score||0),0);
+      const possible=rows.reduce((n,row)=>n+Number(row.maxScore||row.ref?.totalPoints||0),0);
+      percent=possible?gradebookRound(earned/possible*100):gradebookAverage(rows.map(row=>row.percent));
+    }else percent=gradebookAverage(rows.map(row=>row.percent));
+  }
+  return {percent,graded:rows.length,total:refs.length,complete:refs.length===0||rows.length===refs.length,rows,refs};
+}
+function gradebookCompositeWeights(policy={}){
+  const raw=policy.composite||{coursework:60,semester:15,comprehensive:25};
+  if(raw.assessments!==undefined&&raw.assessments!==null){
+    return {coursework:Number(raw.coursework||0),assessments:Number(raw.assessments||0),semester:Number(raw.semester||0),comprehensive:Number(raw.comprehensive||0)};
+  }
+  const legacyCoursework=Number(raw.coursework??60);
+  const assessmentShare=Math.min(20,Math.max(0,legacyCoursework/2));
+  return {coursework:gradebookRound(legacyCoursework-assessmentShare),assessments:gradebookRound(assessmentShare),semester:Number(raw.semester??15),comprehensive:Number(raw.comprehensive??25)};
+}
 function gradebookAcademicSnapshot(studentId,allAssignments,gradeMap,assessmentGradeMap){
   const coursework=gradebookCourseworkPolicyAverage(allAssignments,gradeMap,studentId,state.currentSection?.gradingPolicy||{});
+  const generalAssessments=gradebookGeneralAssessmentComponent(studentId,assessmentGradeMap);
   const semester=gradebookAssessmentComponent(studentId,"semester",assessmentGradeMap);
   const comprehensive=gradebookAssessmentComponent(studentId,"comprehensive",assessmentGradeMap);
   const pathwayRow=(state.sectionData?.gradingPathways||[]).find(x=>(x.studentId||x.id)===studentId);
@@ -2083,16 +2116,24 @@ function gradebookAcademicSnapshot(studentId,allAssignments,gradeMap,assessmentG
   const policy=state.currentSection?.gradingPolicy||{};
   const weights=pathway==="examination"
     ? (policy.examination||{semester:35,comprehensive:65})
-    : (policy.composite||{coursework:60,semester:15,comprehensive:25});
+    : gradebookCompositeWeights(policy);
   const components=pathway==="examination"
     ? [{key:"semester",value:semester.percent,weight:Number(weights.semester||0)},{key:"comprehensive",value:comprehensive.percent,weight:Number(weights.comprehensive||0)}]
-    : [{key:"coursework",value:coursework,weight:Number(weights.coursework||0)},{key:"semester",value:semester.percent,weight:Number(weights.semester||0)},{key:"comprehensive",value:comprehensive.percent,weight:Number(weights.comprehensive||0)}];
+    : [
+        {key:"coursework",value:coursework,weight:Number(weights.coursework||0)},
+        ...(generalAssessments.total?[{key:"assessments",value:generalAssessments.percent,weight:Number(weights.assessments||0)}]:[]),
+        {key:"semester",value:semester.percent,weight:Number(weights.semester||0)},
+        {key:"comprehensive",value:comprehensive.percent,weight:Number(weights.comprehensive||0)}
+      ];
 
-  let weighted=0,availableWeight=0;
-  components.forEach(c=>{if(c.value!==null&&c.value!==undefined){weighted+=Number(c.value)*c.weight;availableWeight+=c.weight;}});
+  let weighted=0,availableWeight=0,requiredWeight=0;
+  components.forEach(c=>{
+    requiredWeight+=c.weight;
+    if(c.value!==null&&c.value!==undefined){weighted+=Number(c.value)*c.weight;availableWeight+=c.weight;}
+  });
   const complete=!!pathway&&components.every(c=>c.value!==null&&c.value!==undefined);
   const projection=pathway&&availableWeight?gradebookRound(weighted/availableWeight):null;
-  const calculatedFinal=complete?gradebookRound(weighted/100):null;
+  const calculatedFinal=complete&&requiredWeight?gradebookRound(weighted/requiredWeight):null;
   const certified=record?.status==="Certified";
   let status="Not Ready";
   if(certified&&(record.recordType==="Withdrawal"||record.enrollmentOutcome==="Withdrawn"))status="Withdrawal Certified";
@@ -2100,6 +2141,7 @@ function gradebookAcademicSnapshot(studentId,allAssignments,gradeMap,assessmentG
   else if(record?.status==="Incomplete")status="Incomplete";
   else if(appeals.length)status="Appeal Open";
   else if(!pathway)status="Missing Pathway";
+  else if(pathway==="composite"&&!generalAssessments.complete)status="Assessments Required";
   else if(semester.percent===null)status="Semester Exam Required";
   else if(comprehensive.percent===null)status="Final Exam Required";
   else if(pathway==="composite"&&coursework===null)status="Coursework Required";
@@ -2107,9 +2149,10 @@ function gradebookAcademicSnapshot(studentId,allAssignments,gradeMap,assessmentG
 
   const displayPercent=certified&&record?.finalPercent!==undefined&&record?.finalPercent!==null?Number(record.finalPercent):projection;
   return {
-    coursework,semester:semester.percent,comprehensive:comprehensive.percent,pathway,pathwayRow,
+    coursework,generalAssessments:generalAssessments.percent,generalAssessmentGraded:generalAssessments.graded,generalAssessmentTotal:generalAssessments.total,
+    semester:semester.percent,comprehensive:comprehensive.percent,pathway,pathwayRow,
     record,appeals,projection,calculatedFinal,displayPercent,letter:gradebookLetter(displayPercent),
-    ready:status==="Ready to Certify",certified,status,components
+    ready:status==="Ready to Certify",certified,status,components,weights
   };
 }
 function gradebookDistribution(values){
@@ -2232,7 +2275,7 @@ function renderGradebook(){
     '<tr class="gradebook-category-row"><th class="gradebook-select-col" rowspan="3"><input type="checkbox" id="gradebookSelectAll" '+(students.length&&students.every(s=>selectedStudents.has(s.id))?'checked':'')+' aria-label="Select all visible students"></th><th class="student-sticky gradebook-student-head" rowspan="3">Student</th>'+
       (assignments.length?'<th colspan="'+assignments.length+'" class="gradebook-category coursework-category">Coursework</th>':'')+
       (assessments.length?'<th colspan="'+assessments.length+'" class="gradebook-category assessment-category">Formal Assessments</th>':'')+
-      '<th class="grade-summary-sticky coursework-summary-col" rowspan="3">Coursework</th><th class="grade-summary-sticky semester-summary-col" rowspan="3">Semester<br>Exam</th><th class="grade-summary-sticky comprehensive-summary-col" rowspan="3">Comprehensive<br>Final</th><th class="grade-summary-sticky final-summary-col" rowspan="3">Final<br>Projection</th><th class="grade-summary-sticky status-summary-col" rowspan="3">Certification</th></tr>'+
+      '<th class="grade-summary-sticky coursework-summary-col" rowspan="3">Coursework</th><th class="grade-summary-sticky general-assessment-summary-col" rowspan="3">General<br>Assessments</th><th class="grade-summary-sticky semester-summary-col" rowspan="3">Semester<br>Exam</th><th class="grade-summary-sticky comprehensive-summary-col" rowspan="3">Comprehensive<br>Final</th><th class="grade-summary-sticky final-summary-col" rowspan="3">Final<br>Projection</th><th class="grade-summary-sticky status-summary-col" rowspan="3">Certification</th></tr>'+
     '<tr class="gradebook-group-row">'+assignmentGroupHeaders+(assessments.length?'<th colspan="'+assessments.length+'" class="gradebook-unit-group assessment-group">Assessments</th>':'')+'</tr>'+
     '<tr>'+assignmentHeaders+assessmentHeaders+'</tr></thead>';
 
@@ -2261,6 +2304,7 @@ function renderGradebook(){
       '<td class="student-sticky gradebook-student-cell"><button class="gradebook-student-link" data-action="gradebook-student-drawer" data-student="'+student.id+'">'+esc(student.displayName||"Student")+'</button><span>'+courseworkGraded+'/'+assignments.length+' coursework'+(assessments.length?' • '+assessmentGraded+'/'+assessments.length+' assessments':'')+'</span></td>'+
       assignmentCells+assessmentCells+
       '<td class="grade-summary-sticky coursework-summary-col gradebook-summary-cell"><strong>'+(snapshot.coursework===null?"—":snapshot.coursework+"%")+'</strong><span>Coursework</span></td>'+
+      '<td class="grade-summary-sticky general-assessment-summary-col gradebook-summary-cell"><strong>'+(snapshot.generalAssessmentTotal?(snapshot.generalAssessments===null?"—":snapshot.generalAssessments+"%"):"N/A")+'</strong><span>'+(snapshot.generalAssessmentTotal?snapshot.generalAssessmentGraded+"/"+snapshot.generalAssessmentTotal+" graded":"None assigned")+'</span></td>'+
       '<td class="grade-summary-sticky semester-summary-col gradebook-summary-cell"><strong>'+(snapshot.semester===null?"—":snapshot.semester+"%")+'</strong><span>'+(snapshot.semester===null?"Required":"Recorded")+'</span></td>'+
       '<td class="grade-summary-sticky comprehensive-summary-col gradebook-summary-cell"><strong>'+(snapshot.comprehensive===null?"—":snapshot.comprehensive+"%")+'</strong><span>'+(snapshot.comprehensive===null?"Required":"Recorded")+'</span></td>'+
       '<td class="grade-summary-sticky final-summary-col gradebook-summary-cell final-projection-cell"><strong>'+(snapshot.displayPercent===null?"—":snapshot.displayPercent+"%")+'</strong><b>'+esc(snapshot.letter)+'</b><span>'+esc(pathLabel)+(snapshot.certified?" • Certified":" • Projection")+'</span></td>'+
@@ -2278,6 +2322,7 @@ function renderGradebook(){
   }).join("");
 
   const classCoursework=gradebookAverage(contexts.map(x=>x.snapshot.coursework));
+  const classGeneralAssessments=gradebookAverage(contexts.map(x=>x.snapshot.generalAssessments));
   const classSemester=gradebookAverage(contexts.map(x=>x.snapshot.semester));
   const classComprehensive=gradebookAverage(contexts.map(x=>x.snapshot.comprehensive));
   const classFinal=gradebookAverage(contexts.map(x=>x.snapshot.displayPercent));
@@ -2285,6 +2330,7 @@ function renderGradebook(){
   const certifiedCount=contexts.filter(x=>x.snapshot.certified).length;
   const footer='<tfoot><tr><td class="gradebook-select-col"></td><td class="student-sticky gradebook-class-label"><strong>Class Summary</strong><span>'+allStudents.length+' students</span></td>'+assignmentClassCells+assessmentClassCells+
     '<td class="grade-summary-sticky coursework-summary-col gradebook-summary-cell"><strong>'+(classCoursework===null?'—':classCoursework+'%')+'</strong><span>Class avg</span></td>'+
+    '<td class="grade-summary-sticky general-assessment-summary-col gradebook-summary-cell"><strong>'+(classGeneralAssessments===null?'—':classGeneralAssessments+'%')+'</strong><span>Class avg</span></td>'+
     '<td class="grade-summary-sticky semester-summary-col gradebook-summary-cell"><strong>'+(classSemester===null?'—':classSemester+'%')+'</strong><span>Class avg</span></td>'+
     '<td class="grade-summary-sticky comprehensive-summary-col gradebook-summary-cell"><strong>'+(classComprehensive===null?'—':classComprehensive+'%')+'</strong><span>Class avg</span></td>'+
     '<td class="grade-summary-sticky final-summary-col gradebook-summary-cell"><strong>'+(classFinal===null?'—':classFinal+'%')+'</strong><span>Projected avg</span></td>'+
@@ -2316,7 +2362,7 @@ function renderGradebook(){
 
   const emptyFiltered=!visibleContexts.length?'<div class="empty-state compact-empty"><div class="empty-symbol">G</div><h3>No students match these Gradebook filters.</h3><p>Change the search, status filter, threshold, or Needs Attention mode.</p></div>':'';
   return summary+periodToolbar+filters+
-    '<div class="notice gradebook-notice"><strong>Final projections use each student’s selected grading pathway.</strong> Coursework, Semester Examination, and Comprehensive Final remain separate academic components. Projection values are not certified final grades.</div>'+
+    '<div class="notice gradebook-notice"><strong>Final projections use each student’s selected grading pathway.</strong> Composite grades include Coursework, General Assessments, Semester Examination, and Comprehensive Final. General Assessments excludes the semester/comprehensive exams so they are never double-counted. Projection values are not certified final grades.</div>'+
     nav+
     '<div class="gradebook-legend"><span><i class="legend-dot coursework-dot"></i> Type directly into coursework cells</span><span><i class="legend-dot assessment-dot"></i> Assessment cells open formal grading</span><span><i class="legend-dot empty-dot"></i> No grade recorded</span></div>'+
     emptyFiltered+
@@ -2348,8 +2394,8 @@ function renderStudentGrades(){
   const pathLabel=snapshot.pathway==="examination"?"Examination":snapshot.pathway==="composite"?"Composite":"Not selected";
   const certificationClass=snapshot.certified?"live":snapshot.ready?"gold":"";
   return '<div class="student-grade-dashboard">'+
-    '<div class="student-grade-summary advanced-student-grade-summary"><div><span>Coursework</span><strong>'+(snapshot.coursework===null?"—":snapshot.coursework+"%")+'</strong></div><div><span>Semester Exam</span><strong>'+(snapshot.semester===null?"—":snapshot.semester+"%")+'</strong></div><div><span>Comprehensive Final</span><strong>'+(snapshot.comprehensive===null?"—":snapshot.comprehensive+"%")+'</strong></div><div><span>Final Projection</span><strong>'+(snapshot.displayPercent===null?"—":snapshot.displayPercent+"%")+'</strong><small>'+esc(snapshot.letter)+'</small></div><div><span>Grading Pathway</span><strong>'+esc(pathLabel)+'</strong></div><div><span>Certification</span><strong class="badge '+certificationClass+'">'+esc(snapshot.status)+'</strong></div></div>'+
-    '<div class="academic-banner"><div class="kicker">Academic Progress</div><h3>Your current academic picture</h3><p>Coursework and formal examinations remain separate. Your final projection follows your selected grading pathway. <strong>Projected grades are not certified final grades.</strong></p></div>'+
+    '<div class="student-grade-summary advanced-student-grade-summary"><div><span>Coursework</span><strong>'+(snapshot.coursework===null?"—":snapshot.coursework+"%")+'</strong></div><div><span>General Assessments</span><strong>'+(snapshot.generalAssessmentTotal?(snapshot.generalAssessments===null?"—":snapshot.generalAssessments+"%"):"N/A")+'</strong><small>'+(snapshot.generalAssessmentTotal?snapshot.generalAssessmentGraded+"/"+snapshot.generalAssessmentTotal+" graded":"None assigned")+'</small></div><div><span>Semester Exam</span><strong>'+(snapshot.semester===null?"—":snapshot.semester+"%")+'</strong></div><div><span>Comprehensive Final</span><strong>'+(snapshot.comprehensive===null?"—":snapshot.comprehensive+"%")+'</strong></div><div><span>Final Projection</span><strong>'+(snapshot.displayPercent===null?"—":snapshot.displayPercent+"%")+'</strong><small>'+esc(snapshot.letter)+'</small></div><div><span>Grading Pathway</span><strong>'+esc(pathLabel)+'</strong></div><div><span>Certification</span><strong class="badge '+certificationClass+'">'+esc(snapshot.status)+'</strong></div></div>'+
+    '<div class="academic-banner"><div class="kicker">Academic Progress</div><h3>Your current academic picture</h3><p>Your Composite projection includes coursework, regular/unit assessments, the Semester Examination, and the Comprehensive Final according to your section’s grading weights. The Examination pathway still uses only the cumulative examinations. <strong>Projected grades are not certified final grades.</strong></p></div>'+
     (record?.status==="Certified"?'<div class="notice student-certified-record"><strong>Certified Academic Record</strong><span>'+esc(record.letterGrade||"—")+' • '+esc(record.finalPercent??"—")+'% • Version '+esc(record.version||1)+(record.recordType==="Withdrawal"?' • Withdrawal Certification':'')+'</span></div>':'')+
     '<div class="grid-2"><div class="panel"><div class="panel-head"><div><div class="panel-title">Missing / Ungraded Work</div><div class="panel-subtitle">Items that may need your attention.</div></div></div><div class="panel-body">'+(missing.length?missing.slice(0,8).map(a=>'<div class="profile-record-row"><div><strong>'+esc(a.title)+'</strong><span>'+esc(a.gradingPeriod||"Overall")+(a.dueDate?' • Due '+esc(formatDate(a.dueDate)):'')+'</span></div><b>Needs attention</b></div>').join(""):'<div class="empty-mini">No missing coursework is currently recorded.</div>')+'</div></div>'+
     '<div class="panel"><div class="panel-head"><div><div class="panel-title">Recent Instructor Feedback</div><div class="panel-subtitle">Most recently updated coursework comments.</div></div></div><div class="panel-body">'+(recent.filter(g=>g.comment).length?recent.filter(g=>g.comment).map(g=>'<div class="profile-record-row"><div><strong>'+esc(g.assignmentTitle||"Assignment")+'</strong><span>'+esc(g.comment||"")+'</span></div><b>'+esc(g.score??"—")+'</b></div>').join(""):'<div class="empty-mini">No recent written feedback.</div>')+'</div></div></div>'+
@@ -3389,7 +3435,7 @@ async function openGradebookStudentDrawer(studentId){
     eyebrow:"Gradebook Student Drawer",
     title:student.displayName||"Student",
     wide:true,
-    body:'<div class="student-profile-summary gradebook-drawer-summary"><div><span>Coursework</span><strong>'+(snapshot.coursework===null?"—":snapshot.coursework+"%")+'</strong></div><div><span>Semester Exam</span><strong>'+(snapshot.semester===null?"—":snapshot.semester+"%")+'</strong></div><div><span>Comprehensive</span><strong>'+(snapshot.comprehensive===null?"—":snapshot.comprehensive+"%")+'</strong></div><div><span>Final Projection</span><strong>'+(snapshot.displayPercent===null?"—":snapshot.displayPercent+"% "+snapshot.letter)+'</strong></div></div>'+
+    body:'<div class="student-profile-summary gradebook-drawer-summary"><div><span>Coursework</span><strong>'+(snapshot.coursework===null?"—":snapshot.coursework+"%")+'</strong></div><div><span>General Assessments</span><strong>'+(snapshot.generalAssessmentTotal?(snapshot.generalAssessments===null?"—":snapshot.generalAssessments+"%"):"N/A")+'</strong></div><div><span>Semester Exam</span><strong>'+(snapshot.semester===null?"—":snapshot.semester+"%")+'</strong></div><div><span>Comprehensive</span><strong>'+(snapshot.comprehensive===null?"—":snapshot.comprehensive+"%")+'</strong></div><div><span>Final Projection</span><strong>'+(snapshot.displayPercent===null?"—":snapshot.displayPercent+"% "+snapshot.letter)+'</strong></div></div>'+
       '<div class="grid-2"><div class="panel"><div class="panel-head"><div class="panel-title">Academic Standing</div></div><div class="panel-body"><div class="detail-list"><div><span>Email</span><strong>'+esc(student.email||"—")+'</strong></div><div><span>Enrollment</span><strong>'+esc(student.status||"enrolled")+'</strong></div><div><span>Grading Pathway</span><strong>'+esc(snapshot.pathway==="examination"?"Examination":snapshot.pathway==="composite"?"Composite":"Not selected")+'</strong></div><div><span>Certification</span><strong>'+esc(snapshot.status)+'</strong></div><div><span>Mastery</span><strong>'+(mastery?.overallPercent===undefined||mastery?.overallPercent===null?"—":esc(mastery.overallPercent)+"%")+'</strong></div><div><span>Assessment Time</span><strong>'+esc(student.accommodations?.timeMultiplier||1)+'×</strong></div><div><span>Breaks</span><strong>'+(student.accommodations?.breaks?'Permitted':'Standard')+'</strong></div></div></div></div>'+
       '<div class="panel"><div class="panel-head"><div class="panel-title">Work Requiring Attention</div></div><div class="panel-body"><div class="detail-list"><div><span>Missing / Ungraded</span><strong>'+missing.length+'</strong></div><div><span>Late</span><strong>'+late.length+'</strong></div><div><span>Excused</span><strong>'+excused.length+'</strong></div><div><span>Open Appeals</span><strong>'+snapshot.appeals.length+'</strong></div><div><span>Academic Flags</span><strong>'+flags.length+'</strong></div></div></div></div></div>'+
       (missing.length?'<div class="panel" style="margin-top:16px"><div class="panel-head"><div class="panel-title">Missing / Ungraded Coursework</div></div><div class="panel-body"><div class="profile-record-list">'+missing.slice(0,12).map(x=>'<div class="profile-record-row"><div><strong>'+esc(x.assignment.title||"Assignment")+'</strong><span>'+esc(x.assignment.gradingPeriod||"Overall")+'</span></div><b>'+esc(x.grade?.gradeStatus||"Ungraded")+'</b></div>').join("")+'</div></div></div>':'')+
