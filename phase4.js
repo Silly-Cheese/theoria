@@ -63,6 +63,8 @@ async function loadSectionBundle(sectionId,{deep=false}={}){
     ? await getDocs(collection(db,"sections",sectionId,"assignments"))
     : await getDocs(query(collection(db,"sections",sectionId,"assignments"),where("status","==","Published")));
   const assignments=assignmentsSnap.docs.map(d=>({id:d.id,...d.data()})).filter(x=>x.status!=="Draft");
+  const assessmentRefSnap=await getDocs(collection(db,"sections",sectionId,"assessmentRefs"));
+  const assessmentRefs=assessmentRefSnap.docs.map(d=>({id:d.id,...d.data()})).filter(x=>x.status!=="Draft");
 
   let members=[],grades=[],assessmentGrades=[],pathways=[],records=[],mastery=[],appeals=[],portfolios=[],narratives=[];
   if(s.role==="instructor"){
@@ -107,8 +109,7 @@ async function loadSectionBundle(sectionId,{deep=false}={}){
     if(gets[6].exists())portfolios=[{id:gets[6].id,...gets[6].data()}];
     if(gets[7].exists())narratives=[{id:gets[7].id,...gets[7].data()}];
 
-    const refSnap=await getDocs(collection(db,"sections",sectionId,"assessmentRefs"));
-    for(const ref of refSnap.docs){
+    for(const ref of assessmentRefs){
       try{
         const grade=await getDoc(doc(db,"sections",sectionId,"assessmentGrades",ref.id+"_"+uid));
         if(grade.exists())assessmentGrades.push({id:grade.id,...grade.data()});
@@ -135,7 +136,7 @@ async function loadSectionBundle(sectionId,{deep=false}={}){
     }
   }
 
-  const bundle={section,assignments,members,grades,assessmentGrades,pathways,records,mastery,appeals,portfolios,narratives,assessments};
+  const bundle={section,assignments,assessmentRefs,members,grades,assessmentGrades,pathways,records,mastery,appeals,portfolios,narratives,assessments};
   P4.cache.set(key,bundle);
   return bundle;
 }
@@ -206,6 +207,56 @@ function courseworkPercent(bundle,studentId){
   };
 }
 
+function isGeneralAssessmentType(type){
+  const value=String(type||"").trim().toLowerCase();
+  return value && !value.includes("semester") && !value.includes("comprehensive") && !value.includes("entrance");
+}
+
+function generalAssessmentComponent(bundle,studentId){
+  const refs=(bundle.assessmentRefs||[]).filter(ref=>isGeneralAssessmentType(ref.assessmentType||ref.type));
+  const refIds=new Set(refs.map(ref=>ref.id));
+  const complete=(bundle.assessmentGrades||[]).filter(g=>g.studentId===studentId&&refIds.has(g.assessmentId)&&g.percent!==null&&g.percent!==undefined);
+  let percent=null;
+  if(complete.length){
+    const canWeight=complete.every(row=>Number(row.maxScore||0)>0&&row.score!==null&&row.score!==undefined);
+    if(canWeight){
+      const earned=complete.reduce((n,row)=>n+Number(row.score||0),0);
+      const possible=complete.reduce((n,row)=>n+Number(row.maxScore||0),0);
+      percent=possible?round(earned/possible*100):avg(complete.map(row=>row.percent));
+    }else{
+      percent=avg(complete.map(row=>row.percent));
+    }
+  }
+  return {
+    percent,
+    count:complete.length,
+    total:refs.length,
+    complete:refs.length===0||complete.length===refs.length,
+    rows:complete,
+    refs
+  };
+}
+
+function compositeWeights(policy={}){
+  const raw=policy.composite||{coursework:60,semester:15,comprehensive:25};
+  if(raw.assessments!==undefined&&raw.assessments!==null){
+    return {
+      coursework:Number(raw.coursework||0),
+      assessments:Number(raw.assessments||0),
+      semester:Number(raw.semester||0),
+      comprehensive:Number(raw.comprehensive||0)
+    };
+  }
+  const legacyCoursework=Number(raw.coursework??60);
+  const assessmentShare=Math.min(20,Math.max(0,legacyCoursework/2));
+  return {
+    coursework:round(legacyCoursework-assessmentShare),
+    assessments:round(assessmentShare),
+    semester:Number(raw.semester??15),
+    comprehensive:Number(raw.comprehensive??25)
+  };
+}
+
 function examComponent(bundle,studentId,type){
   const rows=bundle.assessmentGrades.filter(g=>g.studentId===studentId&&g.assessmentType===type);
   const complete=rows.filter(x=>x.percent!==null&&x.percent!==undefined);
@@ -229,12 +280,13 @@ function finalCalculation(bundle,studentId){
   const policy=section.gradingPolicy||{};
   const choice=pathwayFor(bundle,studentId);
   const coursework=courseworkPercent(bundle,studentId);
+  const assessments=generalAssessmentComponent(bundle,studentId);
   const semester=examComponent(bundle,studentId,"Semester I Examination");
   const comprehensive=examComponent(bundle,studentId,"Comprehensive Final Examination");
   const pathway=choice?.pathway||null;
   const weights=pathway==="examination"
     ? (policy.examination||{semester:35,comprehensive:65})
-    : (policy.composite||{coursework:60,semester:15,comprehensive:25});
+    : compositeWeights(policy);
 
   const components=pathway==="examination"
     ? [
@@ -243,21 +295,24 @@ function finalCalculation(bundle,studentId){
       ]
     : [
         {key:"coursework",label:"Coursework",value:coursework.percent,weight:Number(weights.coursework||0)},
+        ...(assessments.total?[{key:"assessments",label:"General Assessments",value:assessments.percent,weight:Number(weights.assessments||0)}]:[]),
         {key:"semester",label:"Semester I Examination",value:semester.percent,weight:Number(weights.semester||0)},
         {key:"comprehensive",label:"Comprehensive Final Examination",value:comprehensive.percent,weight:Number(weights.comprehensive||0)}
       ];
 
-  let weighted=0,availableWeight=0;
+  let weighted=0,availableWeight=0,requiredWeight=0;
   for(const c of components){
+    requiredWeight+=c.weight;
     if(c.value!==null){weighted+=Number(c.value)*c.weight;availableWeight+=c.weight;}
   }
   const complete=!!pathway&&components.every(c=>c.value!==null);
-  const final=complete?round(weighted/100):null;
+  const final=complete&&requiredWeight?round(weighted/requiredWeight):null;
   const projection=availableWeight?round(weighted/availableWeight):null;
   const appeals=openAppeals(bundle,studentId);
 
   const audit=[
     {id:"pathway",label:"Grading pathway selected",ok:!!pathway},
+    {id:"assessments",label:assessments.total?("General assessments complete ("+assessments.count+"/"+assessments.total+")"):"No general assessments assigned",ok:pathway==="examination"||assessments.complete},
     {id:"semester",label:"Semester I Examination complete",ok:semester.percent!==null},
     {id:"comprehensive",label:"Comprehensive Final Examination complete",ok:comprehensive.percent!==null},
     {id:"coursework",label:"Required coursework grade available",ok:pathway==="examination"||coursework.percent!==null},
@@ -265,7 +320,7 @@ function finalCalculation(bundle,studentId){
   ];
   const ready=audit.every(x=>x.ok);
 
-  return {pathway,choice,coursework,semester,comprehensive,components,final,projection,complete,ready,audit,appeals,weights};
+  return {pathway,choice,coursework,assessments,semester,comprehensive,components,final,projection,complete,ready,audit,appeals,weights};
 }
 
 function competencyClass(percent){
@@ -441,6 +496,9 @@ async function buildRecordSnapshot(bundle,studentId){
     narrativeEvaluation:narrative?.includeOnRecord?{strengths:narrative.strengths||"",recommendations:narrative.recommendations||""}:null,
     pathway:calc.pathway,
     courseworkPercent:calc.coursework.percent,
+    generalAssessmentPercent:calc.assessments.percent,
+    generalAssessmentCount:calc.assessments.count,
+    generalAssessmentTotal:calc.assessments.total,
     semesterExamPercent:calc.semester.percent,
     comprehensiveExamPercent:calc.comprehensive.percent,
     finalPercent:calc.final,
@@ -574,6 +632,7 @@ async function withdrawalCertificationModal(sectionId,studentId){
       certificationBasis:"Coursework at withdrawal",assessmentRequirementWaived:true,
       withdrawalReason,withdrawalCertified:true,
       pathway:"withdrawal-coursework",courseworkPercent:coursework.percent,
+      generalAssessmentPercent:null,generalAssessmentCount:0,generalAssessmentTotal:0,
       semesterExamPercent:null,comprehensiveExamPercent:null,
       rawWithdrawalPercent:coursework.percent,gradeAdjustmentMode:mode,
       gradeAdjustmentPoints:adjustment,gradeAdjustmentReason:adjustmentReason,
@@ -681,7 +740,7 @@ async function markIncompleteRecord(sectionId,studentId){
 function recordStatusCard(bundle,member){
   const calc=finalCalculation(bundle,member.id),record=recordFor(bundle,member.id),mastery=bundle.mastery.find(x=>x.id===member.id);
   return '<tr><td><strong>'+esc(member.displayName||"Student")+'</strong><span class="grade-sub">'+esc(calc.pathway==="examination"?"Examination Pathway":calc.pathway==="composite"?"Composite Pathway":"No pathway selected")+'</span></td>'+
-    '<td>'+(calc.coursework.percent===null?"—":calc.coursework.percent+"%")+'</td><td>'+(calc.semester.percent===null?"—":calc.semester.percent+"%")+'</td><td>'+(calc.comprehensive.percent===null?"—":calc.comprehensive.percent+"%")+'</td>'+
+    '<td>'+(calc.coursework.percent===null?"—":calc.coursework.percent+"%")+'</td><td>'+(calc.assessments.total?(calc.assessments.percent===null?"—":calc.assessments.percent+"%"):"N/A")+'</td><td>'+(calc.semester.percent===null?"—":calc.semester.percent+"%")+'</td><td>'+(calc.comprehensive.percent===null?"—":calc.comprehensive.percent+"%")+'</td>'+
     '<td><strong>'+(calc.final===null?(calc.projection===null?"—":calc.projection+"%*"):calc.final+"%")+'</strong></td><td>'+(mastery?.overallPercent===null||mastery?.overallPercent===undefined?"—":mastery.overallPercent+"%")+'</td>'+
     '<td><span class="badge '+(record?.status==="Certified"?'live':calc.ready?'gold':'')+'">'+esc(record?.status|| (calc.ready?"Ready":"Incomplete"))+'</span></td>'+
     '<td><div class="inline-actions"><button class="text-btn" data-phase4-action="record-audit" data-section="'+bundle.section.id+'" data-student="'+member.id+'">Audit</button>'+(calc.ready?'<button class="primary-btn small-btn" data-phase4-action="certify-record" data-section="'+bundle.section.id+'" data-student="'+member.id+'">'+(record?.status==="Certified"?"Recalculate / Amend":"Certify")+'</button>':record?.status!=="Certified"?'<button class="secondary-btn small-btn" data-phase4-action="mark-incomplete" data-section="'+bundle.section.id+'" data-student="'+member.id+'">Mark Incomplete</button>':'')+'<button class="text-btn" data-phase4-action="portfolio" data-section="'+bundle.section.id+'" data-student="'+member.id+'">Portfolio</button></div></td></tr>';
@@ -692,7 +751,7 @@ async function renderRecords(sectionId,targetSelector="#phase4SectionTab"){
   const bundle=await loadSectionBundle(sectionId);
   const pending=bundle.appeals.filter(x=>x.status==="Pending"||x.status==="Under Review");
   el.innerHTML='<div class="section-summary"><div class="summary-block"><div class="summary-label">Students</div><div class="summary-value">'+bundle.members.length+'</div></div><div class="summary-block"><div class="summary-label">Ready to Certify</div><div class="summary-value">'+bundle.members.filter(m=>finalCalculation(bundle,m.id).ready).length+'</div></div><div class="summary-block"><div class="summary-label">Certified</div><div class="summary-value">'+bundle.records.filter(r=>r.status==="Certified").length+'</div></div><div class="summary-block"><div class="summary-label">Open Appeals</div><div class="summary-value">'+pending.length+'</div></div></div>'+
-    '<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Student</th><th>Coursework</th><th>Semester Exam</th><th>Comprehensive</th><th>Final / Projection</th><th>Mastery</th><th>Record</th><th>Action</th></tr></thead><tbody>'+bundle.members.map(m=>recordStatusCard(bundle,m)).join("")+'</tbody></table></div>'+
+    '<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Student</th><th>Coursework</th><th>General Assessments</th><th>Semester Exam</th><th>Comprehensive</th><th>Final / Projection</th><th>Mastery</th><th>Record</th><th>Action</th></tr></thead><tbody>'+bundle.members.map(m=>recordStatusCard(bundle,m)).join("")+'</tbody></table></div>'+
     '<div class="panel" style="margin-top:18px"><div class="panel-head"><div class="panel-title">Grade Appeals</div></div><div class="panel-body">'+(pending.length?pending.map(a=>'<div class="appeal-row"><div><strong>'+esc(a.studentName||"Student")+' — '+esc(a.title||"Grade Appeal")+'</strong><span>'+esc(a.reason||"")+'</span><small>'+esc(a.targetType||"Coursework")+' • '+esc(a.status)+'</small></div><button class="secondary-btn small-btn" data-phase4-action="review-appeal" data-section="'+sectionId+'" data-id="'+a.id+'">Review</button></div>').join(""):'<div class="empty-mini">No unresolved grade appeals.</div>')+'</div></div>';
 }
 
@@ -744,13 +803,13 @@ async function renderStudentRecord(sectionId,targetSelector="#phase4SectionTab")
   const el=$(targetSelector);if(!el)return;
   const bundle=await loadSectionBundle(sectionId),uid=state().user.uid,calc=finalCalculation(bundle,uid),record=recordFor(bundle,uid),portfolio=portfolioFor(bundle,uid),mastery=bundle.mastery.find(x=>x.id===uid);
   const appeals=bundle.appeals.sort((a,b)=>(b.createdAt?.toMillis?.()||0)-(a.createdAt?.toMillis?.()||0));
-  el.innerHTML='<div class="record-calculation"><div><span>Coursework</span><strong>'+(calc.coursework.percent===null?"—":calc.coursework.percent+"%")+'</strong></div><div><span>Semester I Exam</span><strong>'+(calc.semester.percent===null?"—":calc.semester.percent+"%")+'</strong></div><div><span>Comprehensive Final</span><strong>'+(calc.comprehensive.percent===null?"—":calc.comprehensive.percent+"%")+'</strong></div><div><span>Current Projection</span><strong>'+(calc.projection===null?"—":calc.projection+"%")+'</strong></div></div>'+
+  el.innerHTML='<div class="record-calculation"><div><span>Coursework</span><strong>'+(calc.coursework.percent===null?"—":calc.coursework.percent+"%")+'</strong></div><div><span>General Assessments</span><strong>'+(calc.assessments.total?(calc.assessments.percent===null?"—":calc.assessments.percent+"%"):"N/A")+'</strong></div><div><span>Semester I Exam</span><strong>'+(calc.semester.percent===null?"—":calc.semester.percent+"%")+'</strong></div><div><span>Comprehensive Final</span><strong>'+(calc.comprehensive.percent===null?"—":calc.comprehensive.percent+"%")+'</strong></div><div><span>Current Projection</span><strong>'+(calc.projection===null?"—":calc.projection+"%")+'</strong></div></div>'+
     (record?.status==="Incomplete"?'<div class="academic-banner"><div class="kicker">Academic Record</div><h3>Incomplete</h3><p>'+esc(record.incompleteReason||"Additional academic work or evaluation is required before a final grade can be certified.")+'</p></div>'+componentHtml(calc):record?formalRecordHtml(record,portfolio,mastery,true):'<div class="academic-banner"><div class="kicker">Academic Record</div><h3>Your final grade has not been certified.</h3><p>Your current grades and pathway remain visible while required components are completed.</p></div>'+componentHtml(calc))+
     '<div class="grid-2" style="margin-top:18px"><div class="panel"><div class="panel-head"><div class="panel-title">Academic Portfolio</div></div><div class="panel-body">'+portfolioHtml(portfolio)+'</div></div><div class="panel"><div class="panel-head"><div class="panel-title">Grade Appeals</div><button class="panel-link" data-phase4-action="new-appeal" data-section="'+sectionId+'">New Appeal</button></div><div class="panel-body">'+(appeals.length?appeals.map(a=>'<div class="appeal-mini"><strong>'+esc(a.title||"Grade Appeal")+'</strong><span>'+esc(a.status||"Pending")+' • '+esc(dateText(a.createdAt))+'</span><p>'+esc(a.reason||"")+'</p>'+(a.decision?'<small>Decision: '+esc(a.decision)+'</small>':'')+'</div>').join(""):'<div class="empty-mini">No grade appeals submitted.</div>')+'</div></div></div>';
 }
 
 function formalRecordHtml(record,portfolio,mastery,studentView=false){
-  return '<article class="formal-record" id="formalAcademicRecord"><div class="record-seal">Θ</div><div class="record-heading"><div class="eyebrow">Theoria Academic Record</div><h2>'+esc(record.courseCode)+' — '+esc(record.courseTitle)+'</h2><p>'+esc(record.sectionName)+' • '+esc(record.term)+'</p></div><div class="record-identity"><div><span>Student</span><strong>'+esc(record.studentName)+'</strong></div><div><span>Record ID</span><strong>'+esc(record.recordId)+'</strong></div><div><span>Status</span><strong>'+esc(record.status)+'</strong></div><div><span>Version</span><strong>'+esc(record.version||1)+'</strong></div></div><div class="record-final"><div><span>Certified Final Grade</span><strong>'+esc(record.letterGrade)+'</strong><small>'+esc(record.finalPercent)+'%</small></div><div><span>Academic Mastery</span><strong>'+(record.masteryPercent===null||record.masteryPercent===undefined?"—":esc(record.masteryPercent)+"%")+'</strong><small>Separate from grade</small></div><div><span>Grading Basis</span><strong class="record-path">'+esc(record.pathway==="examination"?"Examination":record.pathway==="withdrawal-coursework"?"Withdrawal Coursework":"Composite")+'</strong></div></div><div class="record-breakdown"><div><span>Coursework</span><strong>'+(record.courseworkPercent===null?"N/A":esc(record.courseworkPercent)+"%")+'</strong></div><div><span>Semester I Examination</span><strong>'+(record.semesterExamPercent===null||record.semesterExamPercent===undefined?"Waived":esc(record.semesterExamPercent)+"%")+'</strong></div><div><span>Comprehensive Final Examination</span><strong>'+(record.comprehensiveExamPercent===null||record.comprehensiveExamPercent===undefined?"Waived":esc(record.comprehensiveExamPercent)+"%")+'</strong></div></div>'+(record.courseVersion?'<div class="notice" style="margin-top:14px"><strong>Course Version</strong><p>'+esc(record.courseVersion)+'</p></div>':'')+(record.narrativeEvaluation?'<div class="record-narrative"><div><span>Instructor Narrative — Strengths</span><p>'+esc(record.narrativeEvaluation.strengths||"")+'</p></div><div><span>Growth / Recommendations</span><p>'+esc(record.narrativeEvaluation.recommendations||"")+'</p></div></div>':'')+'<div class="record-footer"><p>This record documents academic performance within Theoria. It does not represent outside accreditation unless separately established by the issuing institution.</p><div class="inline-actions"><button class="secondary-btn small-btn" data-phase4-action="print-record">Print Record</button>'+(studentView?'<button class="text-btn" data-phase4-action="record-history" data-section="'+esc(record.sectionId||"")+'" data-student="'+esc(record.studentId)+'">View Amendment History</button>':'')+'</div></div></article>';
+  return '<article class="formal-record" id="formalAcademicRecord"><div class="record-seal">Θ</div><div class="record-heading"><div class="eyebrow">Theoria Academic Record</div><h2>'+esc(record.courseCode)+' — '+esc(record.courseTitle)+'</h2><p>'+esc(record.sectionName)+' • '+esc(record.term)+'</p></div><div class="record-identity"><div><span>Student</span><strong>'+esc(record.studentName)+'</strong></div><div><span>Record ID</span><strong>'+esc(record.recordId)+'</strong></div><div><span>Status</span><strong>'+esc(record.status)+'</strong></div><div><span>Version</span><strong>'+esc(record.version||1)+'</strong></div></div><div class="record-final"><div><span>Certified Final Grade</span><strong>'+esc(record.letterGrade)+'</strong><small>'+esc(record.finalPercent)+'%</small></div><div><span>Academic Mastery</span><strong>'+(record.masteryPercent===null||record.masteryPercent===undefined?"—":esc(record.masteryPercent)+"%")+'</strong><small>Separate from grade</small></div><div><span>Grading Basis</span><strong class="record-path">'+esc(record.pathway==="examination"?"Examination":record.pathway==="withdrawal-coursework"?"Withdrawal Coursework":"Composite")+'</strong></div></div><div class="record-breakdown"><div><span>Coursework</span><strong>'+(record.courseworkPercent===null?"N/A":esc(record.courseworkPercent)+"%")+'</strong></div><div><span>General Assessments</span><strong>'+(record.recordType==="Withdrawal"?"Waived":record.generalAssessmentTotal===0?"N/A":record.generalAssessmentPercent===null||record.generalAssessmentPercent===undefined?"—":esc(record.generalAssessmentPercent)+"%")+'</strong></div><div><span>Semester I Examination</span><strong>'+(record.semesterExamPercent===null||record.semesterExamPercent===undefined?"Waived":esc(record.semesterExamPercent)+"%")+'</strong></div><div><span>Comprehensive Final Examination</span><strong>'+(record.comprehensiveExamPercent===null||record.comprehensiveExamPercent===undefined?"Waived":esc(record.comprehensiveExamPercent)+"%")+'</strong></div></div>'+(record.courseVersion?'<div class="notice" style="margin-top:14px"><strong>Course Version</strong><p>'+esc(record.courseVersion)+'</p></div>':'')+(record.narrativeEvaluation?'<div class="record-narrative"><div><span>Instructor Narrative — Strengths</span><p>'+esc(record.narrativeEvaluation.strengths||"")+'</p></div><div><span>Growth / Recommendations</span><p>'+esc(record.narrativeEvaluation.recommendations||"")+'</p></div></div>':'')+'<div class="record-footer"><p>This record documents academic performance within Theoria. It does not represent outside accreditation unless separately established by the issuing institution.</p><div class="inline-actions"><button class="secondary-btn small-btn" data-phase4-action="print-record">Print Record</button>'+(studentView?'<button class="text-btn" data-phase4-action="record-history" data-section="'+esc(record.sectionId||"")+'" data-student="'+esc(record.studentId)+'">View Amendment History</button>':'')+'</div></div></article>';
 }
 
 function portfolioHtml(portfolio){
@@ -825,7 +884,7 @@ async function renderReportsPage(sectionId=P4.reportsSectionId){
 async function renderProgress(sectionId){
   const el=$("#phase4SectionTab");if(!el)return;
   const bundle=await loadSectionBundle(sectionId),uid=state().user.uid,calc=finalCalculation(bundle,uid),mastery=bundle.mastery.find(x=>x.id===uid);
-  el.innerHTML='<div class="record-calculation"><div><span>Coursework Grade</span><strong>'+(calc.coursework.percent===null?"—":calc.coursework.percent+"%")+'</strong></div><div><span>Semester Exam</span><strong>'+(calc.semester.percent===null?"—":calc.semester.percent+"%")+'</strong></div><div><span>Comprehensive Final</span><strong>'+(calc.comprehensive.percent===null?"—":calc.comprehensive.percent+"%")+'</strong></div><div><span>Current Final Projection</span><strong>'+(calc.projection===null?"—":calc.projection+"%")+'</strong></div></div><div class="grid-2"><div class="panel"><div class="panel-head"><div class="panel-title">Grading Pathway Projection</div></div><div class="panel-body">'+componentHtml(calc)+'<div class="notice" style="margin-top:14px">A projection uses only currently available components. It is not a certified final grade.</div></div></div><div class="panel"><div class="panel-head"><div class="panel-title">Academic Mastery</div></div><div class="panel-body">'+(mastery?masteryBars(mastery.competencies):'<div class="empty-mini">No mastery snapshot calculated yet.</div>')+'</div></div></div>';
+  el.innerHTML='<div class="record-calculation"><div><span>Coursework Grade</span><strong>'+(calc.coursework.percent===null?"—":calc.coursework.percent+"%")+'</strong></div><div><span>General Assessments</span><strong>'+(calc.assessments.total?(calc.assessments.percent===null?"—":calc.assessments.percent+"%"):"N/A")+'</strong></div><div><span>Semester Exam</span><strong>'+(calc.semester.percent===null?"—":calc.semester.percent+"%")+'</strong></div><div><span>Comprehensive Final</span><strong>'+(calc.comprehensive.percent===null?"—":calc.comprehensive.percent+"%")+'</strong></div><div><span>Current Final Projection</span><strong>'+(calc.projection===null?"—":calc.projection+"%")+'</strong></div></div><div class="grid-2"><div class="panel"><div class="panel-head"><div class="panel-title">Grading Pathway Projection</div></div><div class="panel-body">'+componentHtml(calc)+'<div class="notice" style="margin-top:14px">A projection uses only currently available components. It is not a certified final grade.</div></div></div><div class="panel"><div class="panel-head"><div class="panel-title">Academic Mastery</div></div><div class="panel-body">'+(mastery?masteryBars(mastery.competencies):'<div class="empty-mini">No mastery snapshot calculated yet.</div>')+'</div></div></div>';
 }
 
 async function renderSectionTab(tab){
