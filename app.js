@@ -1557,6 +1557,22 @@ async function loadSectionData(section){
     }
   }
 
+  if(state.role==="student"){
+    for(const ref of assessmentRefs){
+      if(ref.assessmentType||ref.type)continue;
+      try{
+        const assessmentSnap=await getDoc(doc(db,"assessments",ref.id));
+        if(assessmentSnap.exists()){
+          const data=assessmentSnap.data();
+          ref.assessmentType=data.type||"Assessment";
+          ref.type=data.type||"Assessment";
+          ref.title=data.title||ref.title||"Assessment";
+          ref.totalPoints=Number(data.totalPoints||ref.totalPoints||0);
+        }
+      }catch(_){}
+    }
+  }
+
   assessmentRefs=assessmentRefs
     .filter(x=>x.status!=="Draft")
     .sort((a,b)=>{
