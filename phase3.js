@@ -3284,7 +3284,7 @@ async function renderGradingPolicy(){
     try{
       await updateDoc(doc(db,"sections",section.id),{gradingPolicy,updatedAt:serverTimestamp()});
       section.gradingPolicy=gradingPolicy;
-      if(window.TheoriaPhase5?.logSectionEvent)await window.TheoriaPhase5.logSectionEvent(section.id,"grading_policy_updated","section",section.id,{courseworkRules});
+      if(window.TheoriaPhase5?.logSectionEvent)await window.TheoriaPhase5.logSectionEvent(section.id,"grading_policy_updated","section",section.id,{examination,composite,courseworkRules});
       toast("Grading policy saved.");await renderGradingPolicy();
     }catch(err){toast(err.message||"Unable to save grading policy.");}
   });
