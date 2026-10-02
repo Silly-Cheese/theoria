@@ -65,6 +65,19 @@ async function loadSectionBundle(sectionId,{deep=false}={}){
   const assignments=assignmentsSnap.docs.map(d=>({id:d.id,...d.data()})).filter(x=>x.status!=="Draft");
   const assessmentRefSnap=await getDocs(collection(db,"sections",sectionId,"assessmentRefs"));
   const assessmentRefs=assessmentRefSnap.docs.map(d=>({id:d.id,...d.data()})).filter(x=>x.status!=="Draft");
+  for(const ref of assessmentRefs){
+    if(ref.assessmentType||ref.type)continue;
+    try{
+      const assessmentSnap=await getDoc(doc(db,"assessments",ref.id));
+      if(assessmentSnap.exists()){
+        const data=assessmentSnap.data();
+        ref.assessmentType=data.type||"Assessment";
+        ref.type=data.type||"Assessment";
+        ref.title=data.title||ref.title||"Assessment";
+        ref.totalPoints=Number(data.totalPoints||ref.totalPoints||0);
+      }
+    }catch(_){}
+  }
 
   let members=[],grades=[],assessmentGrades=[],pathways=[],records=[],mastery=[],appeals=[],portfolios=[],narratives=[];
   if(s.role==="instructor"){
