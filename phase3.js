@@ -3280,7 +3280,7 @@ async function renderGradingPolicy(){
     };
     const gradingPeriods=[...new Set(String(fd.get("gradingPeriods")||"Overall").split(",").map(x=>x.trim()).filter(Boolean))];
     if(!gradingPeriods.length)gradingPeriods.push("Overall");
-    const gradingPolicy={selectionOpen:e.currentTarget.querySelector('[name="selectionOpen"]')?.checked===true,selectionDeadline:timestampFrom(fd.get("deadline")),gradingPeriods,examination,composite,courseworkRules,updatedAt:serverTimestamp()};
+    const gradingPolicy={...policy,selectionOpen:e.currentTarget.querySelector('[name="selectionOpen"]')?.checked===true,selectionDeadline:timestampFrom(fd.get("deadline")),gradingPeriods,gradingPeriodSettings:{...(policy.gradingPeriodSettings||{})},examination,composite,courseworkRules,updatedAt:serverTimestamp()};
     try{
       await updateDoc(doc(db,"sections",section.id),{gradingPolicy,updatedAt:serverTimestamp()});
       section.gradingPolicy=gradingPolicy;
