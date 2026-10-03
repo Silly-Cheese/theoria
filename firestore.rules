@@ -722,7 +722,7 @@ service cloud.firestore {
       match /recordHistory/{historyId} {
         allow read: if sectionGrader(sectionId)
           || (
-            sectionMember(sectionId)
+            signedIn()
             && resource.data.studentId == uid()
           );
         allow create: if sectionAcademicManager(sectionId);
@@ -777,7 +777,6 @@ service cloud.firestore {
         allow read: if sectionGrader(sectionId)
           || (
             isSelf(userId)
-            && sectionMember(sectionId)
             && resource.data.includeOnRecord == true
           );
         allow create, update, delete: if sectionAcademicManager(sectionId);
@@ -786,7 +785,7 @@ service cloud.firestore {
       match /recognitions/{recognitionId} {
         allow read: if sectionGrader(sectionId)
           || (
-            sectionMember(sectionId)
+            signedIn()
             && resource.data.studentId == uid()
           );
         allow create, update, delete: if sectionAcademicManager(sectionId);
