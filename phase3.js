@@ -879,11 +879,16 @@ async function setQuestionQuality(courseId,itemId,status){
 
 function availability(a){
   const now=Date.now(),open=a.opensAt?.toMillis?.()||0,close=a.closesAt?.toMillis?.()||0;
+  const makeupOpen=a.makeupOpensAt?.toMillis?.()||0,makeupClose=a.makeupClosesAt?.toMillis?.()||0;
   if(a.status==="Draft")return "Draft";
   if(a.status==="Closed")return "Closed";
+  const primaryOpen=(!open||now>=open)&&(!close||now<=close);
+  const makeupActive=!!(makeupOpen||makeupClose)&&(!makeupOpen||now>=makeupOpen)&&(!makeupClose||now<=makeupClose);
+  if(primaryOpen)return "Open";
+  if(makeupActive)return "Makeup Open";
   if(open&&now<open)return "Scheduled";
-  if(close&&now>close)return "Window Ended";
-  return "Open";
+  if(makeupOpen&&now<makeupOpen)return "Makeup Scheduled";
+  return "Window Ended";
 }
 
 function safeArray(value){
@@ -924,7 +929,7 @@ function assessmentStudentDetailsBody(a){
   return '<div class="student-assessment-preview">'+
     '<div class="assessment-preview-guard"><div class="preview-lock">Θ</div><div><strong>Assessment contents only</strong><span>Question prompts, passages, answer choices, and answer keys remain hidden until the assessment is legitimately opened.</span></div></div>'+
     '<div class="assessment-preview-summary"><div><span>Status</span><strong>'+esc(availability(a))+'</strong></div><div><span>Questions</span><strong>'+esc(a.questionCount||0)+'</strong></div><div><span>Points</span><strong>'+esc(a.totalPoints||0)+'</strong></div><div><span>Duration</span><strong>'+esc(a.durationMinutes||0)+' min</strong></div></div>'+
-    '<section class="student-preview-section"><div class="panel-title">Schedule</div><div class="detail-list"><div><span>Opens</span><strong>'+esc(dateText(a.opensAt))+'</strong></div><div><span>Closes</span><strong>'+esc(dateText(a.closesAt))+'</strong></div></div></section>'+
+    '<section class="student-preview-section"><div class="panel-title">Schedule</div><div class="detail-list"><div><span>Primary Opens</span><strong>'+esc(dateText(a.opensAt))+'</strong></div><div><span>Primary Closes</span><strong>'+esc(dateText(a.closesAt))+'</strong></div>'+(a.makeupOpensAt||a.makeupClosesAt?'<div><span>Makeup Opens</span><strong>'+esc(dateText(a.makeupOpensAt))+'</strong></div><div><span>Makeup Closes</span><strong>'+esc(dateText(a.makeupClosesAt))+'</strong></div>':'')+'</div></section>'+
     '<section class="student-preview-section"><div class="panel-title">Question Types</div>'+
       (types.length?'<div class="assessment-type-breakdown">'+types.map(row=>'<div><span>'+esc(row.type)+'</span><strong>'+esc(row.count)+'</strong><small>'+(row.randomized?(row.available?esc(row.available)+' available in pool • ':'')+'random draw':'on assessment')+'</small></div>').join("")+'</div>':'<div class="empty-mini">Question-type details are not available for this legacy assessment.</div>')+
     '</section>'+
@@ -2784,7 +2789,7 @@ async function editAssignedAssessmentModal(assessmentId){
     try{
       const batch=writeBatch(db);
       batch.update(doc(db,"assessments",a.id),{
-        title,durationMinutes,opensAt,closesAt,administrationWindows,countsTowardComposite,formative:!countsTowardComposite,sectionId:newSectionId,sectionName:newSection.sectionName,updatedAt:serverTimestamp()
+        title,durationMinutes,opensAt,closesAt,administrationWindows,makeupOpensAt:makeupOpensAt||null,makeupClosesAt:makeupClosesAt||null,countsTowardComposite,formative:!countsTowardComposite,sectionId:newSectionId,sectionName:newSection.sectionName,updatedAt:serverTimestamp()
       });
       if(a.status==="Published"){
         if(moved)batch.delete(doc(db,"sections",a.sectionId,"assessmentRefs",a.id));
@@ -3441,21 +3446,32 @@ async function startExam(id,confirmed=false){
       if(rt.exists()&&rt.data().active===true)retakeAuth={id:rt.id,...rt.data()};
     }catch(_){}
     const now=Date.now(),opens=a.opensAt?.toMillis?.()||0,closes=a.closesAt?.toMillis?.()||0;
+    const makeupOpens=a.makeupOpensAt?.toMillis?.()||0,makeupCloses=a.makeupClosesAt?.toMillis?.()||0;
     const retakeOpens=retakeAuth?.opensAt?.toMillis?.()||0,retakeCloses=retakeAuth?.closesAt?.toMillis?.()||0;
+    let activeAdministration=null;
     if(!retakeAuth){
       if(a.status!=="Published"&&a.status!=="Closed")return toast("This assessment has not been published to students.");
       if(a.status==="Closed")return toast("This assessment has been closed by the instructor.");
-      if(opens&&now<opens)return toast("This assessment opens "+dateText(a.opensAt)+".");
-      if(closes&&now>closes)return toast("The assessment window closed "+dateText(a.closesAt)+".");
+      const primaryOpen=(!opens||now>=opens)&&(!closes||now<=closes);
+      const makeupOpen=!!(makeupOpens||makeupCloses)&&(!makeupOpens||now>=makeupOpens)&&(!makeupCloses||now<=makeupCloses);
+      if(primaryOpen)activeAdministration={kind:"primary",opensAt:a.opensAt,closesAt:a.closesAt};
+      else if(makeupOpen)activeAdministration={kind:"makeup",opensAt:a.makeupOpensAt,closesAt:a.makeupClosesAt};
+      else{
+        if(opens&&now<opens)return toast("This assessment opens "+dateText(a.opensAt)+".");
+        if(makeupOpens&&now<makeupOpens)return toast("The primary window has ended. The makeup administration opens "+dateText(a.makeupOpensAt)+".");
+        return toast("All assessment administration windows have ended.");
+      }
     }else{
       if(retakeOpens&&now<retakeOpens)return toast("Your authorized retake opens "+dateText(retakeAuth.opensAt)+".");
       if(retakeCloses&&now>retakeCloses)return toast("Your authorized retake window closed "+dateText(retakeAuth.closesAt)+".");
+      activeAdministration={kind:"retake",opensAt:retakeAuth.opensAt,closesAt:retakeAuth.closesAt};
     }
     const security=a.securityPolicy||{};
     let subSnap=await getDoc(doc(db,"assessments",id,"submissions",s.user.uid)),sub=subSnap.exists()?{id:subSnap.id,...subSnap.data()}:null;
-    if(!sub&&!retakeAuth&&security.lateEntryPolicy==="deny-after-start"&&opens){
+    const activeOpens=activeAdministration?.opensAt?.toMillis?.()||0;
+    if(!sub&&!retakeAuth&&security.lateEntryPolicy==="deny-after-start"&&activeOpens){
       const grace=Math.max(0,Number(security.lateEntryGraceMinutes||0))*60000;
-      if(now>opens+grace)return toast("Late entry is not permitted for this assessment.");
+      if(now>activeOpens+grace)return toast("Late entry is not permitted for this administration window.");
     }
     if(sub&&sub.status!=="in_progress")return receipt(id);
 
@@ -3490,7 +3506,7 @@ async function startExam(id,confirmed=false){
         wide:true,
         body:'<div class="exam-preflight"><div class="preflight-warning"><strong>Before you begin</strong><p>'+(retakeAllowed?"Your instructor authorized this retake. Beginning creates attempt "+nextAttemptNumber+" and starts the assessment timer. The retake will be graded under the policy shown below.":a.entranceExam?"This examination is required before enrollment. Beginning creates your entrance candidate record and starts the examination timer.":"Beginning creates your official candidate record and starts the examination timer.")+' Refreshing the browser does not create a new attempt.</p></div>'+
           (retakeAllowed?'<div class="notice"><strong>'+esc(retakePolicyLabel(retakeAuth.scorePolicy,retakeAuth.retakeWeightPercent))+'</strong><p>'+(retakeAuth.note?esc(retakeAuth.note):'Your previous attempt remains preserved in academic attempt history.')+'</p></div>':'')+
-          '<div class="detail-list"><div><span>Assessment</span><strong>'+esc(a.type)+'</strong></div><div><span>Time Allowed</span><strong>'+(minutes?minutes+" minutes":"Untimed")+'</strong></div><div><span>Closes</span><strong>'+esc(dateText(retakeAllowed?(retakeAuth.closesAt||a.closesAt):a.closesAt))+'</strong></div><div><span>Backtracking</span><strong>'+(a.backtracking!==false?"Permitted":"Restricted")+'</strong></div><div><span>Grading</span><strong>'+(a.anonymousGrading!==false?"Anonymous candidate number":"Named")+'</strong></div><div><span>Attempt</span><strong>'+(retakeAllowed?("Retake "+nextAttemptNumber+" • instructor authorized"):(nextAttemptNumber+" of "+Math.max(1,Number(security.maxAttempts||1))))+'</strong></div></div>'+
+          '<div class="detail-list"><div><span>Assessment</span><strong>'+esc(a.type)+'</strong></div><div><span>Time Allowed</span><strong>'+(minutes?minutes+" minutes":"Untimed")+'</strong></div><div><span>Administration</span><strong>'+esc(retakeAllowed?"Authorized Retake":activeAdministration?.kind==="makeup"?"Makeup":"Primary")+'</strong></div><div><span>Closes</span><strong>'+esc(dateText(retakeAllowed?(retakeAuth.closesAt||a.closesAt):(activeAdministration?.closesAt||a.closesAt)))+'</strong></div><div><span>Backtracking</span><strong>'+(a.backtracking!==false?"Permitted":"Restricted")+'</strong></div><div><span>Grading</span><strong>'+(a.anonymousGrading!==false?"Anonymous candidate number":"Named")+'</strong></div><div><span>Attempt</span><strong>'+(retakeAllowed?("Retake "+nextAttemptNumber+" • instructor authorized"):(nextAttemptNumber+" of "+Math.max(1,Number(security.maxAttempts||1))))+'</strong></div></div>'+
           ((security.fullscreenRequired||security.fullscreenExpectation)?'<div class="notice"><strong>Fullscreen required.</strong><p>The assessment will lock if fullscreen is exited and will remain hidden until fullscreen is restored.</p></div>':'')+
           (security.accessCodeConfigured?'<div class="field"><label>Assessment Access Code</label><input id="examAccessCode" type="password" autocomplete="off" required></div>':'')+
           (a.instructions?'<div class="preflight-instructions"><div class="eyebrow">Instructor Instructions</div><p>'+esc(a.instructions).replace(/\n/g,"<br>")+'</p></div>':'')+
