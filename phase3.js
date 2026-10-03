@@ -1665,20 +1665,22 @@ async function loadAssessment(id){
   const assessment={id:a.id,...a.data()};
   const q=await getDocs(collection(db,"assessments",id,"questions"));
   const questions=q.docs.map(d=>({id:d.id,...d.data()})).sort((x,y)=>Number(x.order||99)-Number(y.order||99));
-  let keys=[],submissions=[],results=[],members=[],retakes=[],attemptHistory=[];
+  let keys=[],submissions=[],results=[],members=[],retakes=[],attemptHistory=[],reviewReflections=[];
   if(state().role==="instructor"){
-    const [k,s,r,rt,h]=await Promise.all([
+    const [k,s,r,rt,h,rr]=await Promise.all([
       getDocs(collection(db,"assessments",id,"keys")),
       assessment.sectionId?getDocs(collection(db,"assessments",id,"submissions")):Promise.resolve({docs:[]}),
       assessment.sectionId?getDocs(collection(db,"assessments",id,"results")):Promise.resolve({docs:[]}),
       assessment.sectionId?getDocs(collection(db,"assessments",id,"retakes")):Promise.resolve({docs:[]}),
-      assessment.sectionId?getDocs(collection(db,"assessments",id,"attemptHistory")):Promise.resolve({docs:[]})
+      assessment.sectionId?getDocs(collection(db,"assessments",id,"attemptHistory")):Promise.resolve({docs:[]}),
+      assessment.sectionId?getDocs(collection(db,"assessments",id,"reviewReflections")):Promise.resolve({docs:[]})
     ]);
     keys=k.docs.map(d=>({id:d.id,...d.data()}));
     submissions=s.docs.map(d=>({id:d.id,...d.data()}));
     results=r.docs.map(d=>({id:d.id,...d.data()}));
     retakes=rt.docs.map(d=>({id:d.id,...d.data()}));
     attemptHistory=h.docs.map(d=>({id:d.id,...d.data()}));
+    reviewReflections=rr.docs.map(d=>({id:d.id,...d.data()}));
     if(assessment.sectionId){
       const m=assessment.entranceExam
         ? await getDocs(collection(db,"sections",assessment.sectionId,"entranceCandidates"))
@@ -1686,7 +1688,7 @@ async function loadAssessment(id){
       members=m.docs.map(d=>({id:d.id,...d.data()})).sort((x,y)=>String(x.displayName||"").localeCompare(String(y.displayName||"")));
     }
   }
-  return {assessment,questions,keys,submissions,results,members,retakes,attemptHistory};
+  return {assessment,questions,keys,submissions,results,members,retakes,attemptHistory,reviewReflections};
 }
 
 async function openAssessment(id,tab="overview"){
@@ -2074,11 +2076,23 @@ function candidatesView(){
 
 
 function studentResultsView(){
-  const d=P3.detail,a=d.assessment,resMap=new Map(d.results.map(x=>[x.studentId,x])),subMap=new Map(d.submissions.map(x=>[x.studentId,x]));
+  const d=P3.detail,a=d.assessment,resMap=new Map(d.results.map(x=>[x.studentId,x])),subMap=new Map(d.submissions.map(x=>[x.studentId,x])),reflectionMap=new Map((d.reviewReflections||[]).map(x=>[x.studentId||x.id,x]));
   if(!d.members.length)return '<div class="empty-state"><div class="empty-symbol">R</div><h3>No students in this assessment yet.</h3></div>';
   const complete=d.results.filter(x=>x.complete===true),avg=complete.length?Math.round(complete.reduce((n,x)=>n+Number(x.percent||0),0)/complete.length*10)/10:null;
   return '<div class="section-summary"><div class="summary-block"><div class="summary-label">Students</div><div class="summary-value">'+d.members.length+'</div></div><div class="summary-block"><div class="summary-label">Submitted</div><div class="summary-value">'+d.submissions.filter(x=>["submitted","graded"].includes(x.status)).length+'</div></div><div class="summary-block"><div class="summary-label">Complete Results</div><div class="summary-value">'+complete.length+'</div></div><div class="summary-block"><div class="summary-label">Class Average</div><div class="summary-value">'+(avg===null?"—":avg+"%")+'</div></div></div>'+
-    '<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Student</th><th>Attempt</th><th>Status</th><th>Score</th><th>Released</th><th>Action</th></tr></thead><tbody>'+d.members.map(m=>{const r=resMap.get(m.id),sub=subMap.get(m.id);return '<tr><td><strong>'+esc(m.displayName||"Student")+'</strong><span class="grade-sub">'+esc(m.email||"")+'</span></td><td>'+esc(sub?.attemptNumber||r?.attemptNumber||1)+'</td><td>'+esc(r?.complete?"Graded":sub?.status||"Not started")+'</td><td>'+(r?.complete?'<strong>'+esc(r.percent)+'%</strong>':"—")+'</td><td>'+(r?.released?'<span class="badge live">Released</span>':'<span class="badge">Private</span>')+'</td><td><div class="inline-actions">'+(sub?'<button class="text-btn" data-phase3-action="grade-candidate" data-student="'+m.id+'">Open Result</button>':'')+(r?.complete?'<button class="text-btn" data-phase3-action="toggle-release" data-student="'+m.id+'">'+(r.released?"Make Private":"Release")+'</button>':'')+'</div></td></tr>';}).join("")+'</tbody></table></div>';
+    '<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Student</th><th>Attempt</th><th>Status</th><th>Score</th><th>Released</th><th>Review</th><th>Action</th></tr></thead><tbody>'+d.members.map(m=>{const r=resMap.get(m.id),sub=subMap.get(m.id),reflection=reflectionMap.get(m.id);return '<tr><td><strong>'+esc(m.displayName||"Student")+'</strong><span class="grade-sub">'+esc(m.email||"")+'</span></td><td>'+esc(sub?.attemptNumber||r?.attemptNumber||1)+'</td><td>'+esc(r?.complete?"Graded":sub?.status||"Not started")+'</td><td>'+(r?.complete?'<strong>'+esc(r.percent)+'%</strong>':"—")+'</td><td>'+(r?.released?'<span class="badge live">Released</span>':'<span class="badge">Private</span>')+'</td><td>'+(reflection?'<button class="text-btn" data-phase3-action="view-reflection" data-student="'+m.id+'">Submitted</button>':'—')+'</td><td><div class="inline-actions">'+(sub?'<button class="text-btn" data-phase3-action="grade-candidate" data-student="'+m.id+'">Open Result</button>':'')+(r?.complete?'<button class="text-btn" data-phase3-action="toggle-release" data-student="'+m.id+'">'+(r.released?"Make Private":"Release")+'</button>':'')+'</div></td></tr>';}).join("")+'</tbody></table></div>';
+}
+
+function instructorReflectionModal(studentId){
+  const d=P3.detail,m=d.members.find(x=>x.id===studentId),reflection=(d.reviewReflections||[]).find(x=>(x.studentId||x.id)===studentId);
+  if(!reflection)return toast("No review reflection has been submitted.");
+  core().openModal({
+    eyebrow:"Post-Result Review",
+    title:(m?.displayName||"Student")+" — "+(d.assessment.title||"Assessment"),
+    wide:true,
+    body:'<div class="academic-banner"><div class="kicker">Score-Preserving Reflection</div><h3>Official grade unchanged</h3><p>This reflection documents review and learning after the released result. It does not modify assessment scoring.</p></div><div class="panel"><div class="panel-head"><div class="panel-title">Student Reflection</div></div><div class="panel-body"><p class="reflection-copy">'+esc(reflection.reflection||"").replace(/\n/g,"<br>")+'</p></div></div>',
+    footer:'<button class="primary-btn" data-close-modal>Close</button>'
+  });
 }
 
 function gradingView(){
@@ -4246,6 +4260,7 @@ document.addEventListener("click",async e=>{
   if(a==="attempt-history")return attemptHistoryModal(b.dataset.student);
   if(a==="reset-entrance-attempt")return resetEntranceAttempt(b.dataset.student);
   if(a==="toggle-release")return toggleRelease(b.dataset.student);
+  if(a==="view-reflection")return instructorReflectionModal(b.dataset.student);
   if(a==="auto-score")return autoScore();
   if(a==="horizontal-grade")return horizontalGrade(b.dataset.question);
   if(a==="exam-jump"){if(P3.exam&&(P3.exam.assessment.backtracking!==false||Number(b.dataset.index)>P3.exam.index)){P3.exam.index=Number(b.dataset.index);scheduleSave();renderExam();}return;}
