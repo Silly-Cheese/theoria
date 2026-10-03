@@ -946,54 +946,71 @@ async function studentAssessmentResults(id){
       if(!aSnap.exists())return toast("Assessment not found.");
       a={id:aSnap.id,...aSnap.data()};
     }
+    const policy=a.releasePolicy||{showOverallScore:true,showQuestionScores:true,showCorrectAnswers:false,showExplanations:false,showCompetencies:true,showClassAverage:false,releaseMode:"when-graded"};
 
     let result=null,sub={};
-    try{
-      const resultSnap=await getDoc(doc(db,"assessments",id,"results",s.user.uid));
-      if(resultSnap.exists())result={id:resultSnap.id,...resultSnap.data()};
-    }catch(error){
-      console.error("Unable to read assessment result:",error);
-      throw error;
-    }
+    const resultSnap=await getDoc(doc(db,"assessments",id,"results",s.user.uid));
+    if(resultSnap.exists())result={id:resultSnap.id,...resultSnap.data()};
     if(!result||result.complete!==true)return toast("This assessment has not been fully graded yet.");
+    if(policy.releaseMode==="manual"&&result.released!==true)return toast("Your result has been graded but has not been released by the instructor yet.");
 
     try{
       const subSnap=await getDoc(doc(db,"assessments",id,"submissions",s.user.uid));
       if(subSnap.exists())sub={id:subSnap.id,...subSnap.data()};
-    }catch(error){
-      console.warn("Submission metadata unavailable for results view:",error);
-    }
+    }catch(error){console.warn("Submission metadata unavailable for results view:",error);}
 
     const order=safeArray(sub.questionOrder);
     const pool=new Map(safeArray(a.questionPool).map(q=>[q?.id,q||{}]).filter(([id])=>id));
     const grading=(result.grading&&typeof result.grading==="object")?result.grading:{};
+    const feedback=result.releasedFeedback&&typeof result.releasedFeedback==="object"?result.releasedFeedback:{};
     const questionRows=order.map((qid,index)=>{
-      const meta=pool.get(qid)||{},grade=grading[qid]||{};
-      const max=Number(meta.points||0);
-      const score=grade.score!==undefined&&grade.score!==null?Number(grade.score):null;
-      return '<div class="student-result-question"><div class="result-question-number">'+(index+1)+'</div><div><span>'+esc(meta.type||"Question")+'</span><strong>'+(score===null?'Not scored':esc(score)+' / '+esc(max||"—")+' pts')+'</strong>'+(grade.comment?'<p>'+esc(grade.comment)+'</p>':'')+'</div></div>';
+      const meta=pool.get(qid)||{},grade=grading[qid]||{},fb=feedback[qid]||{};
+      const max=Number(meta.points||0),score=grade.score!==undefined&&grade.score!==null?Number(grade.score):null;
+      const scoreText=policy.showQuestionScores?(score===null?'Not scored':esc(score)+' / '+esc(max||"—")+' pts'):(score===null?'Not scored':'Scored');
+      return '<div class="student-result-question"><div class="result-question-number">'+(index+1)+'</div><div><span>'+esc(meta.type||"Question")+'</span><strong>'+scoreText+'</strong>'+(grade.comment?'<p>'+esc(grade.comment)+'</p>':'')+(policy.showCorrectAnswers&&fb.correctAnswer?'<div class="released-answer"><span>Correct answer</span><strong>'+esc(Array.isArray(fb.correctAnswer)?fb.correctAnswer.join(", "):fb.correctAnswer)+'</strong></div>':'')+(policy.showExplanations&&fb.explanation?'<div class="released-explanation">'+esc(fb.explanation)+'</div>':'')+'</div></div>';
     }).join("");
-
-    const parts=result.partScores&&typeof result.partScores==="object"
-      ? Object.values(result.partScores).filter(Boolean)
-      : [];
+    const parts=result.partScores&&typeof result.partScores==="object"?Object.values(result.partScores).filter(Boolean):[];
+    const skills=result.contentSkills||{};
+    const domain=(title,rows)=>safeArray(rows).length?'<div class="result-skill-domain"><h4>'+esc(title)+'</h4>'+safeArray(rows).map(row=>'<div class="blueprint-row '+(Number(row.percent)<70?'needs-practice':'')+'"><span>'+esc(row.label||row.key||"Domain")+'</span><strong>'+esc(row.percent??"—")+'%</strong></div>').join("")+'</div>':'';
 
     core().setPage("exam",a.title||"Assessment Results");
-    const root=$("#examRoot");
-    if(!root)throw new Error("Assessment results workspace is unavailable.");
+    const root=$("#examRoot");if(!root)throw new Error("Assessment results workspace is unavailable.");
     root.innerHTML=
       '<div class="student-results-shell"><button class="text-btn" data-phase3-action="back-assessments">← Assessments</button>'+
-      '<div class="student-results-hero"><div><div class="eyebrow">'+esc(a.courseCode||"")+' • '+esc(a.type||"Assessment")+(Number(result.attemptNumber||1)>1?' • RETAKE '+esc(result.attemptNumber):'')+'</div><h1>'+esc(a.title||"Assessment")+'</h1><p>Grading is complete. This summary shows your performance without exposing answer keys.</p></div><div class="result-score-mark"><strong>'+esc(result.percent??"—")+(result.percent!==undefined&&result.percent!==null?"%":"")+'</strong><span>'+(Number(result.attemptNumber||1)>1?'Official grade':'Assessment grade')+'</span></div></div>'+
-      (Number(result.attemptNumber||1)>1?'<div class="retake-result-summary"><div><span>Retake Raw Score</span><strong>'+esc(result.attemptPercent??result.percent)+'%</strong></div><div><span>Official Grade</span><strong>'+esc(result.percent)+'%</strong></div><div><span>Policy</span><strong>'+esc(retakePolicyLabel(result.retakePolicy,result.retakeWeightPercent))+'</strong></div></div>':'')+
-      '<div class="receipt-grid student-result-meta"><div><span>Candidate Number</span><strong>'+esc(result.candidateNumber||sub.candidateNumber||"—")+'</strong></div><div><span>Status</span><strong>Graded</strong></div><div><span>Submitted</span><strong>'+esc(dateText(sub.submittedAt))+'</strong></div><div><span>Graded</span><strong>'+esc(dateText(result.gradedAt))+'</strong></div></div>'+
-      (parts.length?'<section class="student-result-section"><div class="panel-title">Assessment Part Performance</div><div class="result-domain-grid">'+parts.map(x=>'<div><span>'+esc(x?.title||"Assessment Part")+'</span><strong>'+esc(x?.percent??"—")+(x?.percent!==undefined&&x?.percent!==null?"%":"")+'</strong><small>'+esc(x?.score??"—")+' / '+esc(x?.max??"—")+' pts</small></div>').join("")+'</div></section>':'')+
-      (questionRows?'<section class="student-result-section"><div class="panel-title">Question Performance</div><p class="student-result-note">Question text and answer keys are not displayed in this results summary.</p><div class="student-result-question-list">'+questionRows+'</div></section>':'<section class="student-result-section"><div class="panel-title">Question Performance</div><p class="student-result-note">Per-question metadata is unavailable for this legacy attempt, but your overall and assessment-part results are shown above.</p></section>')+
+      '<div class="student-results-hero"><div><div class="eyebrow">'+esc(a.courseCode||"")+' • '+esc(a.type||"Assessment")+(Number(result.attemptNumber||1)>1?' • RETAKE '+esc(result.attemptNumber):'')+'</div><h1>'+esc(a.title||"Assessment")+'</h1><p>Your instructor controls which parts of the graded result are released below.</p></div>'+(policy.showOverallScore?'<div class="result-score-mark"><strong>'+esc(result.percent??"—")+(result.percent!==undefined&&result.percent!==null?"%":"")+'</strong><span>'+(Number(result.attemptNumber||1)>1?'Official grade':'Assessment grade')+'</span></div>':'')+'</div>'+
+      (Number(result.attemptNumber||1)>1&&policy.showOverallScore?'<div class="retake-result-summary"><div><span>Retake Raw Score</span><strong>'+esc(result.attemptPercent??result.percent)+'%</strong></div><div><span>Official Grade</span><strong>'+esc(result.percent)+'%</strong></div><div><span>Policy</span><strong>'+esc(retakePolicyLabel(result.retakePolicy,result.retakeWeightPercent))+'</strong></div></div>':'')+
+      '<div class="receipt-grid student-result-meta"><div><span>Candidate Number</span><strong>'+esc(result.candidateNumber||sub.candidateNumber||"—")+'</strong></div><div><span>Status</span><strong>Released</strong></div><div><span>Submitted</span><strong>'+esc(dateText(sub.submittedAt))+'</strong></div><div><span>Graded</span><strong>'+esc(dateText(result.gradedAt))+'</strong></div>'+(policy.showClassAverage&&result.classAverage!==null&&result.classAverage!==undefined?'<div><span>Class Average</span><strong>'+esc(result.classAverage)+'%</strong></div>':'')+'</div>'+
+      (parts.length&&policy.showOverallScore?'<section class="student-result-section"><div class="panel-title">Assessment Part Performance</div><div class="result-domain-grid">'+parts.map(x=>'<div><span>'+esc(x?.title||"Assessment Part")+'</span><strong>'+esc(x?.percent??"—")+(x?.percent!==undefined&&x?.percent!==null?"%":"")+'</strong><small>'+esc(x?.score??"—")+' / '+esc(x?.max??"—")+' pts</small></div>').join("")+'</div></section>':'')+
+      (questionRows&&policy.showQuestionScores?'<section class="student-result-section"><div class="panel-title">Question Performance</div><div class="student-result-question-list">'+questionRows+'</div></section>':'')+
+      (policy.showCompetencies?'<section class="student-result-section"><div class="panel-title">Content & Skills</div><div class="student-content-skills">'+domain("Units",skills.units)+domain("Topics",skills.topics)+domain("Competencies",skills.competencies)+'</div></section>':'')+
       (result.overallComment?'<section class="student-result-section"><div class="panel-title">Instructor Comment</div><div class="academic-banner"><p>'+esc(result.overallComment)+'</p></div></section>':'')+
+      (a.correctionPolicy?.enabled?'<section class="student-result-section review-correction-card"><div><div class="panel-title">Corrections & Reflection</div><p>'+esc(a.correctionPolicy.instructions||"Review your performance and record what you would change or study next.")+'</p></div><button class="secondary-btn" data-phase3-action="result-reflection" data-id="'+a.id+'">Open Reflection</button></section>':'')+
       '<div class="student-results-actions"><button class="secondary-btn" data-phase3-action="student-assessment-details" data-id="'+a.id+'">Assessment Details</button><button class="primary-btn" data-phase3-action="back-assessments">Return to Assessments</button></div></div>';
   }catch(err){
     console.error("Unable to load student assessment results:",err);
     toast(err?.code==="permission-denied"?"Theoria could not authorize this result yet. Deploy the latest Firestore rules, then sign out and back in.":(err?.message||"Unable to load assessment results."));
   }
+}
+
+async function resultReflectionModal(assessmentId){
+  const s=state();if(!s?.user)return;
+  const aSnap=await getDoc(doc(db,"assessments",assessmentId));if(!aSnap.exists())return toast("Assessment not found.");
+  const a={id:aSnap.id,...aSnap.data()};if(!a.correctionPolicy?.enabled)return toast("Corrections are not enabled for this assessment.");
+  let existing=null;
+  try{const snap=await getDoc(doc(db,"assessments",assessmentId,"reviewReflections",s.user.uid));if(snap.exists())existing=snap.data();}catch(_){}
+  const m=core().openModal({
+    eyebrow:"Assessment Review",
+    title:a.title||"Corrections & Reflection",
+    wide:true,
+    body:'<form id="resultReflectionForm"><div class="academic-banner"><div class="kicker">Post-Result Review</div><h3>This does not change your official score.</h3><p>'+esc(a.correctionPolicy.instructions||"Explain what you misunderstood, what evidence supports the correct reasoning, and what you will study next.")+'</p></div><div class="field"><label>Reflection / Corrections</label><textarea name="reflection" rows="10" required placeholder="What did you learn from reviewing this assessment?">'+esc(existing?.reflection||"")+'</textarea></div><div class="modal-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Reflection</button></div></form>'
+  });
+  m.querySelector("#resultReflectionForm").onsubmit=async e=>{
+    e.preventDefault();const reflection=String(new FormData(e.currentTarget).get("reflection")||"").trim();if(!reflection)return;
+    try{
+      await setDoc(doc(db,"assessments",assessmentId,"reviewReflections",s.user.uid),{studentId:s.user.uid,assessmentId,reflection,status:"Submitted",submittedAt:serverTimestamp(),updatedAt:serverTimestamp()},{merge:true});
+      core().closeModal();toast("Assessment reflection saved. Your official score is unchanged.");
+    }catch(error){toast(error.message||"Unable to save the reflection.");}
+  };
 }
 
 async function loadAssessments(){
@@ -1071,7 +1088,8 @@ async function renderAssessments(){
       actions='<button class="primary-btn small-btn" data-phase3-action="start-exam" data-id="'+a.id+'">Begin Retake</button>'+
         '<button class="secondary-btn small-btn" data-phase3-action="student-assessment-details" data-id="'+a.id+'">Details</button>';
     }else if(graded){
-      actions='<button class="primary-btn small-btn" data-phase3-action="student-assessment-results" data-id="'+a.id+'">View Results</button>'+
+      const visible=a.releasePolicy?.releaseMode!=="manual"||result?.released===true;
+      actions=(visible?'<button class="primary-btn small-btn" data-phase3-action="student-assessment-results" data-id="'+a.id+'">View Results</button>':'<span class="badge gold">Graded • awaiting release</span>')+
         '<button class="secondary-btn small-btn" data-phase3-action="student-assessment-details" data-id="'+a.id+'">Details</button>';
     }else if(a.mode==="oral"){
       actions+='<span class="badge gold">Instructor administered</span>';
@@ -1086,7 +1104,7 @@ async function renderAssessments(){
     cards.push('<article class="assessment-card student-assessment-card"><div class="assessment-card-topline"><div class="assessment-type">'+esc(a.type)+'</div><span class="badge '+(status==="Open"?"live":status==="Scheduled"?"gold":"")+'">'+esc(status)+'</span></div><h3>'+esc(a.title)+'</h3><p>'+esc(a.courseCode||"")+' • '+esc(a.sectionName||"")+'</p>'+
       '<div class="assessment-card-stats"><span>'+esc(a.durationMinutes||0)+' min</span><span>'+esc(a.totalPoints||0)+' pts</span><span>'+esc(a.questionCount||0)+' questions</span></div>'+
       (types.length?'<div class="student-card-type-list">'+types.slice(0,4).map(row=>'<span>'+esc(row.count)+' '+esc(row.type)+'</span>').join("")+(types.length>4?'<span>+'+(types.length-4)+' more</span>':'')+'</div>':'')+
-      (retake?'<div class="released-result retake-authorized"><strong>Retake '+esc(retake.authorizedAttemptNumber||"")+'</strong><span>'+esc(retakePolicyLabel(retake.scorePolicy,retake.retakeWeightPercent))+'</span></div>':graded?'<div class="released-result"><strong>'+esc(result.percent)+'%</strong><span>Graded result available</span></div>':'')+
+      (retake?'<div class="released-result retake-authorized"><strong>Retake '+esc(retake.authorizedAttemptNumber||"")+'</strong><span>'+esc(retakePolicyLabel(retake.scorePolicy,retake.retakeWeightPercent))+'</span></div>':graded?'<div class="released-result"><strong>'+esc(result.percent)+'%</strong><span>'+(a.releasePolicy?.releaseMode==="manual"&&!result?.released?'Graded • instructor release pending':'Graded result available')+'</span></div>':'')+
       '<div class="card-actions">'+actions+'</div></article>');
   }
   const studentGroups=new Map();
@@ -3952,7 +3970,7 @@ function metrics(a,d,grading,sub){
 }
 
 async function persistResult(sub,grading,existing,overallComment=existing?.overallComment||""){
-  const d=P3.detail,a=d.assessment,m=metrics(a,d,grading,sub),released=m.complete?true:(existing?.released||false);
+  const d=P3.detail,a=d.assessment,m=metrics(a,d,grading,sub),releasePolicy=a.releasePolicy||{},released=m.complete?(releasePolicy.releaseMode==="manual"?(existing?.released||false):true):(existing?.released||false);
   let retakeAuthorization=null;
   if(!a.entranceExam&&Number(sub.attemptNumber||1)>1){
     try{
@@ -3965,6 +3983,29 @@ async function persistResult(sub,grading,existing,overallComment=existing?.overa
 
   const officialPercent=m.complete&&retakeAuthorization?retakeOfficialPercent(m.percent,retakeAuthorization):m.percent;
   const officialScore=m.max?Math.round((m.max*officialPercent/100)*100)/100:m.total;
+  const candidateQuestions=questionsForSubmission(d,sub),unitMap=new Map(),topicMap=new Map(),compMap=new Map(),keyMap=new Map((d.keys||[]).map(k=>[k.id,k]));
+  const addDomain=(map,key,label,score,max)=>{if(!key)return;const row=map.get(key)||{key,label,earned:0,max:0,evidence:0};row.earned+=Number(score||0);row.max+=Number(max||0);row.evidence++;map.set(key,row);};
+  candidateQuestions.forEach(q=>{
+    const score=grading[q.id]?.score;if(score===undefined||score===null)return;
+    const max=Number(q.points||0);
+    addDomain(unitMap,q.unitId||q.unitTitle||"unmapped",q.unitTitle||"Unmapped / No Unit",score,max);
+    addDomain(topicMap,q.topicId||q.topicNumber||q.topicTitle||"unmapped",(q.topicNumber?q.topicNumber+" — ":"")+(q.topicTitle||"Unmapped / No Topic"),score,max);
+    (q.competencyCodes||[]).forEach(code=>addDomain(compMap,code,code,score,max));
+  });
+  const domainRows=map=>[...map.values()].map(row=>({...row,percent:row.max?Math.round(row.earned/row.max*1000)/10:null}));
+  const contentSkills={units:domainRows(unitMap),topics:domainRows(topicMap),competencies:domainRows(compMap)};
+  const releasedFeedback={};
+  if(releasePolicy.showExplanations||releasePolicy.showCorrectAnswers){
+    candidateQuestions.forEach(q=>{
+      const key=keyMap.get(q.id)||{};
+      releasedFeedback[q.id]={
+        explanation:releasePolicy.showExplanations?String(key.explanation||""):"",
+        correctAnswer:releasePolicy.showCorrectAnswers?(Array.isArray(key.correctAnswer)?key.correctAnswer:String(key.correctAnswer??"")):""
+      };
+    });
+  }
+  const peerPercents=(d.results||[]).filter(r=>r.studentId!==sub.studentId&&r.complete===true).map(r=>Number(r.percent)).filter(Number.isFinite);
+  const classAverage=m.complete?Math.round([...peerPercents,officialPercent].reduce((n,x)=>n+x,0)/Math.max(1,peerPercents.length+1)*10)/10:null;
   const batch=writeBatch(db);
 
   batch.set(doc(db,"assessments",a.id,"results",sub.studentId),{
@@ -3981,10 +4022,14 @@ async function persistResult(sub,grading,existing,overallComment=existing?.overa
     retakePolicy:retakeAuthorization?.scorePolicy||"",
     retakeWeightPercent:retakeAuthorization?.retakeWeightPercent??null,
     grading,partScores:m.partScores,released,complete:m.complete,overallComment,
+    contentSkills,releasedFeedback,classAverage,
     gradedAt:serverTimestamp(),gradedBy:state().user.uid
   },{merge:true});
 
   if(m.complete){
+    (d.results||[]).filter(r=>r.studentId!==sub.studentId&&r.complete===true).forEach(r=>{
+      batch.set(doc(db,"assessments",a.id,"results",r.studentId),{classAverage,updatedAt:serverTimestamp()},{merge:true});
+    });
     batch.update(doc(db,"assessments",a.id,"submissions",sub.studentId),{status:"graded",updatedAt:serverTimestamp()});
     if(a.entranceExam===true){
       const passPercent=Number(a.entrancePassPercent||70);
@@ -4148,6 +4193,7 @@ document.addEventListener("click",async e=>{
   if(a==="reopen")return setStatus("Published");
   if(a==="student-assessment-details")return studentAssessmentDetails(b.dataset.id);
   if(a==="student-assessment-results")return studentAssessmentResults(b.dataset.id);
+  if(a==="result-reflection")return resultReflectionModal(b.dataset.id);
   if(a==="start-exam")return startExam(b.dataset.id);
   if(a==="receipt")return receipt(b.dataset.id);
   if(a==="save-pathway")return savePathway();
