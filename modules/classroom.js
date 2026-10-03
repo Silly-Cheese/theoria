@@ -255,14 +255,20 @@ function enhanceCourseGuide(){
     const unitRefs=refs.filter(r=>r.frameworkUnitId===unit.id);
     const progress=assignedFor(refs,"progress-check",unit.id);
     const summative=assignedFor(refs,"unit-assessment",unit.id);
+    const unitAssignments=(data.assignments||[]).filter(a=>a.unitId===unit.id&&a.status!=="Draft");
+    const unitResources=(data.resources||[]).filter(r=>r.unitId===unit.id);
+    const unitPractice=assignedFor(refs,"topic-practice",unit.id);
+    const pacingRow=pacing.find(row=>row.unitId===unit.id);
+    const pacingText=pacingRow?((pacingRow.startDate||"")+" → "+(pacingRow.endDate||"")):"No pacing dates";
     const head=card.querySelector(".unit-head");
     if(head){
       head.insertAdjacentHTML("beforeend",
-        '<div class="course-flow-tools"><div class="course-flow-status"><span>'+unitRefs.length+' assessment'+(unitRefs.length===1?"":"s")+'</span>'+(progress.length?'<b>Progress Check assigned</b>':'')+(summative.length?'<b>Unit Assessment assigned</b>':'')+'</div>'+
+        '<div class="course-flow-tools"><div class="course-flow-status"><span>'+unitAssignments.length+' coursework</span><span>'+unitResources.length+' resources</span><span>'+unitPractice.length+' topic practice</span><span>'+esc(pacingText)+'</span>'+(progress.length?'<b>Progress Check assigned</b>':'')+(summative.length?'<b>Unit Assessment assigned</b>':'')+'</div>'+
         (instructor?'<div class="inline-actions"><button class="secondary-btn small-btn" data-classroom-action="create-progress-check" data-unit="'+unit.id+'">Progress Check</button><button class="primary-btn small-btn" data-classroom-action="create-unit-assessment" data-unit="'+unit.id+'">Unit Assessment</button></div>':'')+
         '</div>'
       );
     }
+    card.insertAdjacentHTML("beforeend",'<div class="unit-at-glance"><div><span>Topics</span><strong>'+safe(unit.topics).length+'</strong></div><div><span>Coursework</span><strong>'+unitAssignments.length+'</strong></div><div><span>Resources</span><strong>'+unitResources.length+'</strong></div><div><span>Practice</span><strong>'+unitPractice.length+'</strong></div><div><span>Progress Check</span><strong>'+(progress.length?"Ready":"—")+'</strong></div><div><span>Unit Assessment</span><strong>'+(summative.length?"Ready":"—")+'</strong></div></div>');
     [...card.querySelectorAll(".topic-row")].forEach((row,tIndex)=>{
       const topic=safe(unit.topics)[tIndex];if(!topic)return;
       const topicRefs=assignedFor(refs,"topic-practice",unit.id,topic.id);
