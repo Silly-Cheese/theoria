@@ -266,7 +266,7 @@ async function renderAcademicProfile(){
   }
 
   const evidence=await loadOwnAcademicEvidence();
-  let persistentAccess={},entranceAttempts=[];
+  let persistentAccess={},entranceAttempts=[],standingRows=[];
   try{
     const accessSnap=await getDoc(doc(db,"academicAccess",s.user.uid));
     if(accessSnap.exists())persistentAccess=accessSnap.data();
@@ -275,6 +275,19 @@ async function renderAcademicProfile(){
     const entranceSnap=await getDocs(collection(db,"users",s.user.uid,"entranceAttempts"));
     entranceAttempts=entranceSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>toMillis(b.updatedAt||b.createdAt)-toMillis(a.updatedAt||a.createdAt));
   }catch(_){}
+  for(const section of (s.sections||[]).filter(x=>x.status!=="Archived")){
+    try{
+      const member=await getDoc(doc(db,"sections",section.id,"members",s.user.uid));
+      if(member.exists()){
+        const data=member.data();
+        standingRows.push({
+          sectionId:section.id,courseCode:section.courseCode||data.courseCode||"Course",
+          courseTitle:section.courseTitle||"",standing:data.academicStanding||"Good Standing",
+          note:data.academicStandingNote||""
+        });
+      }
+    }catch(_){}
+  }
   const defaults=persistentAccess.accommodations||profile.defaultAccommodations||{};
   const completed=evidence.records.filter(r=>r.status==="Certified"&&r.recordType!=="Withdrawal"&&r.enrollmentOutcome!=="Withdrawn");
   const withdrawn=evidence.records.filter(r=>r.status==="Certified"&&(r.recordType==="Withdrawal"||r.enrollmentOutcome==="Withdrawn"));
@@ -289,6 +302,7 @@ async function renderAcademicProfile(){
     '<div class="student-profile-summary"><div><span>Current Sections</span><strong>'+esc((s.sections||[]).filter(x=>x.status!=="Archived").length)+'</strong></div><div><span>Completed Courses</span><strong>'+completed.length+'</strong></div><div><span>Certified Withdrawals</span><strong>'+withdrawn.length+'</strong></div><div><span>Competencies Evidenced</span><strong>'+comps.size+'</strong></div></div>'+
     '<div class="grid-2"><div class="panel"><div class="panel-head"><div class="panel-title">Completed Courses</div></div><div class="panel-body">'+(completed.length?completed.map(r=>'<div class="profile-record-row"><div><strong>'+esc(r.courseCode+" — "+r.courseTitle)+'</strong><span>'+esc(r.term||"")+'</span></div><b>'+esc(r.letterGrade||"—")+' • '+esc(r.finalPercent??"—")+'%</b></div>').join(""):'<div class="empty-mini">No completed course records yet.</div>')+'</div></div>'+
     '<div class="panel"><div class="panel-head"><div class="panel-title">Strongest Competency Evidence</div></div><div class="panel-body">'+([...comps.values()].length?[...comps.values()].sort((a,b)=>Number(b.percent||0)-Number(a.percent||0)).slice(0,8).map(c=>'<div class="profile-record-row"><div><strong>'+esc(c.code||"Competency")+'</strong><span>'+esc(c.name||"")+'</span></div><b>'+esc(c.percent??"—")+'%</b></div>').join(""):'<div class="empty-mini">No competency evidence yet.</div>')+'</div></div></div>'+
+    (standingRows.length?'<div class="panel" style="margin-top:18px"><div class="panel-head"><div><div class="panel-title">Current Academic Standing</div><div class="panel-subtitle">Administrative standing is recorded by your instructor and remains separate from your numerical grade.</div></div></div><div class="panel-body">'+standingRows.map(row=>'<div class="profile-record-row"><div><strong>'+esc(row.courseCode+" — "+row.courseTitle)+'</strong><span>'+esc(row.note||"Current active section")+'</span></div><b class="'+(row.standing==="Academic Warning"?"status-danger":"")+'">'+esc(row.standing)+'</b></div>').join("")+'</div></div>':'')+
     (withdrawn.length?'<div class="panel" style="margin-top:18px"><div class="panel-head"><div><div class="panel-title">Certified Withdrawal Records</div><div class="panel-subtitle">These preserve the instructor-certified grade at withdrawal but do not count as completed-course prerequisites.</div></div></div><div class="panel-body">'+withdrawn.map(r=>'<div class="profile-record-row"><div><strong>'+esc(r.courseCode+" — "+r.courseTitle)+'</strong><span>'+esc(r.term||"")+' • Assessments waived'+(Number(r.gradeAdjustmentPoints||0)!==0?' • Adjustment '+(Number(r.gradeAdjustmentPoints)>0?'+':'')+esc(r.gradeAdjustmentPoints)+' pts':'')+'</span></div><b>'+esc(r.letterGrade||"—")+' • '+esc(r.finalPercent??"—")+'%</b></div>').join("")+'</div></div>':'')+
     '<div class="panel" style="margin-top:18px"><div class="panel-head"><div class="panel-title">Entrance Examination History</div></div><div class="panel-body">'+(entranceAttempts.length?entranceAttempts.map(x=>{const label=x.status==="passed"?"Eligible":x.status==="failed"?"Not Eligible":x.status==="submitted"?"Awaiting Evaluation":x.status==="in_progress"?"Entrance In Progress":"Entrance Required";return '<div class="profile-record-row"><div><strong>'+esc((x.courseCode||"Course")+' — '+(x.assessmentTitle||"Entrance Examination"))+'</strong><span>'+esc(x.sectionName||"")+' • Required '+esc(x.passPercent||70)+'%</span></div><b class="'+(x.status==="passed"?'status-success':x.status==="failed"?'status-danger':'')+'">'+esc(label)+(x.percent!==null&&x.percent!==undefined?' • '+esc(x.percent)+'%':'')+'</b></div>';}).join(""):'<div class="empty-mini">No entrance examination attempts recorded.</div>')+'</div></div>'+
     '<div class="panel" style="margin-top:18px"><div class="panel-head"><div><div class="panel-title">Persistent Assessment Access</div><div class="panel-subtitle">Institutional access settings follow you into new sections. Instructors can still authorize a section-specific override.</div></div><span class="badge '+(persistentAccess.accommodations?'live':'')+'">'+(persistentAccess.accommodations?'Profile Active':'Standard Access')+'</span></div><div class="panel-body"><div class="detail-list"><div><span>Time Multiplier</span><strong>'+esc(defaults.timeMultiplier||1)+'×</strong></div><div><span>Breaks</span><strong>'+(defaults.breaks?'Permitted':'Standard policy')+'</strong></div><div><span>Calculator</span><strong>'+(defaults.calculator?'Permitted':'Standard policy')+'</strong></div><div><span>Large Text</span><strong>'+(defaults.largeText?'Enabled':'Standard')+'</strong></div><div><span>Reduced Distractions</span><strong>'+(defaults.reducedDistractions?'Enabled':'Standard')+'</strong></div></div>'+(persistentAccess.notes?'<div class="notice" style="margin-top:12px">'+esc(persistentAccess.notes)+'</div>':'')+'<div class="fineprint" style="margin-top:12px">Persistent access settings are managed by authorized instructors rather than self-assigned by students.</div></div></div>';
@@ -652,22 +666,24 @@ async function renderAssessmentAnalytics(detail){
 
 async function renderInstructorAttention(){
   const el=$("#homeAttention"),s=state();if(!el||s?.role!=="instructor")return;
-  let grading=0,entrance=0,unmapped=0,archived=0,missingPathways=0,readyToCertify=0,upcoming=0,appeals=0;
+  let grading=0,entrance=0,unmapped=0,archived=0,missingPathways=0,readyToCertify=0,upcoming=0,appeals=0,withdrawalRequests=0;
   const now=Date.now(),soon=now+7*86400000;
   for(const section of s.sections||[]){
     if(section.status==="Archived"){archived++;continue;}
     try{
-      const [members,pathways,records,appealSnap,refs]=await Promise.all([
+      const [members,pathways,records,appealSnap,refs,withdrawalSnap]=await Promise.all([
         getDocs(collection(db,"sections",section.id,"members")),
         getDocs(collection(db,"sections",section.id,"gradingPathways")),
         getDocs(collection(db,"sections",section.id,"academicRecords")),
         getDocs(collection(db,"sections",section.id,"appeals")),
-        getDocs(collection(db,"sections",section.id,"assessmentRefs"))
+        getDocs(collection(db,"sections",section.id,"assessmentRefs")),
+        getDocs(collection(db,"sections",section.id,"withdrawalRequests"))
       ]);
       const pathwayIds=new Set(pathways.docs.map(d=>d.id)),recordMap=new Map(records.docs.map(d=>[d.id,d.data()]));
       missingPathways+=members.docs.filter(d=>!pathwayIds.has(d.id)).length;
       readyToCertify+=members.docs.filter(d=>pathwayIds.has(d.id)&&recordMap.get(d.id)?.status!=="Certified").length;
       appeals+=appealSnap.docs.filter(d=>["Pending","Under Review"].includes(d.data().status)).length;
+      withdrawalRequests+=withdrawalSnap.docs.filter(d=>d.data().status==="Pending").length;
       upcoming+=refs.docs.filter(d=>{const data=d.data(),t=data.opensAt?.toMillis?.();return t&&t>=now&&t<=soon;}).length;
     }catch(_){}
     try{
@@ -689,6 +705,7 @@ async function renderInstructorAttention(){
     '<div class="attention-item"><div class="attention-number">'+missingPathways+'</div><div class="attention-copy"><strong>Students missing grading pathways</strong><span>'+(missingPathways?"These students need an Examination or Composite pathway selection.":"Every current student has selected a grading pathway.")+'</span></div></div>'+
     '<div class="attention-item"><div class="attention-number">'+readyToCertify+'</div><div class="attention-copy"><strong>Certification review queue</strong><span>'+(readyToCertify?"Review Records to identify students whose components are complete and certify final grades.":"No uncertified pathway students are in the review queue.")+'</span></div></div>'+
     '<div class="attention-item"><div class="attention-number">'+appeals+'</div><div class="attention-copy"><strong>Open grade appeals</strong><span>'+(appeals?"Resolve appeals before final certification when applicable.":"No unresolved grade appeals.")+'</span></div></div>'+
+    '<div class="attention-item"><div class="attention-number">'+withdrawalRequests+'</div><div class="attention-copy"><strong>Pending withdrawal requests</strong><span>'+(withdrawalRequests?"Open Academic Operations in the relevant section to review and certify requests.":"No student withdrawal requests are waiting for review.")+'</span></div></div>'+
     '<div class="attention-item"><div class="attention-number">'+upcoming+'</div><div class="attention-copy"><strong>Assessments opening this week</strong><span>'+(upcoming?"Review schedules, security, and accommodations before administration.":"No scheduled assessment opens in the next seven days.")+'</span></div></div>'+
     '<div class="attention-item"><div class="attention-number">'+unmapped+'</div><div class="attention-copy"><strong>Assessments with unmapped competency evidence</strong><span>'+(unmapped?"Review Question Bank competency tags to strengthen blueprint coverage.":"Current assessment questions are mapped to competency evidence.")+'</span></div></div>'+
     (archived?'<div class="attention-item"><div class="attention-number">'+archived+'</div><div class="attention-copy"><strong>Archived sections</strong><span>Historical teaching spaces remain available from Sections.</span></div></div>':'')+
