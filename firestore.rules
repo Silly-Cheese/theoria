@@ -246,12 +246,24 @@ service cloud.firestore {
           (
             assessmentData(assessmentId).status == 'Published'
             && (
-              assessmentData(assessmentId).opensAt == null
-              || request.time >= assessmentData(assessmentId).opensAt
-            )
-            && (
-              assessmentData(assessmentId).closesAt == null
-              || request.time <= assessmentData(assessmentId).closesAt
+              (
+                (
+                  assessmentData(assessmentId).opensAt == null
+                  || request.time >= assessmentData(assessmentId).opensAt
+                )
+                && (
+                  assessmentData(assessmentId).closesAt == null
+                  || request.time <= assessmentData(assessmentId).closesAt
+                )
+              )
+              || (
+                ('makeupOpensAt' in assessmentData(assessmentId))
+                && ('makeupClosesAt' in assessmentData(assessmentId))
+                && assessmentData(assessmentId).makeupOpensAt != null
+                && assessmentData(assessmentId).makeupClosesAt != null
+                && request.time >= assessmentData(assessmentId).makeupOpensAt
+                && request.time <= assessmentData(assessmentId).makeupClosesAt
+              )
             )
           )
           || retakeWindowOpen(assessmentId)
