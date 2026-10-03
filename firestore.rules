@@ -614,6 +614,28 @@ service cloud.firestore {
         allow delete: if sectionOwner(sectionId);
       }
 
+      match /withdrawalRequests/{studentId} {
+        allow read: if sectionAcademicManager(sectionId) || isSelf(studentId);
+        allow create: if isSelf(studentId)
+          && sectionMember(sectionId)
+          && request.resource.data.studentId == uid()
+          && request.resource.data.status == 'Pending';
+        allow update: if sectionAcademicManager(sectionId)
+          || (
+            isSelf(studentId)
+            && resource.data.studentId == uid()
+            && resource.data.status == 'Pending'
+            && request.resource.data.studentId == uid()
+            && request.resource.data.status == 'Cancelled'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status',
+              'cancelledAt',
+              'updatedAt'
+            ])
+          );
+        allow delete: if sectionAcademicManager(sectionId);
+      }
+
       match /entranceCandidates/{userId} {
         allow read: if sectionOwner(sectionId) || sectionStaff(sectionId) || isSelf(userId);
         allow create: if isSelf(userId)
