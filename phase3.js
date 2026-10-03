@@ -929,10 +929,11 @@ async function setQuestionQuality(courseId,itemId,status){
 function availability(a){
   const now=Date.now(),open=a.opensAt?.toMillis?.()||0,close=a.closesAt?.toMillis?.()||0;
   const makeupOpen=a.makeupOpensAt?.toMillis?.()||0,makeupClose=a.makeupClosesAt?.toMillis?.()||0;
+  const makeupEligible=!(a.makeupStudentIds||[]).length||(a.makeupStudentIds||[]).includes(state()?.user?.uid);
   if(a.status==="Draft")return "Draft";
   if(a.status==="Closed")return "Closed";
   const primaryOpen=(!open||now>=open)&&(!close||now<=close);
-  const makeupActive=!!(makeupOpen||makeupClose)&&(!makeupOpen||now>=makeupOpen)&&(!makeupClose||now<=makeupClose);
+  const makeupActive=makeupEligible&&!!(makeupOpen||makeupClose)&&(!makeupOpen||now>=makeupOpen)&&(!makeupClose||now<=makeupClose);
   if(primaryOpen)return "Open";
   if(makeupActive)return "Makeup Open";
   if(open&&now<open)return "Scheduled";
@@ -1639,6 +1640,7 @@ async function assessmentModal(existing,options={}){
       ownerId:s.user.uid,courseId:course.id,courseCode:course.code,courseTitle:course.title,
       sectionId:existing?.sectionId||"",sectionName:existing?.sectionName||"",templateSourceId:existing?.templateSourceId||"",
       title:String(fd.get("title")).trim(),type,mode:type==="Oral Examination"?"oral":"written",
+      examMode:["Practice Examination","Semester I Examination","Comprehensive Final Examination"].includes(type),
       status:existing?.status||"Draft",durationMinutes:Number(fd.get("durationMinutes")||0),opensAt:timestampFrom(fd.get("opensAt")),closesAt:timestampFrom(fd.get("closesAt")),
       instructions:instructionSteps.join("\n"),instructionSteps,anonymousGrading:form.querySelector('[name="anonymousGrading"]')?.checked===true,backtracking:form.querySelector('[name="backtracking"]')?.checked===true,randomizeQuestions:randomDrawEnabled?true:form.querySelector('[name="randomizeQuestions"]')?.checked===true,
       randomDrawEnabled:existing?!!existing.randomDrawEnabled:randomDrawEnabled,
@@ -2828,6 +2830,12 @@ async function editAssignedAssessmentModal(assessmentId){
   if(!a.sectionId)return toast("This is a reusable template, not an assigned assessment.");
   const sections=s.sections.filter(sec=>sec.courseId===a.courseId);
   const hasAttempts=d.submissions.length>0||d.results.length>0;
+  let assignedMembers=[];
+  try{
+    const memberSnap=await getDocs(collection(db,"sections",a.sectionId,"members"));
+    assignedMembers=memberSnap.docs.map(x=>({id:x.id,...x.data()})).sort((x,y)=>String(x.displayName||"").localeCompare(String(y.displayName||"")));
+  }catch(_){}
+  const makeupSelected=new Set(a.makeupStudentIds||[]);
   const modal=core().openModal({
     eyebrow:"Edit Assignment",
     title:a.title,
@@ -2840,7 +2848,8 @@ async function editAssignedAssessmentModal(assessmentId){
       '</section>'+
       '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Schedule</h3><p>Adjust the live section administration settings.</p></div></div>'+
         '<div class="compact-field-grid"><div class="field"><label>Duration</label><div class="input-with-suffix"><input name="durationMinutes" type="number" min="0" value="'+esc(a.durationMinutes||0)+'"><span>min</span></div></div><div class="field"><label>Opens</label><input name="opensAt" type="datetime-local" value="'+esc(localDateTime(a.opensAt))+'"></div><div class="field"><label>Closes</label><input name="closesAt" type="datetime-local" value="'+esc(localDateTime(a.closesAt))+'"></div></div>'+
-        '<div class="panel-subtitle" style="margin-top:14px">Optional Makeup Administration</div><div class="compact-field-grid"><div class="field"><label>Makeup Opens</label><input name="makeupOpensAt" type="datetime-local" value="'+esc(localDateTime((a.administrationWindows||[]).find(x=>x.kind==="makeup")?.opensAt))+'"></div><div class="field"><label>Makeup Closes</label><input name="makeupClosesAt" type="datetime-local" value="'+esc(localDateTime((a.administrationWindows||[]).find(x=>x.kind==="makeup")?.closesAt))+'"></div></div>'+
+        '<div class="panel-subtitle" style="margin-top:14px">Optional Makeup Administration</div><div class="compact-field-grid"><div class="field"><label>Makeup Opens</label><input name="makeupOpensAt" type="datetime-local" value="'+esc(localDateTime(a.makeupOpensAt||(a.administrationWindows||[]).find(x=>x.kind==="makeup")?.opensAt))+'"></div><div class="field"><label>Makeup Closes</label><input name="makeupClosesAt" type="datetime-local" value="'+esc(localDateTime(a.makeupClosesAt||(a.administrationWindows||[]).find(x=>x.kind==="makeup")?.closesAt))+'"></div></div>'+
+        '<div class="field" style="margin-top:12px"><label>Makeup Administration Group</label><div class="field-help">Select specific students for the makeup window. Leave everyone unselected to make the makeup window available to the entire section.</div><div class="makeup-student-grid">'+assignedMembers.map(m=>'<label class="checkbox-line compact-check"><input type="checkbox" name="makeupStudentId" value="'+m.id+'" '+(makeupSelected.has(m.id)?'checked':'')+'> '+esc(m.displayName||"Student")+'</label>').join("")+'</div></div>'+
       '</section>'+
       '<section class="form-section"><div class="form-section-head"><div><span>03</span><h3>Academic Treatment</h3><p>Control whether this assigned assessment changes the Composite final grade.</p></div></div><label class="policy-card"><input type="checkbox" name="countsTowardComposite" '+(a.countsTowardComposite!==false?'checked':'')+'><div><strong>Count in Composite Grade</strong><span>Include this assessment in General Assessments. Turn off for formative Topic Practice, Progress Checks, and practice exams.</span></div></label></section>'+
       '<div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Assignment Changes</button></div></form>'
@@ -2851,19 +2860,25 @@ async function editAssignedAssessmentModal(assessmentId){
     e.preventDefault();const fd=new FormData(form);
     const newSectionId=hasAttempts?a.sectionId:String(fd.get("sectionId")),newSection=sections.find(sec=>sec.id===newSectionId);
     const opensAt=timestampFrom(fd.get("opensAt")),closesAt=timestampFrom(fd.get("closesAt"));
+    const makeupOpensAt=timestampFrom(fd.get("makeupOpensAt")),makeupClosesAt=timestampFrom(fd.get("makeupClosesAt"));
     if(opensAt&&closesAt&&opensAt.toMillis()>=closesAt.toMillis())return toast("The close time must be after the open time.");
+    if(makeupOpensAt&&makeupClosesAt&&makeupOpensAt.toMillis()>=makeupClosesAt.toMillis())return toast("The makeup close time must be after its open time.");
     const moved=newSectionId!==a.sectionId;
+    const makeupStudentIds=moved?[]:fd.getAll("makeupStudentId").map(String);
+    const administrationWindows=(makeupOpensAt||makeupClosesAt)?[{kind:"makeup",label:"Makeup Administration",opensAt:makeupOpensAt||null,closesAt:makeupClosesAt||null,studentIds:makeupStudentIds}]:[];
+    const countsTowardComposite=form.elements.countsTowardComposite.checked===true;
     const title=String(fd.get("title")).trim(),durationMinutes=Number(fd.get("durationMinutes")||0);
     try{
       const batch=writeBatch(db);
       batch.update(doc(db,"assessments",a.id),{
-        title,durationMinutes,opensAt,closesAt,administrationWindows,makeupOpensAt:makeupOpensAt||null,makeupClosesAt:makeupClosesAt||null,countsTowardComposite,formative:!countsTowardComposite,sectionId:newSectionId,sectionName:newSection.sectionName,updatedAt:serverTimestamp()
+        title,durationMinutes,opensAt,closesAt,administrationWindows,makeupOpensAt:makeupOpensAt||null,makeupClosesAt:makeupClosesAt||null,makeupStudentIds,countsTowardComposite,formative:!countsTowardComposite,sectionId:newSectionId,sectionName:newSection.sectionName,updatedAt:serverTimestamp()
       });
       if(a.status==="Published"){
         if(moved)batch.delete(doc(db,"sections",a.sectionId,"assessmentRefs",a.id));
         batch.set(doc(db,"sections",newSectionId,"assessmentRefs",a.id),{
           assessmentId:a.id,title,type:a.type,assessmentType:a.type,totalPoints:Number(a.totalPoints||0),status:a.status,opensAt:opensAt||null,closesAt:closesAt||null,durationMinutes,
           catalogKind:a.catalogKind||"",officialMaterial:a.officialMaterial===true,formative:!countsTowardComposite,countsTowardComposite,
+          makeupOpensAt:makeupOpensAt||null,makeupClosesAt:makeupClosesAt||null,makeupStudentIds,
           frameworkUnitId:a.frameworkUnitId||"",frameworkUnitNumber:Number(a.frameworkUnitNumber||0),frameworkUnitTitle:a.frameworkUnitTitle||"",
           frameworkTopicId:a.frameworkTopicId||"",frameworkTopicNumber:a.frameworkTopicNumber||"",frameworkTopicTitle:a.frameworkTopicTitle||"",
           updatedAt:serverTimestamp()
@@ -3521,7 +3536,8 @@ async function startExam(id,confirmed=false){
       if(a.status!=="Published"&&a.status!=="Closed")return toast("This assessment has not been published to students.");
       if(a.status==="Closed")return toast("This assessment has been closed by the instructor.");
       const primaryOpen=(!opens||now>=opens)&&(!closes||now<=closes);
-      const makeupOpen=!!(makeupOpens||makeupCloses)&&(!makeupOpens||now>=makeupOpens)&&(!makeupCloses||now<=makeupCloses);
+      const makeupEligible=!(a.makeupStudentIds||[]).length||(a.makeupStudentIds||[]).includes(s.user.uid);
+      const makeupOpen=makeupEligible&&!!(makeupOpens||makeupCloses)&&(!makeupOpens||now>=makeupOpens)&&(!makeupCloses||now<=makeupCloses);
       if(primaryOpen)activeAdministration={kind:"primary",opensAt:a.opensAt,closesAt:a.closesAt};
       else if(makeupOpen)activeAdministration={kind:"makeup",opensAt:a.makeupOpensAt,closesAt:a.makeupClosesAt};
       else{
@@ -3922,7 +3938,7 @@ function renderExam(){
   else if(q.type==="Multiple Select"){const arr=Array.isArray(answer)?answer:[];response='<div class="choice-list">'+(q.options||[]).map(o=>'<label class="choice-option '+(arr.includes(o.id)?'selected':'')+'"><input type="checkbox" name="examMulti" value="'+esc(o.id)+'" '+(arr.includes(o.id)?'checked':'')+'><span class="choice-label">'+esc(o.id)+'</span><span>'+esc(o.text)+'</span></label>').join("")+'</div>';}
   else response='<textarea id="examWritten" class="exam-response" placeholder="Enter your response here…">'+esc(answer||"")+'</textarea>';
 
-  $("#examRoot").innerHTML='<div class="exam-shell"><header class="exam-header"><div><div class="exam-brand">Θ THEORIA</div><div class="exam-title">'+esc(a.title)+'</div></div><div class="exam-candidate">Candidate <strong>'+esc(ex.submission.candidateNumber)+'</strong></div><div id="examTimer" class="exam-timer">--:--</div></header>'+
+  $("#examRoot").innerHTML='<div class="exam-shell '+(a.examMode?'dedicated-exam-mode':'')+'"><header class="exam-header"><div><div class="exam-brand">Θ THEORIA'+(a.examMode?' • EXAM MODE':'')+'</div><div class="exam-title">'+esc(a.title)+'</div></div><div class="exam-candidate">Candidate <strong>'+esc(ex.submission.candidateNumber)+'</strong></div><div id="examTimer" class="exam-timer">--:--</div></header>'+
     '<div class="exam-body"><aside class="exam-sidebar"><div class="exam-progress">Question '+(ex.index+1)+' of '+ex.questions.length+'</div><div class="exam-navigator">'+nav+'</div><div class="exam-legend"><span>● Answered</span><span>◆ Marked</span></div>'+(ex.submission.accommodationsApplied?.calculator?'<button class="secondary-btn small-btn full-btn" data-phase3-action="calculator">Calculator</button>':'')+'<button class="danger-btn full-btn" data-phase3-action="submit-exam">Submit Assessment</button></aside>'+
     '<main class="exam-question"><div class="exam-question-meta"><span>'+esc((a.parts||[]).find(p=>p.id===q.partId)?.title||"Assessment")+'</span><span>'+esc(q.points)+' points</span></div>'+(q.sourceTitle?'<div class="source-title">'+esc(q.sourceTitle)+'</div>':'')+(q.stimulus?'<div class="exam-stimulus">'+esc(q.stimulus).replace(/\n/g,"<br>")+'</div>':'')+'<h2>'+esc(q.prompt)+'</h2>'+response+
     '<div class="exam-controls"><button class="secondary-btn" data-phase3-action="mark-question">'+(marked?"Unmark":"Mark for Review")+'</button><div><button class="secondary-btn" data-phase3-action="exam-prev" '+(ex.index===0||a.backtracking===false?'disabled':'')+'>Previous</button><button class="primary-btn" data-phase3-action="'+(ex.index===ex.questions.length-1?"review-exam":"exam-next")+'">'+(ex.index===ex.questions.length-1?"Review & Submit":"Next")+'</button></div></div></main></div></div>';
