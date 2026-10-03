@@ -3120,7 +3120,7 @@ async function setStatus(status){
   const batch=writeBatch(db);
   batch.update(doc(db,"assessments",a.id),{status,questionIds:P3.detail.questions.map(q=>q.id),updatedAt:serverTimestamp()});
   if(status==="Draft")batch.delete(doc(db,"sections",a.sectionId,"assessmentRefs",a.id));
-  else batch.set(doc(db,"sections",a.sectionId,"assessmentRefs",a.id),{assessmentId:a.id,title:a.title,type:a.type,assessmentType:a.type,totalPoints:Number(a.totalPoints||0),status,opensAt:a.opensAt||null,closesAt:a.closesAt||null,durationMinutes:a.durationMinutes||0,updatedAt:serverTimestamp()},{merge:true});
+  else batch.set(doc(db,"sections",a.sectionId,"assessmentRefs",a.id),{assessmentId:a.id,title:a.title,type:a.type,assessmentType:a.type,totalPoints:Number(a.totalPoints||0),status,opensAt:a.opensAt||null,closesAt:a.closesAt||null,durationMinutes:a.durationMinutes||0,catalogKind:a.catalogKind||"",officialMaterial:a.officialMaterial===true,formative:a.formative===true,countsTowardComposite:a.countsTowardComposite!==false,frameworkUnitId:a.frameworkUnitId||"",frameworkUnitNumber:Number(a.frameworkUnitNumber||0),frameworkUnitTitle:a.frameworkUnitTitle||"",frameworkTopicId:a.frameworkTopicId||"",frameworkTopicNumber:a.frameworkTopicNumber||"",frameworkTopicTitle:a.frameworkTopicTitle||"",updatedAt:serverTimestamp()},{merge:true});
   try{
     await batch.commit();
     if(a.sectionId&&window.TheoriaPhase5?.logSectionEvent)await window.TheoriaPhase5.logSectionEvent(a.sectionId,"assessment_status_changed","assessment",a.id,{title:a.title||"",status});
