@@ -652,9 +652,24 @@ async function renderAssessmentAnalytics(detail){
 
 async function renderInstructorAttention(){
   const el=$("#homeAttention"),s=state();if(!el||s?.role!=="instructor")return;
-  let grading=0,entrance=0,unmapped=0,archived=0;
+  let grading=0,entrance=0,unmapped=0,archived=0,missingPathways=0,readyToCertify=0,upcoming=0,appeals=0;
+  const now=Date.now(),soon=now+7*86400000;
   for(const section of s.sections||[]){
     if(section.status==="Archived"){archived++;continue;}
+    try{
+      const [members,pathways,records,appealSnap,refs]=await Promise.all([
+        getDocs(collection(db,"sections",section.id,"members")),
+        getDocs(collection(db,"sections",section.id,"gradingPathways")),
+        getDocs(collection(db,"sections",section.id,"academicRecords")),
+        getDocs(collection(db,"sections",section.id,"appeals")),
+        getDocs(collection(db,"sections",section.id,"assessmentRefs"))
+      ]);
+      const pathwayIds=new Set(pathways.docs.map(d=>d.id)),recordMap=new Map(records.docs.map(d=>[d.id,d.data()]));
+      missingPathways+=members.docs.filter(d=>!pathwayIds.has(d.id)).length;
+      readyToCertify+=members.docs.filter(d=>pathwayIds.has(d.id)&&recordMap.get(d.id)?.status!=="Certified").length;
+      appeals+=appealSnap.docs.filter(d=>["Pending","Under Review"].includes(d.data().status)).length;
+      upcoming+=refs.docs.filter(d=>{const data=d.data(),t=data.opensAt?.toMillis?.();return t&&t>=now&&t<=soon;}).length;
+    }catch(_){}
     try{
       const assessments=await getDocs(query(collection(db,"assessments"),where("sectionId","==",section.id)));
       for(const aDoc of assessments.docs){
@@ -668,12 +683,16 @@ async function renderInstructorAttention(){
       }
     }catch(_){}
   }
-  el.innerHTML='<div class="attention-list">'+
-    '<div class="attention-item"><div class="attention-number">'+grading+'</div><div class="attention-copy"><strong>Submissions needing evaluation</strong><span>'+ (grading?"Open Assessments or a section Gradebook to continue grading.":"No submitted assessments are waiting for evaluation.")+'</span></div></div>'+
-    '<div class="attention-item"><div class="attention-number">'+entrance+'</div><div class="attention-copy"><strong>Entrance examinations awaiting evaluation</strong><span>'+ (entrance?"These candidates cannot complete enrollment until their entrance results are evaluated.":"No entrance candidates are currently waiting on grading.")+'</span></div></div>'+
-    '<div class="attention-item"><div class="attention-number">'+unmapped+'</div><div class="attention-copy"><strong>Assessments with unmapped competency evidence</strong><span>'+ (unmapped?"Review Question Bank competency tags to strengthen blueprint coverage.":"Current assessment questions are mapped to competency evidence.")+'</span></div></div>'+
+  el.innerHTML='<div class="instructor-action-inbox"><div class="page-head compact-head"><div><div class="panel-title">Instructor Action Inbox</div><p class="page-subtitle">Academic work that needs attention across your active sections.</p></div></div><div class="attention-list">'+
+    '<div class="attention-item"><div class="attention-number">'+grading+'</div><div class="attention-copy"><strong>Submissions needing evaluation</strong><span>'+(grading?"Open Assessments or a section Gradebook to continue grading.":"No submitted assessments are waiting for evaluation.")+'</span></div></div>'+
+    '<div class="attention-item"><div class="attention-number">'+entrance+'</div><div class="attention-copy"><strong>Entrance candidates awaiting evaluation</strong><span>'+(entrance?"These candidates cannot complete enrollment until their entrance results are evaluated.":"No entrance candidates are currently waiting on grading.")+'</span></div></div>'+
+    '<div class="attention-item"><div class="attention-number">'+missingPathways+'</div><div class="attention-copy"><strong>Students missing grading pathways</strong><span>'+(missingPathways?"These students need an Examination or Composite pathway selection.":"Every current student has selected a grading pathway.")+'</span></div></div>'+
+    '<div class="attention-item"><div class="attention-number">'+readyToCertify+'</div><div class="attention-copy"><strong>Certification review queue</strong><span>'+(readyToCertify?"Review Records to identify students whose components are complete and certify final grades.":"No uncertified pathway students are in the review queue.")+'</span></div></div>'+
+    '<div class="attention-item"><div class="attention-number">'+appeals+'</div><div class="attention-copy"><strong>Open grade appeals</strong><span>'+(appeals?"Resolve appeals before final certification when applicable.":"No unresolved grade appeals.")+'</span></div></div>'+
+    '<div class="attention-item"><div class="attention-number">'+upcoming+'</div><div class="attention-copy"><strong>Assessments opening this week</strong><span>'+(upcoming?"Review schedules, security, and accommodations before administration.":"No scheduled assessment opens in the next seven days.")+'</span></div></div>'+
+    '<div class="attention-item"><div class="attention-number">'+unmapped+'</div><div class="attention-copy"><strong>Assessments with unmapped competency evidence</strong><span>'+(unmapped?"Review Question Bank competency tags to strengthen blueprint coverage.":"Current assessment questions are mapped to competency evidence.")+'</span></div></div>'+
     (archived?'<div class="attention-item"><div class="attention-number">'+archived+'</div><div class="attention-copy"><strong>Archived sections</strong><span>Historical teaching spaces remain available from Sections.</span></div></div>':'')+
-  '</div>';
+  '</div></div>';
 }
 
 /* -------------------- SECTION UI ENHANCEMENT -------------------- */
