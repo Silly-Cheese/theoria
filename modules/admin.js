@@ -257,8 +257,8 @@ async function exportQuestionBankCsv(courseId){
 
 async function exportTranscriptCsv(){
   try{
-    const rows=await transcriptData(),out=[["Course Code","Course Title","Term","Course Version","Letter Grade","Final Percent","Mastery Percent","Pathway","Status"]];
-    rows.forEach(r=>out.push([r.courseCode||"",r.courseTitle||"",r.term||"",r.courseVersion||"",r.letterGrade||"",r.finalPercent??"",r.masteryPercent??"",r.pathway||"",r.status||""]));
+    const rows=await transcriptData(),out=[["Course Code","Course Title","Term","Course Version","Outcome","Letter Grade","Final Percent","Mastery Percent","Pathway","Record Status"]];
+    rows.forEach(r=>out.push([r.courseCode||"",r.courseTitle||"",r.term||"",r.courseVersion||"",r.transcriptOutcome||r.enrollmentOutcome||r.enrollmentStatus||r.status||"",r.letterGrade||"",r.finalPercent??"",r.masteryPercent??"",r.pathway||"",r.status||""]));
     download("theoria-transcript-"+new Date().toISOString().slice(0,10)+".csv",csvFile(out),"text/csv");
   }catch(error){toast(error.message||"Unable to export transcript.");}
 }
@@ -405,35 +405,136 @@ async function renderProgramMap(){
 /* -------------------- TRANSCRIPT -------------------- */
 
 async function transcriptData(userId=state()?.user?.uid){
-  const rows=[];
+  if(!userId)return [];
+  const bySection=new Map(),enrollmentBySection=new Map();
+
   try{
     const enroll=await getDocs(collection(db,"users",userId,"enrollments"));
-    for(const e of enroll.docs){
-      try{
-        const rec=await getDoc(doc(db,"sections",e.id,"academicRecords",userId));
-        if(rec.exists()&&rec.data().status==="Certified")rows.push({sectionId:e.id,...rec.data()});
-      }catch(_){}
-    }
+    enroll.docs.forEach(d=>enrollmentBySection.set(d.id,{id:d.id,...d.data()}));
   }catch(_){}
-  return rows.sort((a,b)=>String(a.term||"").localeCompare(String(b.term||""))||String(a.courseCode||"").localeCompare(String(b.courseCode||"")));
+
+  let sections=[];
+  try{
+    const sectionSnap=await getDocs(collection(db,"sections"));
+    sections=sectionSnap.docs.map(d=>({id:d.id,...d.data()}));
+  }catch(_){}
+
+  const ids=new Set([...enrollmentBySection.keys(),...sections.map(s=>s.id)]);
+  for(const sectionId of ids){
+    const enrollment=enrollmentBySection.get(sectionId)||null;
+    let record=null;
+    try{
+      const rec=await getDoc(doc(db,"sections",sectionId,"academicRecords",userId));
+      if(rec.exists())record={id:rec.id,...rec.data()};
+    }catch(_){}
+
+    if(record){
+      const outcome=record.enrollmentOutcome
+        ||(record.recordType==="Withdrawal"?"Withdrawn":"")
+        ||enrollment?.status
+        ||(record.status==="Incomplete"?"Incomplete":"Completed");
+      bySection.set(sectionId,{
+        sectionId,
+        enrollmentStatus:enrollment?.status||"",
+        transcriptOutcome:outcome,
+        ...enrollment,
+        ...record
+      });
+      continue;
+    }
+
+    if(enrollment){
+      const status=String(enrollment.status||"Enrolled");
+      const visible=["Withdrawn","Removed","Completed","Enrolled","Active","Incomplete"].includes(status);
+      if(visible){
+        bySection.set(sectionId,{
+          sectionId,
+          courseId:enrollment.courseId||"",
+          courseCode:enrollment.courseCode||"",
+          courseTitle:enrollment.courseTitle||"",
+          sectionName:enrollment.sectionName||"",
+          term:enrollment.term||"",
+          courseVersion:enrollment.courseVersion||"",
+          enrollmentStatus:status,
+          transcriptOutcome:status==="Enrolled"||status==="Active"?"In Progress":status,
+          status:status==="Withdrawn"?"Historical Enrollment":"Enrollment",
+          letterGrade:enrollment.certifiedLetterGrade||"",
+          finalPercent:enrollment.certifiedFinalPercent??null,
+          masteryPercent:null,
+          pathway:status==="Withdrawn"&&enrollment.withdrawalCertified?"withdrawal-coursework":"",
+          withdrawalCertified:enrollment.withdrawalCertified===true
+        });
+      }
+    }
+  }
+
+  return [...bySection.values()].sort((a,b)=>
+    String(a.term||"").localeCompare(String(b.term||""),undefined,{numeric:true,sensitivity:"base"})
+    ||String(a.courseCode||"").localeCompare(String(b.courseCode||""))
+  );
 }
+
+function transcriptOutcomeLabel(row){
+  if(row.recordType==="Withdrawal"||row.enrollmentOutcome==="Withdrawn"||row.transcriptOutcome==="Withdrawn")return "Withdrawn";
+  if(row.status==="Incomplete"||row.transcriptOutcome==="Incomplete")return "Incomplete";
+  if(["Enrolled","Active","In Progress"].includes(row.transcriptOutcome)||["Enrolled","Active"].includes(row.enrollmentStatus))return "In Progress";
+  if(row.transcriptOutcome==="Removed")return "Removed";
+  return row.transcriptOutcome||row.enrollmentStatus||(row.status==="Certified"?"Completed":row.status||"Completed");
+}
+function transcriptPathwayLabel(row){
+  if(row.pathway==="examination")return "Examination";
+  if(row.pathway==="withdrawal-coursework")return "Withdrawal Coursework";
+  if(row.pathway==="composite")return "Composite";
+  return "—";
+}
+function transcriptGradeHtml(row){
+  const outcome=transcriptOutcomeLabel(row);
+  if(row.finalPercent!==null&&row.finalPercent!==undefined&&row.finalPercent!==""){
+    return '<strong>'+esc(row.letterGrade||"—")+'</strong> • '+esc(row.finalPercent)+'%'+(outcome==="Withdrawn"?'<small class="transcript-grade-note"> certified at withdrawal</small>':'');
+  }
+  if(outcome==="In Progress")return '<span class="transcript-pending">In progress</span>';
+  if(outcome==="Withdrawn")return '<span class="transcript-pending">No certified withdrawal grade</span>';
+  if(outcome==="Incomplete")return '<span class="transcript-pending">Pending completion</span>';
+  return "—";
+}
+
 async function renderTranscript(){
   const el=$("#transcriptContent");if(!el)return;
   if(state()?.role!=="student"){el.innerHTML='<div class="empty-state"><div class="empty-symbol">T</div><h3>Student transcript workspace.</h3><p>Instructor academic records remain available from Reports and student profile drawers.</p></div>';return;}
   const rows=await transcriptData(),name=state().profile?.displayName||state().user.displayName||"Student",recognitions=[];
-  try{
-    const enroll=await getDocs(collection(db,"users",state().user.uid,"enrollments"));
-    for(const e of enroll.docs){
-      try{
-        const rs=await getDocs(query(collection(db,"sections",e.id,"recognitions"),where("studentId","==",state().user.uid)));
-        rs.docs.forEach(d=>recognitions.push({id:d.id,sectionId:e.id,...d.data()}));
-      }catch(_){}
-    }
-  }catch(_){}
+  const sectionIds=[...new Set(rows.map(r=>r.sectionId).filter(Boolean))];
+  for(const sectionId of sectionIds){
+    try{
+      const rs=await getDocs(query(collection(db,"sections",sectionId,"recognitions"),where("studentId","==",state().user.uid)));
+      rs.docs.forEach(d=>recognitions.push({id:d.id,sectionId,...d.data()}));
+    }catch(_){}
+  }
   recognitions.sort((a,b)=>String(a.term||"").localeCompare(String(b.term||""))||String(a.title||"").localeCompare(String(b.title||"")));
-  el.innerHTML='<article class="transcript-sheet" id="theoriaTranscript"><div class="record-seal">Θ</div><div class="transcript-head"><div class="eyebrow">Theoria Multi-Course Academic Record</div><h1>'+esc(name)+'</h1><p>'+esc(state().user.email||"")+'</p></div><div class="data-table-wrap"><table class="data-table"><thead><tr><th>Course</th><th>Term</th><th>Version</th><th>Final Grade</th><th>Mastery</th><th>Pathway</th><th>Status</th></tr></thead><tbody>'+rows.map(r=>'<tr><td><strong>'+esc(r.courseCode||"")+'</strong><span class="grade-sub">'+esc(r.courseTitle||"")+'</span></td><td>'+esc(r.term||"—")+'</td><td>'+esc(r.courseVersion||"—")+'</td><td><strong>'+esc(r.letterGrade||"—")+'</strong> • '+esc(r.finalPercent??"—")+'%</td><td>'+(r.masteryPercent===null||r.masteryPercent===undefined?"—":esc(r.masteryPercent)+"%")+'</td><td>'+esc(r.pathway==="examination"?"Examination":"Composite")+'</td><td><span class="badge live">'+esc(r.status||"Certified")+'</span></td></tr>').join("")+'</tbody></table></div>'+
+
+  const terms=[...new Set(rows.map(r=>r.term||"Unspecified Term"))];
+  const withdrawn=rows.filter(r=>transcriptOutcomeLabel(r)==="Withdrawn").length;
+  const completed=rows.filter(r=>transcriptOutcomeLabel(r)==="Completed").length;
+  const inProgress=rows.filter(r=>transcriptOutcomeLabel(r)==="In Progress").length;
+  const incomplete=rows.filter(r=>transcriptOutcomeLabel(r)==="Incomplete").length;
+
+  const termTables=terms.map(term=>{
+    const termRows=rows.filter(r=>(r.term||"Unspecified Term")===term);
+    const graded=termRows.filter(r=>r.finalPercent!==null&&r.finalPercent!==undefined&&r.finalPercent!=="");
+    const termAverage=graded.length?Math.round(graded.reduce((n,r)=>n+Number(r.finalPercent||0),0)/graded.length*10)/10:null;
+    return '<section class="transcript-term"><div class="transcript-term-head"><div><span>Academic Term</span><h3>'+esc(term)+'</h3></div><div><span>Certified Average</span><strong>'+(termAverage===null?"—":termAverage+"%")+'</strong></div></div>'+
+      '<div class="data-table-wrap transcript-table-wrap"><table class="data-table transcript-table"><thead><tr><th>Course</th><th>Version</th><th>Outcome</th><th>Final Grade</th><th>Mastery</th><th>Grading Basis</th><th>Record</th></tr></thead><tbody>'+
+      termRows.map(r=>{
+        const outcome=transcriptOutcomeLabel(r);
+        const badge=outcome==="Withdrawn"?"gold":outcome==="Incomplete"?"danger":outcome==="Completed"?"live":"";
+        return '<tr class="transcript-row transcript-'+outcome.toLowerCase().replace(/\s+/g,"-")+'"><td><strong>'+esc(r.courseCode||"")+'</strong><span class="grade-sub">'+esc(r.courseTitle||"")+'</span>'+(r.sectionName?'<small>'+esc(r.sectionName)+'</small>':'')+'</td><td>'+esc(r.courseVersion||"—")+'</td><td><span class="badge '+badge+'">'+esc(outcome)+'</span>'+(r.withdrawalReason?'<small class="transcript-outcome-note">'+esc(r.withdrawalReason)+'</small>':'')+'</td><td>'+transcriptGradeHtml(r)+'</td><td>'+(r.masteryPercent===null||r.masteryPercent===undefined?"—":esc(r.masteryPercent)+"%")+'</td><td>'+esc(transcriptPathwayLabel(r))+'</td><td>'+esc(r.recordId?("v"+(r.version||1)+" • "+r.recordId):(r.status||"—"))+'</td></tr>';
+      }).join("")+'</tbody></table></div></section>';
+  }).join("");
+
+  el.innerHTML='<article class="transcript-sheet" id="theoriaTranscript"><div class="record-seal">Θ</div><div class="transcript-head"><div class="eyebrow">Theoria Multi-Course Academic Record</div><h1>'+esc(name)+'</h1><p>'+esc(state().user.email||"")+'</p></div>'+
+    '<div class="transcript-summary"><div><span>Completed</span><strong>'+completed+'</strong></div><div><span>Withdrawn</span><strong>'+withdrawn+'</strong></div><div><span>In Progress</span><strong>'+inProgress+'</strong></div><div><span>Incomplete</span><strong>'+incomplete+'</strong></div></div>'+
+    (rows.length?termTables:'<div class="empty-state compact-empty"><div class="empty-symbol">T</div><h3>No transcript history yet.</h3><p>Certified, withdrawn, incomplete, and active course history will appear here as your academic record develops.</p></div>')+
     (recognitions.length?'<div class="transcript-recognitions"><div class="panel-title">Honors & Academic Recognition</div>'+recognitions.map(r=>'<div class="profile-record-row"><div><strong>'+esc(r.title||"Recognition")+'</strong><span>'+esc(r.description||"")+'</span></div><b>'+esc(r.term||"")+'</b></div>').join("")+'</div>':'')+
-    '<div class="record-footer"><p>This record documents academic work within Theoria and does not independently establish outside accreditation.</p><div class="inline-actions"><button class="secondary-btn" data-admin-action="export-transcript">Download CSV</button><button class="primary-btn" onclick="window.print()">Print Transcript</button></div></div></article>';
+    '<div class="record-footer"><p>Withdrawn courses remain part of the historical record and do not satisfy completed-course prerequisites. This record documents academic work within Theoria and does not independently establish outside accreditation.</p><div class="inline-actions"><button class="secondary-btn" data-admin-action="export-transcript">Download CSV</button><button class="primary-btn" onclick="window.print()">Print Transcript</button></div></div></article>';
 }
 
 /* -------------------- EVENT WIRING -------------------- */
