@@ -205,10 +205,17 @@ async function renderItemBank(){
     catch(_){frameworks.set(course.id,{units:[],competencies:[]});}
   }
 
-  el.innerHTML='<div class="academic-banner question-bank-catalog-banner"><div class="kicker">Theoria Master Question Bank</div><h3>Official course questions, ready for assessment design.</h3><p>'+(s.isSystemOwner?'You are viewing the system-authoring bank. Create, import, organize, edit, and maintain official questions here.':'Questions are provided by the Theoria course catalog. You can use them in your own assessment templates without changing the master bank.')+'</p></div><div class="assessment-toolbar"><div class="filter-row">'+
+  const allUnits=[...new Map(P3.items.filter(x=>x.unitId||x.unitNumber||x.unitTitle).map(x=>[(x.courseId||"")+"|"+(x.unitId||x.unitNumber||x.unitTitle),{id:x.unitId||"",number:Number(x.unitNumber||0),title:x.unitTitle||"Unit",courseId:x.courseId}])).values()].sort((a,b)=>a.courseId.localeCompare(b.courseId)||a.number-b.number);
+  const allTopics=[...new Map(P3.items.filter(x=>x.topicId||x.topicNumber||x.topicTitle).map(x=>[(x.courseId||"")+"|"+(x.topicId||x.topicNumber||x.topicTitle),{id:x.topicId||"",number:x.topicNumber||"",title:x.topicTitle||"Topic",courseId:x.courseId}])).values()].sort((a,b)=>a.courseId.localeCompare(b.courseId)||String(a.number).localeCompare(String(b.number),undefined,{numeric:true}));
+  el.innerHTML='<div class="academic-banner question-bank-catalog-banner"><div class="kicker">Theoria Master Question Bank</div><h3>Official course questions, ready for assessment design.</h3><p>'+(s.isSystemOwner?'You are viewing the system-authoring bank. Create, import, organize, edit, and maintain official questions here.':'Questions are provided by the Theoria course catalog. You can use them in your own assessment templates without changing the master bank.')+'</p></div><div class="assessment-toolbar advanced-question-bank-toolbar"><div class="filter-row">'+
     '<select id="itemCourseFilter"><option value="">All courses</option>'+s.courses.map(c=>'<option value="'+c.id+'">'+esc(c.code+" — "+c.title)+'</option>').join("")+'</select>'+
+    '<select id="itemUnitFilter"><option value="">All units</option>'+allUnits.map(u=>'<option value="'+esc((u.courseId||"")+"|"+(u.id||u.number||u.title))+'">'+esc((u.number?"Unit "+u.number+" — ":"")+u.title)+'</option>').join("")+'</select>'+
+    '<select id="itemTopicFilter"><option value="">All topics</option>'+allTopics.map(t=>'<option value="'+esc((t.courseId||"")+"|"+(t.id||t.number||t.title))+'">'+esc((t.number?t.number+" — ":"")+t.title)+'</option>').join("")+'</select>'+
     '<select id="itemTypeFilter"><option value="">All types</option>'+["Multiple Choice","Multiple Select","Short Response","Essay","Passage Analysis","Primary Source Analysis","Argument Analysis","Oral Prompt","Disputation Prompt"].map(x=>'<option>'+x+'</option>').join("")+'</select>'+
-    '<input id="itemSearch" placeholder="Search prompt, unit, topic, competency, or tag"></div><div class="toolbar-stat"><strong>'+P3.items.length+'</strong><span> reusable questions</span></div></div>'+
+    '<select id="itemDifficultyFilter"><option value="">All difficulty</option>'+[...new Set(P3.items.map(x=>x.difficulty||"Moderate"))].sort().map(x=>'<option>'+esc(x)+'</option>').join("")+'</select>'+
+    '<select id="itemCognitiveFilter"><option value="">All cognitive levels</option>'+[...new Set(P3.items.map(x=>x.cognitiveLevel||"Application"))].sort().map(x=>'<option>'+esc(x)+'</option>').join("")+'</select>'+
+    '<select id="itemQualityFilter"><option value="">All statuses</option><option>Published</option><option>Draft</option><option>Retired</option></select>'+
+    '<input id="itemSearch" placeholder="Prompt, competency, tag, source, topic…"></div><div class="toolbar-stat"><strong id="itemFilteredCount">'+P3.items.length+'</strong><span> of '+P3.items.length+' reusable questions</span></div></div>'+
     '<div id="itemBankList"></div>';
 
   const renderCourseGroup=(course,list)=>{
@@ -228,10 +235,24 @@ async function renderItemBank(){
   };
 
   const filter=()=>{
-    const cid=$("#itemCourseFilter").value,type=$("#itemTypeFilter").value,q=$("#itemSearch").value.trim().toLowerCase();
-    const list=P3.items.filter(x=>(!cid||x.courseId===cid)&&(!type||x.type===type)&&(!q||[
-      x.prompt,x.unitTitle,x.topicTitle,x.topicNumber,(x.competencyCodes||[]).join(" "),(x.tags||[]).join(" ")
-    ].join(" ").toLowerCase().includes(q)));
+    const cid=$("#itemCourseFilter").value,unit=$("#itemUnitFilter").value,topic=$("#itemTopicFilter").value,type=$("#itemTypeFilter").value,
+      difficulty=$("#itemDifficultyFilter").value,cognitive=$("#itemCognitiveFilter").value,quality=$("#itemQualityFilter").value,q=$("#itemSearch").value.trim().toLowerCase();
+    const list=P3.items.filter(x=>{
+      const unitKey=(x.courseId||"")+"|"+(x.unitId||x.unitNumber||x.unitTitle||"");
+      const topicKey=(x.courseId||"")+"|"+(x.topicId||x.topicNumber||x.topicTitle||"");
+      return (!cid||x.courseId===cid)
+        &&(!unit||unitKey===unit)
+        &&(!topic||topicKey===topic)
+        &&(!type||x.type===type)
+        &&(!difficulty||(x.difficulty||"Moderate")===difficulty)
+        &&(!cognitive||(x.cognitiveLevel||"Application")===cognitive)
+        &&(!quality||(x.qualityStatus||"Published")===quality)
+        &&(!q||[
+          x.prompt,x.stimulus,x.sourceTitle,x.unitTitle,x.topicTitle,x.topicNumber,x.difficulty,x.cognitiveLevel,
+          (x.competencyCodes||[]).join(" "),(x.tags||[]).join(" ")
+        ].join(" ").toLowerCase().includes(q));
+    });
+    const count=$("#itemFilteredCount");if(count)count.textContent=String(list.length);
 
     if(!list.length){
       $("#itemBankList").innerHTML='<div class="empty-state"><div class="empty-symbol">Q</div><h3>No matching questions.</h3><p>Create a new question or adjust the filters.</p></div>';
@@ -242,8 +263,7 @@ async function renderItemBank(){
     $("#itemBankList").innerHTML=courses.map(course=>renderCourseGroup(course,list.filter(item=>item.courseId===course.id))).join("");
   };
 
-  $("#itemCourseFilter").addEventListener("change",filter);
-  $("#itemTypeFilter").addEventListener("change",filter);
+  ["itemCourseFilter","itemUnitFilter","itemTopicFilter","itemTypeFilter","itemDifficultyFilter","itemCognitiveFilter","itemQualityFilter"].forEach(id=>$("#"+id)?.addEventListener("change",filter));
   $("#itemSearch").addEventListener("input",filter);
   filter();
 }
