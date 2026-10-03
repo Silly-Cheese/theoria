@@ -11,7 +11,8 @@ const P3 = {
   detail:null,
   exam:null,
   timer:null,
-  saveTimer:null
+  saveTimer:null,
+  itemBasket:[]
 };
 
 const core=()=>window.TheoriaCore;
@@ -161,6 +162,36 @@ async function framework(courseId){
 
 /* -------------------- Question Bank -------------------- */
 
+
+function loadItemBasket(){
+  try{
+    const raw=JSON.parse(localStorage.getItem("theoriaQuestionBasket")||"[]");
+    P3.itemBasket=Array.isArray(raw)?raw.filter(x=>x&&x.courseId&&x.itemId):[];
+  }catch(_){P3.itemBasket=[];}
+  return P3.itemBasket;
+}
+function saveItemBasket(){
+  try{localStorage.setItem("theoriaQuestionBasket",JSON.stringify(P3.itemBasket||[]));}catch(_){}
+}
+function basketHas(courseId,itemId){
+  return (P3.itemBasket||[]).some(x=>x.courseId===courseId&&x.itemId===itemId);
+}
+function basketCourseId(){
+  return P3.itemBasket?.[0]?.courseId||"";
+}
+function toggleItemBasket(courseId,itemId){
+  const basket=P3.itemBasket||[],index=basket.findIndex(x=>x.courseId===courseId&&x.itemId===itemId);
+  if(index>=0){basket.splice(index,1);saveItemBasket();return true;}
+  const currentCourse=basketCourseId();
+  if(currentCourse&&currentCourse!==courseId){
+    if(!confirm("The Question Basket can contain one course at a time. Clear the current basket and start a basket for this course?"))return false;
+    P3.itemBasket=[];
+  }
+  P3.itemBasket.push({courseId,itemId});
+  saveItemBasket();
+  return true;
+}
+
 async function loadItems(){
   const s=state();
   if(!s||s.role!=="instructor")return [];
@@ -186,12 +217,13 @@ function itemCard(item){
     '<div class="inline-actions"><span class="badge '+((item.qualityStatus||"Published")==="Retired"?"closed":(item.qualityStatus||"Published")==="Draft"?"gold":"")+'">'+esc(item.qualityStatus||"Published")+'</span><span class="badge">'+esc(item.difficulty||"Moderate")+'</span></div></div>'+
     '<div class="item-tags"><span>v'+esc(item.version||1)+'</span><span>'+esc(item.topicNumber||"No topic")+'</span><span>'+esc(item.cognitiveLevel||"Application")+'</span><span>'+esc(item.pointsDefault||1)+' pts</span>'+
     (item.competencyCodes||[]).map(x=>'<span>'+esc(x)+'</span>').join("")+'</div>'+
-    '<div class="card-actions">'+(manager?(window.TheoriaFeatureFlags?.questionQuality!==false?'<button class="secondary-btn small-btn" data-teaching-action="question-quality" data-course="'+item.courseId+'" data-id="'+item.id+'">Quality Review</button>':'')+'<button class="secondary-btn small-btn" data-phase3-action="item-history" data-course="'+item.courseId+'" data-id="'+item.id+'">History & Analytics</button><button class="secondary-btn small-btn" data-phase3-action="edit-item" data-course="'+item.courseId+'" data-id="'+item.id+'">Edit</button>'+((item.qualityStatus||"Published")==="Retired"?'<button class="secondary-btn small-btn" data-phase3-action="restore-bank-question" data-course="'+item.courseId+'" data-id="'+item.id+'">Restore</button>':'<button class="danger-btn small-btn" data-phase3-action="retire-bank-question" data-course="'+item.courseId+'" data-id="'+item.id+'">Retire</button>'):'<span class="badge">Official Question Bank • v'+esc(item.version||1)+'</span>')+'</div></article>';
+    '<div class="card-actions"><button class="'+(basketHas(item.courseId,item.id)?'primary-btn':'secondary-btn')+' small-btn" data-phase3-action="basket-toggle" data-course="'+item.courseId+'" data-id="'+item.id+'">'+(basketHas(item.courseId,item.id)?'In Basket ✓':'Add to Basket')+'</button>'+(manager?(window.TheoriaFeatureFlags?.questionQuality!==false?'<button class="secondary-btn small-btn" data-teaching-action="question-quality" data-course="'+item.courseId+'" data-id="'+item.id+'">Quality Review</button>':'')+'<button class="secondary-btn small-btn" data-phase3-action="item-history" data-course="'+item.courseId+'" data-id="'+item.id+'">History & Analytics</button><button class="secondary-btn small-btn" data-phase3-action="edit-item" data-course="'+item.courseId+'" data-id="'+item.id+'">Edit</button>'+((item.qualityStatus||"Published")==="Retired"?'<button class="secondary-btn small-btn" data-phase3-action="restore-bank-question" data-course="'+item.courseId+'" data-id="'+item.id+'">Restore</button>':'<button class="danger-btn small-btn" data-phase3-action="retire-bank-question" data-course="'+item.courseId+'" data-id="'+item.id+'">Retire</button>'):'<span class="badge">Official Question Bank • v'+esc(item.version||1)+'</span>')+'</div></article>';
 }
 
 async function renderItemBank(){
   const el=$("#itemBankContent");
   if(!el||state()?.role!=="instructor")return;
+  loadItemBasket();
   await loadItems();
   await loadAssessments();
   const s=state();
@@ -222,7 +254,7 @@ async function renderItemBank(){
     '<select id="itemQualityFilter"><option value="">All statuses</option><option>Published</option><option>Draft</option><option>Retired</option></select>'+
     '<select id="itemUsageFilter"><option value="">All usage</option><option value="used">Used in assessments</option><option value="unused">Never used</option></select>'+
     '<input id="itemSearch" placeholder="Prompt, competency, tag, source, topic…"></div><div class="toolbar-stat"><strong id="itemFilteredCount">'+P3.items.length+'</strong><span> of '+P3.items.length+' reusable questions</span></div></div>'+
-    '<div id="itemBankList"></div>';
+    '<div class="question-bank-workspace"><main id="itemBankList"></main><aside id="itemBasketPanel" class="question-basket-panel"></aside></div>';
 
   const renderCourseGroup=(course,list)=>{
     const fw=frameworks.get(course.id)||{units:[]};
@@ -239,6 +271,16 @@ async function renderItemBank(){
       ).join("")+'</div>':'<div class="empty-mini">No matching questions in this course.</div>')+
     '</section>';
   };
+
+  const renderBasket=()=>{
+    const panel=$("#itemBasketPanel");if(!panel)return;
+    const rows=(P3.itemBasket||[]).map(row=>P3.items.find(item=>item.id===row.itemId&&item.courseId===row.courseId)).filter(Boolean);
+    const course=rows.length?s.courses.find(c=>c.id===rows[0].courseId):null;
+    const points=rows.reduce((n,item)=>n+Number(item.pointsDefault||1),0);
+    panel.innerHTML='<div class="question-basket-head"><div><span>Assessment Basket</span><strong>'+rows.length+' question'+(rows.length===1?"":"s")+'</strong></div><b>'+points+' pts</b></div>'+
+      (rows.length?'<div class="question-basket-course">'+esc((course?.code||"Course")+" — "+(course?.title||""))+'</div><div class="question-basket-items">'+rows.map((item,i)=>'<div class="question-basket-item"><span>'+String(i+1).padStart(2,"0")+'</span><div><strong>'+esc((item.prompt||"Question").slice(0,90))+(String(item.prompt||"").length>90?"…":"")+'</strong><small>'+esc((item.topicNumber||"No topic")+" • "+(item.type||"Question"))+'</small></div><button class="row-remove" data-phase3-action="basket-toggle" data-course="'+item.courseId+'" data-id="'+item.id+'" aria-label="Remove">×</button></div>').join("")+'</div><div class="question-basket-actions"><button class="secondary-btn small-btn" data-phase3-action="basket-clear">Clear</button><button class="primary-btn small-btn" data-phase3-action="basket-create">Create Assessment</button></div>':'<div class="empty-mini">Add Question Bank items while you browse. Your basket stays on this browser until you create or clear it.</div>');
+  };
+  renderBasket();
 
   const filter=()=>{
     const cid=$("#itemCourseFilter").value,unit=$("#itemUnitFilter").value,topic=$("#itemTopicFilter").value,type=$("#itemTypeFilter").value,
@@ -1271,10 +1313,10 @@ async function calculateAssessmentCompetencyBlueprint(assessment,questions,fwOve
   return deriveCompetencyBlueprint(questions,fw.competencies||[],options);
 }
 
-async function assessmentModal(existing){
+async function assessmentModal(existing,options={}){
   const s=state();if(!s?.courses?.length)return toast("Create a course before creating an assessment.");
   const types=["Topic Practice","Progress Check","Unit Assessment","Unit Evaluation","Practice Examination","Academic Exercise","Semester I Examination","Comprehensive Final Examination","Oral Examination","Disputation","Recommended Practice"];
-  let selectedCourse=s.courses.find(c=>c.id===existing?.courseId)||s.courses[0];
+  let selectedCourse=s.courses.find(c=>c.id===(existing?.courseId||options.courseId))||s.courses[0];
   let fw=await framework(selectedCourse.id);
   let bankQuestions=[];
   const loadBankQuestions=async course=>{
@@ -1295,7 +1337,7 @@ async function assessmentModal(existing){
       '<section class="form-section"><div class="form-section-head"><div><span>01</span><h3>Assessment Identity</h3><p>Assessments belong to a course and are assembled from its Question Bank.</p></div></div>'+
         '<div class="field"><label>Course</label><select name="courseId" id="assessmentCourse" '+(existing?'disabled':'')+'>'+s.courses.map(x=>'<option value="'+x.id+'">'+esc(x.code+" — "+x.title)+'</option>').join("")+'</select></div>'+
         (existing?.sectionId?'<div class="assignment-context"><span>Assigned to</span><strong>'+esc(existing.sectionName||"Section")+'</strong></div>':'')+
-        '<div class="field"><label>Assessment Title</label><input class="title-input" name="title" value="'+esc(existing?.title||"")+'" placeholder="e.g. Semester I Examination" required></div>'+
+        '<div class="field"><label>Assessment Title</label><input class="title-input" name="title" value="'+esc(existing?.title||options.title||"")+'" placeholder="e.g. Semester I Examination" required></div>'+
         '<div class="field"><label>Assessment Type</label><div class="type-tile-grid compact">'+typeTiles+'</div></div>'+
       '</section>'+
       '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Administration Defaults</h3><p>These settings are copied when the template is assigned and can be adjusted for the section.</p></div></div>'+
@@ -1318,7 +1360,7 @@ async function assessmentModal(existing){
   form.courseId.value=selectedCourse.id;
   form.feedbackPolicy.value="automatic";
 
-  let selectedQuestionIds=new Set();
+  let selectedQuestionIds=new Set(existing?[]:(options.questionIds||[]));
   const questionBox=modal.querySelector("#assessmentQuestionChoices");
   const questionSearch=modal.querySelector("#assessmentQuestionSearch");
   const questionUnit=modal.querySelector("#assessmentQuestionUnit");
@@ -1661,6 +1703,7 @@ async function assessmentModal(existing){
       }else if(window.TheoriaPhase5?.logCourseEvent){
         await window.TheoriaPhase5.logCourseEvent(course.id,existing?"assessment_template_updated":"assessment_template_created","assessment",id,{title:String(fd.get("title")||""),questionCount:existing?P3.detail?.questions?.length:chosenQuestions.length});
       }
+      if(!existing&&options.fromBasket){P3.itemBasket=[];saveItemBasket();}
       core().closeModal();await openAssessment(id);toast(existing?"Assessment updated.":(chosenQuestions.length?(randomDrawEnabled?"Randomized assessment template created from a "+chosenQuestions.length+"-question pool; each student receives "+plannedQuestionCount+".":"Assessment template created with "+chosenQuestions.length+" Question Bank question"+(chosenQuestions.length===1?"":"s")+"."):"Assessment template created. You can add questions from the Questions tab."));
     }catch(err){toast(err.message||"Unable to save assessment.");}
   };
@@ -4225,6 +4268,16 @@ document.addEventListener("click",async e=>{
   const b=e.target.closest("[data-phase3-action]");if(!b)return;
   const a=b.dataset.phase3Action;
   if(a==="new-assessment")return assessmentModal();
+  if(a==="basket-toggle"){
+    if(toggleItemBasket(b.dataset.course,b.dataset.id))return renderItemBank();
+    return;
+  }
+  if(a==="basket-clear"){P3.itemBasket=[];saveItemBasket();return renderItemBank();}
+  if(a==="basket-create"){
+    const basket=loadItemBasket();if(!basket.length)return toast("Add questions to the basket first.");
+    const courseId=basket[0].courseId,questionIds=basket.map(x=>x.itemId);
+    return assessmentModal(null,{courseId,questionIds,title:"Custom Assessment",fromBasket:true});
+  }
   if(a==="batch-assign-course")return chooseSectionForCourseBatch(b.dataset.course);
   if(a==="assign-assessment")return assignAssessmentModal(b.dataset.id);
   if(a==="assign-current-section")return chooseAssessmentForSection(b.dataset.section);
