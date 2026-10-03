@@ -193,7 +193,12 @@ async function renderItemBank(){
   const el=$("#itemBankContent");
   if(!el||state()?.role!=="instructor")return;
   await loadItems();
+  await loadAssessments();
   const s=state();
+  const usedItemIds=new Set();
+  for(const assessment of P3.assessments||[]){
+    (assessment.questionPool||[]).forEach(row=>{if(row?.itemId)usedItemIds.add(row.itemId);});
+  }
   if(!s.courses.length){
     el.innerHTML='<div class="empty-state"><div class="empty-symbol">Q</div><h3>Create a course first.</h3><p>The Question Bank belongs to reusable course frameworks.</p></div>';
     return;
@@ -215,6 +220,7 @@ async function renderItemBank(){
     '<select id="itemDifficultyFilter"><option value="">All difficulty</option>'+[...new Set(P3.items.map(x=>x.difficulty||"Moderate"))].sort().map(x=>'<option>'+esc(x)+'</option>').join("")+'</select>'+
     '<select id="itemCognitiveFilter"><option value="">All cognitive levels</option>'+[...new Set(P3.items.map(x=>x.cognitiveLevel||"Application"))].sort().map(x=>'<option>'+esc(x)+'</option>').join("")+'</select>'+
     '<select id="itemQualityFilter"><option value="">All statuses</option><option>Published</option><option>Draft</option><option>Retired</option></select>'+
+    '<select id="itemUsageFilter"><option value="">All usage</option><option value="used">Used in assessments</option><option value="unused">Never used</option></select>'+
     '<input id="itemSearch" placeholder="Prompt, competency, tag, source, topic…"></div><div class="toolbar-stat"><strong id="itemFilteredCount">'+P3.items.length+'</strong><span> of '+P3.items.length+' reusable questions</span></div></div>'+
     '<div id="itemBankList"></div>';
 
@@ -236,7 +242,7 @@ async function renderItemBank(){
 
   const filter=()=>{
     const cid=$("#itemCourseFilter").value,unit=$("#itemUnitFilter").value,topic=$("#itemTopicFilter").value,type=$("#itemTypeFilter").value,
-      difficulty=$("#itemDifficultyFilter").value,cognitive=$("#itemCognitiveFilter").value,quality=$("#itemQualityFilter").value,q=$("#itemSearch").value.trim().toLowerCase();
+      difficulty=$("#itemDifficultyFilter").value,cognitive=$("#itemCognitiveFilter").value,quality=$("#itemQualityFilter").value,usage=$("#itemUsageFilter").value,q=$("#itemSearch").value.trim().toLowerCase();
     const list=P3.items.filter(x=>{
       const unitKey=(x.courseId||"")+"|"+(x.unitId||x.unitNumber||x.unitTitle||"");
       const topicKey=(x.courseId||"")+"|"+(x.topicId||x.topicNumber||x.topicTitle||"");
@@ -247,6 +253,7 @@ async function renderItemBank(){
         &&(!difficulty||(x.difficulty||"Moderate")===difficulty)
         &&(!cognitive||(x.cognitiveLevel||"Application")===cognitive)
         &&(!quality||(x.qualityStatus||"Published")===quality)
+        &&(!usage||(usage==="used"?usedItemIds.has(x.id):!usedItemIds.has(x.id)))
         &&(!q||[
           x.prompt,x.stimulus,x.sourceTitle,x.unitTitle,x.topicTitle,x.topicNumber,x.difficulty,x.cognitiveLevel,
           (x.competencyCodes||[]).join(" "),(x.tags||[]).join(" ")
@@ -263,7 +270,7 @@ async function renderItemBank(){
     $("#itemBankList").innerHTML=courses.map(course=>renderCourseGroup(course,list.filter(item=>item.courseId===course.id))).join("");
   };
 
-  ["itemCourseFilter","itemUnitFilter","itemTopicFilter","itemTypeFilter","itemDifficultyFilter","itemCognitiveFilter","itemQualityFilter"].forEach(id=>$("#"+id)?.addEventListener("change",filter));
+  ["itemCourseFilter","itemUnitFilter","itemTopicFilter","itemTypeFilter","itemDifficultyFilter","itemCognitiveFilter","itemQualityFilter","itemUsageFilter"].forEach(id=>$("#"+id)?.addEventListener("change",filter));
   $("#itemSearch").addEventListener("input",filter);
   filter();
 }
