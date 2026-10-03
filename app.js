@@ -2093,7 +2093,7 @@ function gradebookIsGeneralAssessment(type){
   return value && !value.includes("semester") && !value.includes("comprehensive") && !value.includes("entrance");
 }
 function gradebookGeneralAssessmentComponent(studentId,assessmentGradeMap=null){
-  const refs=(state.sectionData?.assessmentRefs||[]).filter(ref=>gradebookIsGeneralAssessment(ref.assessmentType||ref.type));
+  const refs=(state.sectionData?.assessmentRefs||[]).filter(ref=>gradebookIsGeneralAssessment(ref.assessmentType||ref.type)&&ref.countsTowardComposite!==false);
   const rows=refs.map(ref=>{
     const grade=assessmentGradeMap
       ? assessmentGradeMap.get(ref.id+"_"+studentId)
