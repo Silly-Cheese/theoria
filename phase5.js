@@ -613,7 +613,7 @@ async function renderAssessmentAnalytics(detail){
   });
   const mismatches=coverage.filter(x=>x.delta!==null&&Math.abs(x.delta)>=10);
 
-  const unitPerformance=new Map(),competencyPerformance=new Map();
+  const unitPerformance=new Map(),topicPerformance=new Map(),competencyPerformance=new Map();
   for(const result of results.filter(r=>r.complete===true)){
     const grading=result.grading||{};
     for(const q of questions){
@@ -623,6 +623,9 @@ async function renderAssessmentAnalytics(detail){
       const unitKey=q.unitId||q.unitTitle||"Unmapped";
       const unit=unitPerformance.get(unitKey)||{label:q.unitTitle||"Unmapped / No Unit",earned:0,max:0,evidence:0};
       unit.earned+=Number(score||0);unit.max+=max;unit.evidence++;unitPerformance.set(unitKey,unit);
+      const topicKey=q.topicId||q.topicNumber||q.topicTitle||"Unmapped";
+      const topic=topicPerformance.get(topicKey)||{label:(q.topicNumber?q.topicNumber+" — ":"")+(q.topicTitle||"Unmapped / No Topic"),earned:0,max:0,evidence:0};
+      topic.earned+=Number(score||0);topic.max+=max;topic.evidence++;topicPerformance.set(topicKey,topic);
       for(const code of safeArray(q.competencyCodes)){
         const key=String(code||"").trim().toUpperCase();if(!key)continue;
         const comp=competencyPerformance.get(key)||{label:key,earned:0,max:0,evidence:0};
@@ -631,13 +634,16 @@ async function renderAssessmentAnalytics(detail){
     }
   }
   const unitRows=[...unitPerformance.values()].map(x=>({...x,percent:x.max?Math.round(x.earned/x.max*1000)/10:null})).sort((x,y)=>String(x.label).localeCompare(String(y.label)));
+  const topicRows=[...topicPerformance.values()].map(x=>({...x,percent:x.max?Math.round(x.earned/x.max*1000)/10:null})).sort((x,y)=>String(x.label).localeCompare(String(y.label),undefined,{numeric:true}));
   const competencyRows=[...competencyPerformance.values()].map(x=>({...x,percent:x.max?Math.round(x.earned/x.max*1000)/10:null})).sort((x,y)=>String(x.label).localeCompare(String(y.label)));
 
   root.innerHTML='<div class="section-summary"><div class="summary-block"><div class="summary-label">Completed Results</div><div class="summary-value">'+results.filter(r=>r.complete===true).length+'</div></div><div class="summary-block"><div class="summary-label">Assessment Avg</div><div class="summary-value">'+(assessmentAvg===null?"—":assessmentAvg+"%")+'</div></div><div class="summary-block"><div class="summary-label">Questions</div><div class="summary-value">'+questions.length+'</div></div><div class="summary-block"><div class="summary-label">Items to Review</div><div class="summary-value">'+flagged.length+'</div></div></div>'+
+    '<div class="page-actions analytics-actions"><button class="secondary-btn" data-classroom-action="recommended-practice" data-id="'+a.id+'">Assign Recommended Practice</button></div>'+
     (mismatches.length?'<div class="notice danger-notice"><strong>Blueprint coverage needs review.</strong><p>'+mismatches.map(x=>esc(x.label)+' is '+(x.delta>0?Math.abs(x.delta)+' points above':Math.abs(x.delta)+' points below')+' its intended content weight').join(" • ")+'</p></div>':'<div class="notice"><strong>Blueprint coverage check complete.</strong><p>No unit with an explicit target differs from its intended weight by 10 percentage points or more.</p></div>')+
-    '<div class="grid-2 analytics-domain-grid">'+
+    '<div class="content-skills-grid">'+
       '<div class="panel"><div class="panel-head"><div><div class="panel-title">Performance by Unit</div><div class="panel-subtitle">Scored evidence across completed candidates.</div></div></div><div class="panel-body">'+(unitRows.length?unitRows.map(x=>'<div class="blueprint-row"><span>'+esc(x.label)+' <small>'+x.evidence+' scored response'+(x.evidence===1?"":"s")+'</small></span><strong>'+esc(x.percent)+'%</strong></div>').join(""):'<div class="empty-mini">No scored unit evidence yet.</div>')+'</div></div>'+
-      '<div class="panel"><div class="panel-head"><div><div class="panel-title">Performance by Competency</div><div class="panel-subtitle">Questions with multiple competency tags contribute evidence to each tagged competency.</div></div></div><div class="panel-body">'+(competencyRows.length?competencyRows.map(x=>'<div class="blueprint-row"><span>'+esc(x.label)+' <small>'+x.evidence+' evidence point'+(x.evidence===1?"":"s")+'</small></span><strong>'+esc(x.percent)+'%</strong></div>').join(""):'<div class="empty-mini">No competency-tagged scored evidence yet.</div>')+'</div></div>'+
+      '<div class="panel"><div class="panel-head"><div><div class="panel-title">Performance by Topic</div><div class="panel-subtitle">Topic-level results aligned to the Course Guide.</div></div></div><div class="panel-body">'+(topicRows.length?topicRows.map(x=>'<div class="blueprint-row '+(x.percent<70?"needs-practice":"")+'"><span>'+esc(x.label)+' <small>'+x.evidence+' evidence point'+(x.evidence===1?"":"s")+'</small></span><strong>'+esc(x.percent)+'%</strong></div>').join(""):'<div class="empty-mini">No topic-mapped scored evidence yet.</div>')+'</div></div>'+
+      '<div class="panel"><div class="panel-head"><div><div class="panel-title">Performance by Competency</div><div class="panel-subtitle">Questions with multiple competency tags contribute evidence to each tagged competency.</div></div></div><div class="panel-body">'+(competencyRows.length?competencyRows.map(x=>'<div class="blueprint-row '+(x.percent<70?"needs-practice":"")+'"><span>'+esc(x.label)+' <small>'+x.evidence+' evidence point'+(x.evidence===1?"":"s")+'</small></span><strong>'+esc(x.percent)+'%</strong></div>').join(""):'<div class="empty-mini">No competency-tagged scored evidence yet.</div>')+'</div></div>'+
     '</div>'+
     '<div class="panel" style="margin-top:18px"><div class="panel-head"><div><div class="panel-title">Question Performance</div><div class="panel-subtitle">Difficulty, discrimination, and response distributions help identify items that may need revision.</div></div></div><div class="panel-body" style="padding:0"><div class="data-table-wrap"><table class="data-table"><thead><tr><th>Question</th><th>Attempts</th><th>Difficulty</th><th>Discrimination</th><th>Response Pattern</th></tr></thead><tbody>'+rows.map((r,i)=>'<tr class="'+(((r.difficulty!==null&&(r.difficulty<30||r.difficulty>95))||(r.discrimination!==null&&r.discrimination<0))?'analytics-flag':'')+'"><td><strong>Q'+(i+1)+'</strong><span class="grade-sub">'+esc(r.q.type||"Question")+' • '+esc((r.q.prompt||"").slice(0,90))+'</span></td><td>'+r.attempts+'</td><td>'+(r.difficulty===null?"—":r.difficulty+"%")+'</td><td>'+(r.discrimination===null?"—":r.discrimination)+'</td><td>'+([...(r.answers||new Map()).entries()].length?[...r.answers.entries()].sort((a,b)=>b[1]-a[1]).slice(0,4).map(([k,v])=>'<span class="analytics-answer">'+esc(k||"(blank)")+': '+v+'</span>').join(" "):"—")+'</td></tr>').join("")+'</tbody></table></div></div></div>';
 }
