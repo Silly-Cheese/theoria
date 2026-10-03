@@ -2660,3 +2660,67 @@ html{font-size:calc(16px * var(--user-font-scale,1))}
   .question-basket-items{max-height:260px;overflow:auto}
   .my-classes-grid{grid-template-columns:1fr}
 }
+
+
+/* Dedicated exam administration + makeup groups */
+.makeup-student-grid{
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:9px;
+  max-height:220px;overflow:auto;padding:9px;border:1px solid var(--line);background:#faf8f4
+}
+.compact-check{margin:0!important;padding:7px 8px;border:1px solid var(--line);background:#fff;border-radius:6px}
+.dedicated-exam-mode{background:#f5f3ef;min-height:100vh}
+.dedicated-exam-mode .exam-header{
+  background:#171512;color:#fff;border-bottom:0;box-shadow:0 3px 16px rgba(0,0,0,.18)
+}
+.dedicated-exam-mode .exam-brand{color:#d9c7a5}
+.dedicated-exam-mode .exam-title{color:#fff}
+.dedicated-exam-mode .exam-timer{background:#2a2621;color:#fff;border-color:#4c443b}
+.dedicated-exam-mode .exam-question{
+  max-width:920px;margin:0 auto;background:#fff;box-shadow:0 10px 34px rgba(41,34,27,.06)
+}
+.dedicated-exam-mode .exam-sidebar{background:#ebe7df}
+.dedicated-exam-mode .choice-option{min-height:52px}
+
+@media(min-width:761px) and (max-width:1100px){
+  .dedicated-exam-mode .exam-body{grid-template-columns:210px minmax(0,1fr)}
+  .dedicated-exam-mode .exam-sidebar{padding:16px 12px}
+  .dedicated-exam-mode .exam-navigator{grid-template-columns:repeat(4,1fr)}
+  .dedicated-exam-mode .exam-question{padding:26px 24px}
+}
+
+@media(max-width:760px){
+  .makeup-student-grid{grid-template-columns:1fr 1fr}
+  .exam-shell,.dedicated-exam-mode{min-height:calc(100dvh - 64px)}
+  .exam-header{
+    position:sticky;top:0;z-index:40;display:grid!important;grid-template-columns:1fr auto;
+    gap:6px 10px;padding:10px 12px!important
+  }
+  .exam-header>div:first-child{min-width:0}
+  .exam-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60vw}
+  .exam-candidate{display:none}
+  .exam-timer{grid-column:2;grid-row:1/3;align-self:center}
+  .exam-body{display:flex!important;flex-direction:column}
+  .exam-sidebar{
+    position:sticky;top:58px;z-index:30;display:block!important;width:100%!important;padding:8px 10px!important;
+    border-right:0!important;border-bottom:1px solid var(--line);overflow:hidden
+  }
+  .exam-progress{margin-bottom:6px}
+  .exam-navigator{
+    display:flex!important;gap:5px!important;overflow-x:auto;padding:2px 0 6px;scroll-snap-type:x proximity
+  }
+  .exam-nav-item{flex:0 0 36px;width:36px!important;height:36px!important;scroll-snap-align:start}
+  .exam-legend,.exam-sidebar>.danger-btn,.exam-sidebar>.secondary-btn{display:none!important}
+  .exam-question{width:100%!important;padding:18px 14px 96px!important;box-shadow:none!important}
+  .exam-question h2{font-size:18px;line-height:1.45}
+  .exam-controls{
+    position:fixed;left:0;right:0;bottom:64px;z-index:45;padding:9px 10px;
+    background:rgba(252,250,245,.97);backdrop-filter:blur(12px);border-top:1px solid var(--line)
+  }
+  .exam-controls>div{display:flex;gap:7px}
+  .exam-controls button{min-height:42px}
+  .choice-option{padding:12px;min-height:50px}
+  .exam-response{min-height:220px}
+}
+@media(max-width:430px){
+  .makeup-student-grid{grid-template-columns:1fr}
+}
