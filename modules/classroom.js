@@ -419,6 +419,35 @@ function enhanceAssessmentDetail(){
   if(hero&&a.officialMaterial&&!hero.querySelector(".official-material-badge"))hero.insertAdjacentHTML("afterbegin",'<div class="official-material-badge">Θ Official Theoria Course Material • '+esc(typeLabel(a.catalogKind)||a.type||"Assessment")+'</div>');
 }
 
+async function enhanceInstructorHome(){
+  const s=state();if(!s?.user||s.role!=="instructor"||!document.querySelector("#page-home.active"))return;
+  const stats=document.querySelector("#homeStats");if(!stats||document.querySelector("#instructorMyClasses"))return;
+  const today=new Date(),rows=[];
+  for(const section of (s.sections||[]).filter(x=>x.status!=="Archived")){
+    let members=0,refs=[];
+    try{
+      const [m,r]=await Promise.all([
+        getDocs(collection(db,"sections",section.id,"members")),
+        getDocs(collection(db,"sections",section.id,"assessmentRefs"))
+      ]);
+      members=m.size;refs=r.docs.map(d=>({id:d.id,...d.data()})).filter(x=>x.status!=="Draft");
+    }catch(_){}
+    const pacing=safe(section.pacingPlan?.units);
+    const active=pacing.find(row=>{
+      const a=row.startDate?new Date(row.startDate+"T00:00:00"):null,b=row.endDate?new Date(row.endDate+"T23:59:59"):null;
+      return a&&b&&today>=a&&today<=b;
+    });
+    const currentUnit=active?("Unit "+(active.unitNumber||"")+" — "+(active.title||"Current Unit")):"Course Guide";
+    const future=refs.map(ref=>({ref,when:ref.opensAt?.toDate?.()||null})).filter(x=>x.when&&x.when>=today).sort((a,b)=>a.when-b.when)[0];
+    rows.push({section,members,currentUnit,next:future||null});
+  }
+  stats.insertAdjacentHTML("afterend",
+    '<section id="instructorMyClasses" class="instructor-my-classes"><div class="page-head compact-head"><div><div class="panel-title">My Classes</div><p class="page-subtitle">Current unit, enrollment, and next administration for each active teaching section.</p></div></div>'+
+    (rows.length?'<div class="my-classes-grid">'+rows.map(row=>'<article class="my-class-card"><div class="card-kicker">'+esc(row.section.courseCode||"Course")+' • '+esc(row.section.term||"")+'</div><h3>'+esc(row.section.sectionName||row.section.courseTitle||"Section")+'</h3><div class="detail-list compact-detail-list"><div><span>Students</span><strong>'+row.members+'</strong></div><div><span>Current Focus</span><strong>'+esc(row.currentUnit)+'</strong></div><div><span>Next Assessment</span><strong>'+(row.next?esc(row.next.ref.title||"Assessment")+" • "+esc(row.next.when.toLocaleDateString(undefined,{month:"short",day:"numeric"})):"None scheduled")+'</strong></div></div><div class="card-actions"><button class="primary-btn small-btn" data-action="open-section" data-id="'+row.section.id+'">Open Class</button></div></article>').join("")+'</div>':'<div class="empty-mini">No active teaching sections.</div>')+
+    '</section>'
+  );
+}
+
 async function enhanceStudentHome(){
   const s=state();if(!s?.user||s.role!=="student"||!document.querySelector("#page-home.active"))return;
   const target=document.querySelector("#homeAttention");if(!target||target.dataset.classroomStudentHome==="1")return;
@@ -465,6 +494,7 @@ function enhanceAll(){
   enhanceCourseGuide();
   enhanceOverview();
   enhanceAssessmentDetail();
+  enhanceInstructorHome().catch(()=>{});
   enhanceStudentHome().catch(()=>{});
 }
 
@@ -486,5 +516,5 @@ function bind(){
 
 export function initClassroom(){
   bind();
-  return {enhanceAll,enhanceCourseGuide,enhanceStudentHome,frameworkAssessmentModal,recommendedPracticeModal,releasePolicyModal,pacingModal,createAssessmentFromItems};
+  return {enhanceAll,enhanceCourseGuide,enhanceInstructorHome,enhanceStudentHome,frameworkAssessmentModal,recommendedPracticeModal,releasePolicyModal,pacingModal,createAssessmentFromItems};
 }
