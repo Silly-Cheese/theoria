@@ -226,7 +226,7 @@ function isGeneralAssessmentType(type){
 }
 
 function generalAssessmentComponent(bundle,studentId){
-  const refs=(bundle.assessmentRefs||[]).filter(ref=>isGeneralAssessmentType(ref.assessmentType||ref.type));
+  const refs=(bundle.assessmentRefs||[]).filter(ref=>isGeneralAssessmentType(ref.assessmentType||ref.type)&&ref.countsTowardComposite!==false);
   const refIds=new Set(refs.map(ref=>ref.id));
   const complete=(bundle.assessmentGrades||[]).filter(g=>g.studentId===studentId&&refIds.has(g.assessmentId)&&g.percent!==null&&g.percent!==undefined);
   let percent=null;
