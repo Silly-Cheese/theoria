@@ -413,10 +413,53 @@ function enhanceAssessmentDetail(){
   if(hero&&a.officialMaterial&&!hero.querySelector(".official-material-badge"))hero.insertAdjacentHTML("afterbegin",'<div class="official-material-badge">Θ Official Theoria Course Material • '+esc(typeLabel(a.catalogKind)||a.type||"Assessment")+'</div>');
 }
 
+async function enhanceStudentHome(){
+  const s=state();if(!s?.user||s.role!=="student"||!document.querySelector("#page-home.active"))return;
+  const target=document.querySelector("#homeAttention");if(!target||target.dataset.classroomStudentHome==="1")return;
+  target.dataset.classroomStudentHome="1";
+  const today=new Date(),soon=new Date(Date.now()+7*86400000);
+  const cards=[],due=[],results=[];
+  for(const section of (s.sections||[]).filter(x=>x.status!=="Archived"&&x.enrollmentStatus!=="Completed")){
+    let assignments=[],refs=[],assessmentGrades=[];
+    try{
+      const [as,rs,gs]=await Promise.all([
+        getDocs(query(collection(db,"sections",section.id,"assignments"),where("status","==","Published"))),
+        getDocs(collection(db,"sections",section.id,"assessmentRefs")),
+        getDocs(query(collection(db,"sections",section.id,"assessmentGrades"),where("studentId","==",s.user.uid)))
+      ]);
+      assignments=as.docs.map(d=>({id:d.id,...d.data()}));
+      refs=rs.docs.map(d=>({id:d.id,...d.data()})).filter(x=>x.status!=="Draft");
+      assessmentGrades=gs.docs.map(d=>({id:d.id,...d.data()}));
+    }catch(_){}
+    let currentUnitLabel="Course Guide";
+    const pacing=safe(section.pacingPlan?.units);
+    const active=pacing.find(row=>{const a=row.startDate?new Date(row.startDate+"T00:00:00"):null,b=row.endDate?new Date(row.endDate+"T23:59:59"):null;return a&&b&&today>=a&&today<=b;});
+    if(active)currentUnitLabel="Unit "+(active.unitNumber||"")+" — "+(active.title||"Current Unit");
+    cards.push({section,currentUnitLabel});
+    assignments.forEach(a=>{
+      if(!a.dueDate)return;const d=new Date(a.dueDate+"T23:59:59");
+      if(d>=today&&d<=soon)due.push({kind:"Coursework",title:a.title,when:d,section});
+    });
+    refs.forEach(a=>{
+      const d=a.closesAt?.toDate?.()||a.opensAt?.toDate?.();
+      if(d&&d>=today&&d<=soon)due.push({kind:a.catalogKind?typeLabel(a.catalogKind):a.assessmentType||"Assessment",title:a.title,when:d,section});
+    });
+    assessmentGrades.filter(g=>g.released!==false&&g.percent!==null&&g.percent!==undefined).forEach(g=>results.push({title:g.assessmentTitle||"Assessment",percent:g.percent,section,updated:g.updatedAt?.toDate?.()||new Date(0)}));
+  }
+  due.sort((a,b)=>a.when-b.when);results.sort((a,b)=>b.updated-a.updated);
+  target.innerHTML='<div class="student-home-flow">'+
+    '<div class="page-head compact-head"><div><div class="panel-title">Your Learning Flow</div><p class="page-subtitle">Current course focus, work due soon, and recently released results.</p></div></div>'+
+    '<div class="student-home-course-grid">'+cards.map(row=>'<article class="course-now-card"><div class="card-kicker">'+esc(row.section.courseCode||"Course")+' • '+esc(row.section.term||"")+'</div><h3>'+esc(row.section.courseTitle||row.section.sectionName||"Course")+'</h3><p>'+esc(row.currentUnitLabel)+'</p><div class="card-actions"><button class="primary-btn small-btn" data-action="open-section" data-id="'+row.section.id+'">Continue</button></div></article>').join("")+'</div>'+
+    '<div class="grid-2 student-home-priority-grid"><div class="panel"><div class="panel-head"><div><div class="panel-title">Due in the Next 7 Days</div><div class="panel-subtitle">Coursework and assessment deadlines.</div></div></div><div class="panel-body">'+(due.length?due.slice(0,8).map(x=>'<div class="priority-line"><div><strong>'+esc(x.title)+'</strong><span>'+esc(x.section.courseCode||"Course")+' • '+esc(x.kind)+'</span></div><b>'+esc(x.when.toLocaleDateString(undefined,{month:"short",day:"numeric"}))+'</b></div>').join(""):'<div class="empty-mini">Nothing due in the next seven days.</div>')+'</div></div>'+
+    '<div class="panel"><div class="panel-head"><div><div class="panel-title">Recent Results</div><div class="panel-subtitle">Recently released formal-assessment results.</div></div></div><div class="panel-body">'+(results.length?results.slice(0,8).map(x=>'<div class="priority-line"><div><strong>'+esc(x.title)+'</strong><span>'+esc(x.section.courseCode||"Course")+'</span></div><b>'+esc(x.percent)+'%</b></div>').join(""):'<div class="empty-mini">No released assessment results yet.</div>')+'</div></div></div>'+
+    '</div>';
+}
+
 function enhanceAll(){
   enhanceCourseGuide();
   enhanceOverview();
   enhanceAssessmentDetail();
+  enhanceStudentHome().catch(()=>{});
 }
 
 function bind(){
@@ -437,5 +480,5 @@ function bind(){
 
 export function initClassroom(){
   bind();
-  return {enhanceAll,enhanceCourseGuide,frameworkAssessmentModal,recommendedPracticeModal,releasePolicyModal,pacingModal,createAssessmentFromItems};
+  return {enhanceAll,enhanceCourseGuide,enhanceStudentHome,frameworkAssessmentModal,recommendedPracticeModal,releasePolicyModal,pacingModal,createAssessmentFromItems};
 }
