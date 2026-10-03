@@ -577,7 +577,7 @@ async function certifyRecord(sectionId,studentId,reason=""){
 }
 
 
-async function withdrawalCertificationModal(sectionId,studentId){
+async function withdrawalCertificationModal(sectionId,studentId,options={}){
   invalidate(sectionId);
   const bundle=await loadSectionBundle(sectionId);
   const member=bundle.members.find(x=>x.id===studentId);
@@ -606,7 +606,8 @@ async function withdrawalCertificationModal(sectionId,studentId){
         '<div class="field"><label>Adjustment Rationale</label><textarea id="withdrawalAdjustmentReason" name="adjustmentReason" disabled placeholder="Required when an adjustment is applied."></textarea></div>'+
       '</section>'+
       '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Withdrawal Documentation</h3><p>The reason and certification basis are preserved in enrollment history and the permanent academic record.</p></div></div>'+
-        '<div class="field"><label>Withdrawal Reason</label><textarea name="withdrawalReason" required placeholder="Document the student’s withdrawal request or other basis for ending enrollment."></textarea></div>'+
+        '<div class="field"><label>Withdrawal Reason</label><textarea name="withdrawalReason" required placeholder="Document the student’s withdrawal request or other basis for ending enrollment.">'+esc(options.requestReason||"")+'</textarea></div>'+
+        (options.requestId?'<div class="notice"><strong>Student withdrawal request attached.</strong><p>Approving this certification will resolve the pending request and preserve the student-submitted reason.</p></div>':'')+
         '<label class="checkbox-line"><input type="checkbox" name="acknowledgement" required> I understand that this certification waives the normal assessment requirements for this withdrawal and closes the student’s active enrollment.</label>'+
       '</section>'+
       '<div class="modal-foot" style="margin:24px -24px -24px"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="danger-btn" type="submit">Certify Grade & Withdraw Student</button></div>'+
@@ -708,8 +709,17 @@ async function withdrawalCertificationModal(sectionId,studentId){
         courseworkPercent:coursework.percent,assessmentRequirementWaived:true,
         gradeAdjustmentMode:mode,gradeAdjustmentPoints:adjustment,
         gradeAdjustmentReason:adjustmentReason,recordId,recordVersion:version,
+        withdrawalRequestId:options.requestId||"",
         createdAt:serverTimestamp()
       });
+      if(options.requestId){
+        batch.set(doc(db,"sections",sectionId,"withdrawalRequests",options.requestId),{
+          status:"Certified",resolvedAt:serverTimestamp(),resolvedBy:state().user.uid,
+          certifiedFinalPercent:finalPercent,certifiedLetterGrade:gradeLetter,
+          recordId,recordVersion:version,instructorReason:withdrawalReason,
+          updatedAt:serverTimestamp()
+        },{merge:true});
+      }
       batch.delete(doc(db,"sections",sectionId,"members",studentId));
       await batch.commit();
 
@@ -717,7 +727,7 @@ async function withdrawalCertificationModal(sectionId,studentId){
         await window.TheoriaPhase5.logSectionEvent(sectionId,"withdrawal_grade_certified","student",studentId,{
           withdrawalReason,courseworkPercent:coursework.percent,finalPercent,
           letterGrade:gradeLetter,adjustmentMode:mode,adjustmentPoints:adjustment,
-          assessmentRequirementWaived:true,recordId,version
+          assessmentRequirementWaived:true,recordId,version,withdrawalRequestId:options.requestId||""
         });
       }
 
