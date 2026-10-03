@@ -1694,7 +1694,7 @@ async function assessmentModal(existing,options={}){
           chunk.forEach((item,index)=>{
             const ref=questionRefs[offset+index],order=offset+index+1;
             batch.set(ref,{
-              itemId:item.id,itemVersion:Number(item.version||1),order,partId:(data.parts?.[0]?.id||"main"),type:item.type,prompt:item.prompt,
+              itemId:item.id,itemVersion:Number(item.version||1),order,partId:(["Practice Examination","Progress Check"].includes(data.type)?(objective(item.type)?"selected":"written"):(data.parts?.[0]?.id||"main")),type:item.type,prompt:item.prompt,
               stimulus:item.stimulus||"",sourceTitle:item.sourceTitle||"",options:item.options||[],points:Number(item.pointsDefault||1),
               difficulty:item.difficulty||"Moderate",cognitiveLevel:item.cognitiveLevel||"Application",tags:item.tags||[],qualityStatus:item.qualityStatus||"Published",
               unitId:item.unitId||"",unitTitle:item.unitTitle||"",unitNumber:Number(item.unitNumber||0),
