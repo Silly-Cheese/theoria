@@ -84,6 +84,14 @@ function defaultParts(type){
     {id:"argument",title:"Argument Analysis",weight:15},
     {id:"essay",title:"Theological Synthesis Essay",weight:25}
   ];
+  if(type==="Practice Examination")return [
+    {id:"selected",title:"Selected Response",weight:60},
+    {id:"written",title:"Written Response",weight:40}
+  ];
+  if(type==="Progress Check")return [
+    {id:"selected",title:"Selected Response",weight:60},
+    {id:"written",title:"Written Response",weight:40}
+  ];
   if(type==="Oral Examination")return [{id:"oral",title:"Oral Examination",weight:100}];
   if(type==="Disputation")return [{id:"disputation",title:"Disputation",weight:100}];
   return [{id:"main",title:"Main Assessment",weight:100}];
@@ -2757,8 +2765,10 @@ async function assignAssessmentModal(assessmentId,preferredSectionId=""){
       '</section>'+
       '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Schedule</h3><p>Set when this section will take the assessment.</p></div></div>'+
         '<div class="compact-field-grid"><div class="field"><label>Duration</label><div class="input-with-suffix"><input name="durationMinutes" type="number" min="0" value="'+esc(a.durationMinutes||60)+'"><span>min</span></div></div><div class="field"><label>Opens</label><input name="opensAt" type="datetime-local" value="'+esc(localDateTime(a.opensAt))+'"></div><div class="field"><label>Closes</label><input name="closesAt" type="datetime-local" value="'+esc(localDateTime(a.closesAt))+'"></div></div>'+
+        '<div class="panel-subtitle" style="margin-top:14px">Optional Makeup Administration</div><div class="compact-field-grid"><div class="field"><label>Makeup Opens</label><input name="makeupOpensAt" type="datetime-local"></div><div class="field"><label>Makeup Closes</label><input name="makeupClosesAt" type="datetime-local"></div></div>'+
       '</section>'+
-      '<section class="form-section"><div class="form-section-head"><div><span>03</span><h3>Release</h3><p>Keep it private while reviewing, or publish it to students immediately.</p></div></div>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>03</span><h3>Academic Treatment</h3><p>Choose whether this section copy contributes to the Composite General Assessments grade.</p></div></div><label class="policy-card"><input type="checkbox" name="countsTowardComposite" '+(a.countsTowardComposite!==false?'checked':'')+'><div><strong>Count in Composite Grade</strong><span>Turn this off for formative practice and progress checks.</span></div></label></section>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>04</span><h3>Release</h3><p>Keep it private while reviewing, or publish it to students immediately.</p></div></div>'+
         '<div class="release-choice-grid"><label class="release-choice"><input type="radio" name="initialStatus" value="Draft" checked><div><strong>Save as Draft</strong><span>Students cannot see or start it yet.</span></div></label><label class="release-choice"><input type="radio" name="initialStatus" value="Published"><div><strong>Assign & Publish</strong><span>Create the section copy and make it available according to the schedule.</span></div></label></div>'+
       '</section>'+
       '<div class="assignment-copy-note"><strong>The reusable template stays unchanged.</strong><span>This creates an independent section copy with its own submissions, grading, schedule, and results.</span></div>'+
@@ -2790,7 +2800,9 @@ async function assignAssessmentModal(assessmentId,preferredSectionId=""){
       ...Object.fromEntries(Object.entries(a).filter(([k])=>!["id","createdAt","updatedAt"].includes(k))),
       ownerId:s.user.uid,sectionId:section.id,sectionName:section.sectionName,templateSourceId:a.id,
       title:String(fd.get("title")).trim(),status:initialStatus,durationMinutes:Number(fd.get("durationMinutes")||0),
-      opensAt,closesAt,questionIds:d.questions.map(q=>q.id),
+      opensAt,closesAt,administrationWindows,makeupOpensAt:makeupOpensAt||null,makeupClosesAt:makeupClosesAt||null,
+      makeupStudentIds:[],countsTowardComposite,formative:!countsTowardComposite,
+      questionIds:d.questions.map(q=>q.id),
       questionPool:(a.questionPool?.length?a.questionPool:d.questions.map(q=>({id:q.id,itemId:q.itemId||"",type:q.type,points:Number(q.points||0)}))),
       poolQuestionCount:d.questions.length,
       questionCount:Number(a.questionCount||d.questions.length),
@@ -2814,7 +2826,12 @@ async function assignAssessmentModal(assessmentId,preferredSectionId=""){
       if(initialStatus==="Published"){
         await setDoc(doc(db,"sections",section.id,"assessmentRefs",ref.id),{
           assessmentId:ref.id,title:clone.title,type:clone.type,assessmentType:clone.type,totalPoints:Number(clone.totalPoints||0),status:"Published",
-          opensAt:clone.opensAt||null,closesAt:clone.closesAt||null,durationMinutes:clone.durationMinutes||0,updatedAt:serverTimestamp()
+          opensAt:clone.opensAt||null,closesAt:clone.closesAt||null,durationMinutes:clone.durationMinutes||0,
+          makeupOpensAt:clone.makeupOpensAt||null,makeupClosesAt:clone.makeupClosesAt||null,makeupStudentIds:[],
+          catalogKind:clone.catalogKind||"",officialMaterial:clone.officialMaterial===true,formative:!countsTowardComposite,countsTowardComposite,
+          frameworkUnitId:clone.frameworkUnitId||"",frameworkUnitNumber:Number(clone.frameworkUnitNumber||0),frameworkUnitTitle:clone.frameworkUnitTitle||"",
+          frameworkTopicId:clone.frameworkTopicId||"",frameworkTopicNumber:clone.frameworkTopicNumber||"",frameworkTopicTitle:clone.frameworkTopicTitle||"",
+          updatedAt:serverTimestamp()
         });
       }
       core().closeModal();await loadAssessments();await openAssessment(ref.id);
