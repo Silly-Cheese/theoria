@@ -81,9 +81,14 @@ async function createAssessmentFromItems({section,kind,title,items,unit=null,top
   const ref=doc(collection(db,"assessments"));
   const questionRefs=items.map(()=>doc(collection(db,"assessments",ref.id,"questions")));
   const questionIds=questionRefs.map(r=>r.id);
+  const objectiveTypes=new Set(["Multiple Choice","Multiple Select"]);
+  const sectioned=["progress-check","practice-exam"].includes(kind);
   const questionPool=items.map((item,index)=>({id:questionRefs[index].id,itemId:item.id,type:item.type,points:Number(item.pointsDefault||1)}));
   const totalPoints=items.reduce((n,item)=>n+Number(item.pointsDefault||1),0);
   const type=typeLabel(kind);
+  const parts=sectioned
+    ? [{id:"selected",title:"Selected Response",weight:60},{id:"written",title:"Written Response",weight:40}]
+    : [{id:"main",title:type,weight:100}];
   const release=releasePolicy||{
     showOverallScore:true,showQuestionScores:true,showCorrectAnswers:false,showExplanations:false,
     showCompetencies:true,showClassAverage:false,releaseMode:"when-graded"
@@ -92,7 +97,7 @@ async function createAssessmentFromItems({section,kind,title,items,unit=null,top
     ownerId:s.user.uid,
     courseId:section.courseId,courseCode:section.courseCode||"",courseTitle:section.courseTitle||"",
     sectionId:section.id,sectionName:section.sectionName||"",
-    title,type,mode:"written",status:publish?"Published":"Draft",
+    title,type,mode:"written",examMode:kind==="practice-exam",status:publish?"Published":"Draft",
     durationMinutes:Number(durationMinutes||0),opensAt:null,closesAt:null,
     instructions:formative?"Use this assessment to identify strengths and areas for additional practice.":"Complete all items according to the course assessment policy.",
     instructionSteps:[],
@@ -108,7 +113,7 @@ async function createAssessmentFromItems({section,kind,title,items,unit=null,top
     contentBlueprint:unit?[{id:unit.id,label:"Unit "+(unit.order||"")+" — "+(unit.title||"Unit"),weight:100}]:[],
     competencyBlueprint:competencyBlueprint(items),competencyBlueprintAuto:true,
     competencyBlueprintMappedPoints:totalPoints,competencyBlueprintUnmappedPoints:0,
-    parts:[{id:"main",title:type,weight:100}],
+    parts,
     questionIds,questionPool,poolQuestionCount:items.length,questionCount:items.length,totalPoints,
     createdAt:serverTimestamp(),updatedAt:serverTimestamp()
   };
@@ -119,7 +124,7 @@ async function createAssessmentFromItems({section,kind,title,items,unit=null,top
     items.slice(offset,offset+180).forEach((item,index)=>{
       const qref=questionRefs[offset+index],order=offset+index+1;
       batch.set(qref,{
-        itemId:item.id,itemVersion:Number(item.version||1),order,partId:"main",type:item.type,prompt:item.prompt||"",
+        itemId:item.id,itemVersion:Number(item.version||1),order,partId:sectioned?(objectiveTypes.has(item.type)?"selected":"written"):"main",type:item.type,prompt:item.prompt||"",
         stimulus:item.stimulus||"",sourceTitle:item.sourceTitle||"",options:item.options||[],points:Number(item.pointsDefault||1),
         difficulty:item.difficulty||"Moderate",cognitiveLevel:item.cognitiveLevel||"Application",tags:item.tags||[],
         qualityStatus:item.qualityStatus||"Published",
