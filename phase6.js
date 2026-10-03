@@ -3,7 +3,7 @@ import {initProductivity} from "./modules/productivity.js?v=20260930-securityenf
 import {initTeaching} from "./modules/teaching.js?v=20260930-securityenforced2";
 import {initAdmin} from "./modules/admin.js?v=20260930-securityenforced2";
 import {initResilience} from "./modules/resilience.js?v=20260930-securityenforced2";
-import {initClassroom} from "./modules/classroom.js?v=20261002-classroom1";
+import {initClassroom} from "./modules/classroom.js?v=20261002-classroom4";
 
 const core=()=>window.TheoriaCore;
 const state=()=>core()?.getState?.();
