@@ -389,15 +389,34 @@ async function recomputeMastery(sectionId){
     const agg=studentAgg.get(member.id);
     const competencies=[...agg.competencies.values()].map(x=>({...x,name:compNames.get(x.code)||x.name,percent:pct(x.score,x.max)})).sort((a,b)=>a.code.localeCompare(b.code));
     const topics=[...agg.topics.values()].map(x=>({...x,percent:pct(x.score,x.max)})).sort((a,b)=>String(a.number).localeCompare(String(b.number),undefined,{numeric:true}));
+    const overallPercent=competencies.length?avg(competencies.map(x=>x.percent)):null;
+    const prior=bundle.mastery.find(x=>(x.studentId||x.id)===member.id);
+    const history=[...(prior?.history||[]),{
+      at:new Date().toISOString(),overallPercent,evidenceCount:agg.evidence,
+      competencies:competencies.map(x=>({code:x.code,percent:x.percent})),
+      topics:topics.map(x=>({id:x.id,number:x.number,percent:x.percent}))
+    }].slice(-24);
     batch.set(doc(db,"sections",sectionId,"mastery",member.id),{
       studentId:member.id,studentName:member.displayName||"Student",courseId:bundle.section.courseId,
       courseCode:bundle.section.courseCode||course.code||"",competencies,topics,evidenceCount:agg.evidence,
-      overallPercent:competencies.length?avg(competencies.map(x=>x.percent)):null,calculatedAt:serverTimestamp()
+      overallPercent,history,calculatedAt:serverTimestamp()
     },{merge:true});
   }
   await batch.commit();
   invalidate(sectionId);
   toast("Mastery evidence recalculated.");
+}
+
+function masteryHistoryHtml(snapshot){
+  const rows=snapshot?.history||[];
+  if(!rows.length)return '<div class="empty-mini">Mastery history begins after the next recalculation.</div>';
+  const recent=rows.slice(-12),max=Math.max(1,...recent.map(x=>Number(x.overallPercent||0)));
+  return '<div class="mastery-history-chart">'+recent.map((row,i)=>{
+    const value=Number(row.overallPercent||0),height=Math.max(8,Math.round(value/max*100));
+    const when=row.at?new Date(row.at):null;
+    const label=when&&!Number.isNaN(when.getTime())?when.toLocaleDateString(undefined,{month:"short",day:"numeric"}):"Run "+(i+1);
+    return '<div class="mastery-history-point"><div class="mastery-history-bar" style="height:'+height+'%"><span>'+esc(value)+'%</span></div><small>'+esc(label)+'</small></div>';
+  }).join("")+'</div>';
 }
 
 function masteryBars(rows){
@@ -426,7 +445,7 @@ async function renderMasteryPage(sectionId=P4.masterySectionId){
   }else{
     const snap=bundle.mastery.find(x=>x.id===s.user.uid);
     el.innerHTML='<button class="text-btn" data-phase4-action="mastery-back">← All Sections</button><div class="detail-hero"><div class="eyebrow">'+esc(bundle.section.courseCode||"Course")+' • '+esc(bundle.section.term||"")+'</div><h1 class="detail-title">'+esc(bundle.section.courseTitle||"Section")+'</h1><p class="page-subtitle">Mastery is evidence of academic competencies and remains separate from your course grade.</p></div>'+
-      (snap?'<div class="mastery-overall"><div><span>Overall Competency Mastery</span><strong>'+esc(snap.overallPercent??"—")+'%</strong></div><small>'+esc(snap.evidenceCount||0)+' scored evidence points</small></div><div class="panel"><div class="panel-head"><div class="panel-title">Competencies</div></div><div class="panel-body">'+masteryBars(snap.competencies)+'</div></div>':'<div class="empty-state"><div class="empty-symbol">M</div><h3>No mastery snapshot yet.</h3><p>Your instructor can calculate mastery after scored assessments produce evidence.</p></div>');
+      (snap?'<div class="mastery-overall"><div><span>Overall Competency Mastery</span><strong>'+esc(snap.overallPercent??"—")+'%</strong></div><small>'+esc(snap.evidenceCount||0)+' scored evidence points</small></div><div class="panel" style="margin-bottom:16px"><div class="panel-head"><div><div class="panel-title">Mastery Over Time</div><div class="panel-subtitle">Longitudinal evidence from mastery recalculations.</div></div></div><div class="panel-body">'+masteryHistoryHtml(snap)+'</div></div><div class="panel"><div class="panel-head"><div class="panel-title">Competencies</div></div><div class="panel-body">'+masteryBars(snap.competencies)+'</div></div>':'<div class="empty-state"><div class="empty-symbol">M</div><h3>No mastery snapshot yet.</h3><p>Your instructor can calculate mastery after scored assessments produce evidence.</p></div>');
   }
 }
 
@@ -436,7 +455,7 @@ async function masteryStudentModal(studentId){
     eyebrow:"Mastery Profile",
     title:m.studentName||"Student",
     wide:true,
-    body:'<div class="mastery-overall"><div><span>Overall Competency Mastery</span><strong>'+esc(m.overallPercent??"—")+'%</strong></div><small>'+esc(m.evidenceCount||0)+' evidence points</small></div><div class="panel-title" style="margin:18px 0 10px">Competencies</div>'+masteryBars(m.competencies)+'<div class="panel-title" style="margin:22px 0 10px">Topics</div>'+masteryBars((m.topics||[]).map(x=>({code:x.number,name:x.name,percent:x.percent,evidence:x.evidence})))
+    body:'<div class="mastery-overall"><div><span>Overall Competency Mastery</span><strong>'+esc(m.overallPercent??"—")+'%</strong></div><small>'+esc(m.evidenceCount||0)+' evidence points</small></div><div class="panel-title" style="margin:18px 0 10px">Mastery Over Time</div>'+masteryHistoryHtml(m)+'<div class="panel-title" style="margin:22px 0 10px">Competencies</div>'+masteryBars(m.competencies)+'<div class="panel-title" style="margin:22px 0 10px">Topics</div>'+masteryBars((m.topics||[]).map(x=>({code:x.number,name:x.name,percent:x.percent,evidence:x.evidence})))
   });
 }
 
