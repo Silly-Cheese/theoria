@@ -124,11 +124,51 @@ function updateConnectivityStatus(){
 }
 function addPlatformControls(){
   const top=document.querySelector(".top-actions");if(!top)return;
+  if(!document.querySelector("#contextHelpBtn"))top.insertAdjacentHTML("afterbegin",'<button id="contextHelpBtn" class="icon-action-btn context-help-btn" data-phase6-action="context-help" title="Help for this page">?</button>');
   if(!document.querySelector("#commandPaletteBtn"))top.insertAdjacentHTML("afterbegin",'<button id="commandPaletteBtn" class="icon-action-btn" data-productivity-action="open-command" title="Search Theoria (Ctrl/Cmd + K)">⌘K</button>');
   if(window.TheoriaFeatureFlags?.accessibility!==false&&!document.querySelector("#accessibilityBtn"))top.insertAdjacentHTML("afterbegin",'<button id="accessibilityBtn" class="icon-action-btn" data-productivity-action="accessibility" title="Accessibility">Aa</button>');
   if(window.TheoriaFeatureFlags?.communications!==false&&!document.querySelector("#notificationBtn"))top.insertAdjacentHTML("afterbegin",'<button id="notificationBtn" class="notification-btn" data-page-shortcut="communications" title="Notifications">◔<span id="notificationBadge" class="notification-badge hidden">0</span></button>');
   if(!document.querySelector("#connectivityStatus"))top.insertAdjacentHTML("afterbegin",'<span id="connectivityStatus" class="connectivity-pill">Online</span>');
   updateConnectivityStatus();
+}
+
+function addMobileDock(){
+  if(document.querySelector("#mobileDock"))return;
+  const s=state();if(!s?.user)return;
+  const items=s.role==="instructor"
+    ? [["home","Home","⌂"],["sections","Classes","▦"],["assessments","Assess","✓"],["itembank","Bank","Q"],["teaching-tools","Tools","T"]]
+    : [["home","Home","⌂"],["sections","Courses","▦"],["assessments","Assess","✓"],["progress","Progress","↗"],["transcript","Record","R"]];
+  const nav=document.createElement("nav");nav.id="mobileDock";nav.className="mobile-dock";nav.setAttribute("aria-label","Mobile navigation");
+  nav.innerHTML=items.map(([page,label,icon])=>'<button class="mobile-dock-item" data-page-shortcut="'+page+'" data-mobile-page="'+page+'"><span>'+icon+'</span><small>'+label+'</small></button>').join("");
+  document.body.appendChild(nav);syncMobileDock();
+}
+function syncMobileDock(page){
+  const active=page||document.querySelector(".page.active")?.id?.replace(/^page-/,"")||"home";
+  document.querySelectorAll("[data-mobile-page]").forEach(b=>b.classList.toggle("active",b.dataset.mobilePage===active));
+}
+function contextHelpModal(){
+  const page=document.querySelector(".page.active")?.id?.replace(/^page-/,"")||"home";
+  const current=window.TheoriaPhase3?.getCurrent?.();
+  const help={
+    home:["Home","Your dashboard surfaces the courses and academic actions that need attention. Instructors see an Action Inbox; students see their current learning flow."],
+    sections:["Sections","A section is the live teaching instance of a catalog course. Open one to use the Course Guide, assignments, assessments, Gradebook, analytics, and records."],
+    "section-detail":["Section Workspace","Use the tabs to move from Course Guide and coursework into assessment, grading, Content & Skills analytics, and permanent records. The Course Guide is the recommended starting point."],
+    assessments:["Assessments","Templates are reusable course materials; assigned assessments are independent section copies. Topic Practice and Progress Checks can remain formative while Unit Assessments can count in Composite grades."],
+    "assessment-detail":["Assessment Workspace",current?"This assessment uses the unified workflow: Overview, Questions, Blueprint, Security, Progress, Student Results, Grading, and Content & Skills.":"Review assessment structure, administration, security, grading, and results from one workspace."],
+    itembank:["Question Bank","Filter the official bank by course, unit, topic, type, difficulty, cognitive level, status, competency, or tag. Questions are snapshotted into assessments so later bank edits do not silently alter active tests."],
+    gradebook:["Gradebook","Use inline spreadsheet entry for coursework, open formal assessments for grading, and watch pathway-aware projections and certification readiness on the right."],
+    mastery:["Mastery","Mastery uses competency-tagged scored evidence and remains separate from the course grade. Recalculations preserve longitudinal history."],
+    transcript:["Transcript","The transcript is a historical academic record. Completed, withdrawn, incomplete, and in-progress courses remain visible; withdrawals do not satisfy completed-course prerequisites."],
+    progress:["Progress","Progress combines competency mastery and current course evidence. Use weak topics and competencies to guide recommended practice."],
+    reports:["Reports","Reports combine class performance, item analysis, Content & Skills evidence, certification readiness, and permanent academic records."]
+  };
+  const [title,body]=help[page]||["Theoria Help","Use the page heading, contextual actions, and course navigation to move through the academic workflow."];
+  core()?.openModal?.({
+    eyebrow:"Contextual Help",
+    title,
+    body:'<div class="academic-banner"><div class="kicker">How this workspace works</div><h3>'+title+'</h3><p>'+body+'</p></div><div class="help-principles"><div><strong>Course Guide first</strong><span>Instruction, practice, and assessment stay aligned to units, topics, and competencies.</span></div><div><strong>Evidence stays auditable</strong><span>Grades, assessment attempts, certification, and record amendments preserve their history.</span></div><div><strong>Formative ≠ final grade</strong><span>Topic Practice and Progress Checks can build mastery without affecting Composite grades unless an instructor opts in.</span></div></div>',
+    footer:'<button class="primary-btn" data-close-modal>Got it</button>'
+  });
 }
 
 function enhanceCurrentContext(){
@@ -154,6 +194,7 @@ document.addEventListener("click",e=>{
   const shortcut=e.target.closest("[data-page-shortcut]");if(shortcut)core()?.setPage?.(shortcut.dataset.pageShortcut);
   const b=e.target.closest("[data-phase6-action]");if(!b)return;
   if(b.dataset.phase6Action==="dismiss-system-banner")b.closest(".system-announcement-banner")?.remove();
+  if(b.dataset.phase6Action==="context-help")contextHelpModal();
 });
 
 window.addEventListener("theoria:ready",async()=>{
@@ -162,6 +203,7 @@ window.addEventListener("theoria:ready",async()=>{
   }
   await applyFeatureFlags();
   addPlatformControls();
+  addMobileDock();
   window.addEventListener("online",()=>{updateConnectivityStatus();core()?.showToast?.("Theoria is back online. Cloud saves are available again.");});
   window.addEventListener("offline",()=>{updateConnectivityStatus();core()?.showToast?.("Theoria is offline. Local draft recovery remains active until connectivity returns.");});
   await showSystemAnnouncement();
@@ -170,7 +212,7 @@ window.addEventListener("theoria:ready",async()=>{
   setTimeout(enhanceCurrentContext,100);
 });
 
-window.addEventListener("theoria:page",()=>setTimeout(enhanceCurrentContext,60));
+window.addEventListener("theoria:page",e=>{syncMobileDock(e.detail?.page);setTimeout(enhanceCurrentContext,60);});
 
 window.TheoriaPlatform={
   hashCode:(value)=>teaching.hashCode(value),
