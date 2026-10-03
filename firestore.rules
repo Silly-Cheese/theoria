@@ -1082,6 +1082,26 @@ service cloud.firestore {
         }
       }
 
+      match /reviewReflections/{studentId} {
+        allow read: if assessmentOwner(assessmentId)
+          || (
+            assessmentData(assessmentId).sectionId != ''
+            && sectionGrader(assessmentData(assessmentId).sectionId)
+          )
+          || isSelf(studentId);
+        allow create, update: if isSelf(studentId)
+          && assessmentMember(assessmentId)
+          && request.resource.data.studentId == uid()
+          && exists(/databases/$(database)/documents/assessments/$(assessmentId)/results/$(uid()))
+          && get(/databases/$(database)/documents/assessments/$(assessmentId)/results/$(uid())).data.complete == true;
+        allow delete: if isSelf(studentId)
+          || assessmentOwner(assessmentId)
+          || (
+            assessmentData(assessmentId).sectionId != ''
+            && sectionAcademicManager(assessmentData(assessmentId).sectionId)
+          );
+      }
+
       match /results/{studentId} {
         allow read: if assessmentOwner(assessmentId)
           || (
