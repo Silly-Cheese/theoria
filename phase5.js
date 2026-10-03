@@ -695,6 +695,110 @@ async function renderInstructorAttention(){
   '</div></div>';
 }
 
+
+/* -------------------- WITHDRAWAL REQUESTS + ACADEMIC STANDING -------------------- */
+
+async function withdrawalRequestModal(sectionId){
+  const s=state(),section=s?.currentSection;if(!s?.user||s.role!=="student"||!section||section.id!==sectionId)return;
+  let existing=null;
+  try{
+    const snap=await getDoc(doc(db,"sections",sectionId,"withdrawalRequests",s.user.uid));
+    if(snap.exists())existing={id:snap.id,...snap.data()};
+  }catch(_){}
+  if(existing?.status==="Pending"){
+    const m=modal({
+      eyebrow:"Enrollment Withdrawal",
+      title:"Pending Withdrawal Request",
+      body:'<div class="academic-banner"><div class="kicker">'+esc(section.courseCode||"Course")+'</div><h3>Your request is awaiting instructor review.</h3><p>Withdrawing does not erase this course from your academic history. If approved, the instructor will complete the withdrawal-grade certification process and the course will remain visible on your transcript as Withdrawn.</p></div><div class="notice"><strong>Your submitted reason</strong><p>'+esc(existing.reason||"")+'</p></div>',
+      footer:'<button class="secondary-btn" data-close-modal>Close</button><button class="danger-btn" id="cancelWithdrawalRequest">Cancel Request</button>'
+    });
+    m.querySelector("#cancelWithdrawalRequest").onclick=async()=>{
+      try{
+        await updateDoc(doc(db,"sections",sectionId,"withdrawalRequests",s.user.uid),{status:"Cancelled",cancelledAt:serverTimestamp(),updatedAt:serverTimestamp()});
+        closeModal();toast("Withdrawal request cancelled.");await core().reloadCurrentSection("overview");
+      }catch(error){toast(error.message||"Unable to cancel the withdrawal request.");}
+    };
+    return;
+  }
+  if(existing&&["Certified","Approved"].includes(existing.status))return toast("This withdrawal request has already been resolved.");
+  const m=modal({
+    eyebrow:"Enrollment Withdrawal",
+    title:"Request Withdrawal — "+(section.courseCode||section.courseTitle||"Course"),
+    wide:true,
+    body:'<form id="withdrawalRequestForm"><div class="academic-banner"><div class="kicker">Student Request</div><h3>Request instructor review before ending enrollment.</h3><p>The request does not immediately remove you from the section. If approved, your instructor will certify your withdrawal record. The withdrawn course remains on your transcript and does not count as completed-course prerequisite credit.</p></div><div class="field"><label>Reason for Withdrawal</label><textarea name="reason" rows="7" required placeholder="Explain why you are requesting withdrawal from this course.">'+esc(existing?.reason||"")+'</textarea></div><label class="checkbox-line"><input type="checkbox" name="ack" required> I understand that an approved withdrawal remains part of my academic history.</label><div class="modal-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="danger-btn" type="submit">Submit Withdrawal Request</button></div></form>'
+  });
+  m.querySelector("#withdrawalRequestForm").onsubmit=async e=>{
+    e.preventDefault();const fd=new FormData(e.currentTarget),reason=String(fd.get("reason")||"").trim();if(!reason)return;
+    try{
+      await setDoc(doc(db,"sections",sectionId,"withdrawalRequests",s.user.uid),{
+        studentId:s.user.uid,studentName:s.profile?.displayName||s.user.displayName||"Student",studentEmail:s.user.email||"",
+        sectionId,courseId:section.courseId||"",courseCode:section.courseCode||"",courseTitle:section.courseTitle||"",
+        sectionName:section.sectionName||"",term:section.term||"",reason,status:"Pending",
+        requestedAt:serverTimestamp(),updatedAt:serverTimestamp()
+      },{merge:true});
+      closeModal();toast("Withdrawal request submitted for instructor review.");await core().reloadCurrentSection("overview");
+    }catch(error){toast(error.message||"Unable to submit the withdrawal request.");}
+  };
+}
+
+async function withdrawalRequestsModal(sectionId){
+  const section=currentSection();if(!section||section.id!==sectionId||!canOwnSection(section))return;
+  let rows=[];
+  try{
+    const snap=await getDocs(collection(db,"sections",sectionId,"withdrawalRequests"));
+    rows=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>toMillis(b.requestedAt)-toMillis(a.requestedAt));
+  }catch(error){return toast("Unable to load withdrawal requests.");}
+  const pending=rows.filter(x=>x.status==="Pending");
+  modal({
+    eyebrow:"Enrollment Lifecycle",
+    title:"Withdrawal Requests",
+    wide:true,
+    body:'<div class="academic-banner"><div class="kicker">'+esc(section.courseCode||"Course")+'</div><h3>'+pending.length+' pending request'+(pending.length===1?"":"s")+'</h3><p>Approval routes through formal withdrawal-grade certification. Denial preserves the request and instructor rationale in the request record.</p></div>'+
+      (rows.length?'<div class="withdrawal-request-list">'+rows.map(row=>'<article class="withdrawal-request-card"><div><div class="card-kicker">'+esc(row.status||"Pending")+'</div><h3>'+esc(row.studentName||"Student")+'</h3><p>'+esc(row.reason||"")+'</p><small>'+esc(row.studentEmail||"")+'</small></div><div class="withdrawal-request-actions">'+(row.status==="Pending"?'<button class="primary-btn small-btn" data-phase5-action="approve-withdrawal-request" data-id="'+row.id+'">Approve & Certify</button><button class="secondary-btn small-btn" data-phase5-action="deny-withdrawal-request" data-id="'+row.id+'">Deny</button>':'<span class="badge '+(row.status==="Certified"?"live":row.status==="Denied"?"closed":"")+'">'+esc(row.status)+'</span>')+'</div></article>').join("")+'</div>':'<div class="empty-state compact-empty"><div class="empty-symbol">W</div><h3>No withdrawal requests.</h3><p>Student requests will appear here for formal review.</p></div>'),
+    footer:'<button class="primary-btn" data-close-modal>Done</button>'
+  });
+}
+
+async function approveWithdrawalRequest(sectionId,requestId){
+  let request=null;
+  try{const snap=await getDoc(doc(db,"sections",sectionId,"withdrawalRequests",requestId));if(snap.exists())request={id:snap.id,...snap.data()};}catch(_){}
+  if(!request||request.status!=="Pending")return toast("This request is no longer pending.");
+  closeModal();
+  return window.TheoriaPhase4?.withdrawalCertificationModal?.(sectionId,request.studentId||requestId,{
+    requestId:request.id,requestReason:request.reason||"Student-requested withdrawal"
+  });
+}
+async function denyWithdrawalRequest(sectionId,requestId){
+  const reason=prompt("Reason for denying this withdrawal request?")?.trim();if(!reason)return;
+  try{
+    await updateDoc(doc(db,"sections",sectionId,"withdrawalRequests",requestId),{
+      status:"Denied",denialReason:reason,resolvedAt:serverTimestamp(),resolvedBy:state().user.uid,updatedAt:serverTimestamp()
+    });
+    await logSectionEvent(sectionId,"withdrawal_request_denied","student",requestId,{reason});
+    closeModal();toast("Withdrawal request denied.");await withdrawalRequestsModal(sectionId);
+  }catch(error){toast(error.message||"Unable to deny the withdrawal request.");}
+}
+
+async function academicStandingModal(studentId){
+  const section=currentSection(),student=state()?.sectionData?.members?.find(x=>x.id===studentId);
+  if(!section||!student||!canOwnSection(section))return;
+  const standing=student.academicStanding||"Good Standing";
+  const m=modal({
+    eyebrow:"Academic Standing",
+    title:student.displayName||"Student",
+    body:'<form id="academicStandingForm"><div class="field"><label>Standing</label><select name="standing"><option>Good Standing</option><option>Academic Warning</option><option>Incomplete</option></select></div><div class="field"><label>Administrative Note</label><textarea name="note" placeholder="Optional context preserved in the audit log.">'+esc(student.academicStandingNote||"")+'</textarea></div><div class="modal-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Standing</button></div></form>'
+  });
+  m.querySelector('[name="standing"]').value=standing;
+  m.querySelector("#academicStandingForm").onsubmit=async e=>{
+    e.preventDefault();const fd=new FormData(e.currentTarget),next=String(fd.get("standing")),note=String(fd.get("note")||"").trim();
+    try{
+      await updateDoc(doc(db,"sections",section.id,"members",studentId),{academicStanding:next,academicStandingNote:note,academicStandingUpdatedAt:serverTimestamp(),updatedAt:serverTimestamp()});
+      await logSectionEvent(section.id,"academic_standing_updated","student",studentId,{prior:standing,newStanding:next,note});
+      closeModal();await core().reloadCurrentSection("students");toast("Academic standing updated.");
+    }catch(error){toast(error.message||"Unable to update academic standing.");}
+  };
+}
+
 /* -------------------- SECTION UI ENHANCEMENT -------------------- */
 
 async function sectionStaffRole(sectionId){
@@ -704,7 +808,20 @@ async function sectionStaffRole(sectionId){
 }
 
 async function enhanceSection(section,tab){
-  if(!section||!isInstructor())return;
+  if(!section)return;
+  const s=state();
+  if(s?.role==="student"){
+    if(tab==="overview"&&section.status!=="Archived"){
+      const hero=$("#sectionDetail .detail-hero .detail-top .inline-actions");
+      if(hero&&!hero.querySelector('[data-phase5-action="request-withdrawal"]')){
+        let pending=false;
+        try{const snap=await getDoc(doc(db,"sections",section.id,"withdrawalRequests",s.user.uid));pending=snap.exists()&&snap.data().status==="Pending";}catch(_){}
+        hero.insertAdjacentHTML("beforeend",'<button class="secondary-btn small-btn" data-phase5-action="request-withdrawal" data-section="'+section.id+'">'+(pending?'Withdrawal Pending':'Request Withdrawal')+'</button>');
+      }
+    }
+    return;
+  }
+  if(!isInstructor())return;
   const hero=$("#sectionDetail .detail-hero .detail-top .inline-actions");
   if(hero&&!hero.querySelector("[data-phase5-action]")){
     const role=await sectionStaffRole(section.id);
@@ -750,7 +867,8 @@ function sectionOperationsModal(sectionId){
       '<button class="operation-card" data-phase5-action="enrollment-history" data-section="'+sectionId+'"><span>02</span><strong>Enrollment Lifecycle</strong><small>Review removals, withdrawals, reinstatements, and completions.</small></button>'+
       '<button class="operation-card" data-phase5-action="audit-log" data-section="'+sectionId+'"><span>03</span><strong>Academic Audit Log</strong><small>Review important administrative and academic changes.</small></button>'+
       '<button class="operation-card" data-phase5-action="grade-history" data-section="'+sectionId+'"><span>04</span><strong>Grade Change History</strong><small>Audit grade overrides, assessment results, rubric changes, and grading-period locks.</small></button>'+
-      '<button class="operation-card '+(archived?'':'danger-operation')+'" data-phase5-action="'+(archived?'restore-section':'archive-section')+'" data-section="'+sectionId+'"><span>05</span><strong>'+(archived?'Restore Section':'Archive Section')+'</strong><small>'+(archived?'Return this section to active teaching.':'Preserve records while removing the section from active teaching.')+'</small></button>'+
+      '<button class="operation-card" data-phase5-action="withdrawal-requests" data-section="'+sectionId+'"><span>05</span><strong>Withdrawal Requests</strong><small>Review student requests and route approvals through formal grade certification.</small></button>'+
+      '<button class="operation-card '+(archived?'':'danger-operation')+'" data-phase5-action="'+(archived?'restore-section':'archive-section')+'" data-section="'+sectionId+'"><span>06</span><strong>'+(archived?'Restore Section':'Archive Section')+'</strong><small>'+(archived?'Return this section to active teaching.':'Preserve records while removing the section from active teaching.')+'</small></button>'+
     '</div>',
     footer:'<button class="primary-btn" data-close-modal>Close</button>'
   });
@@ -761,7 +879,7 @@ function lifecycleMenu(studentId){
   modal({
     eyebrow:"Enrollment Lifecycle",
     title:student.displayName||"Student",
-    body:'<div class="operations-grid compact-operations"><button class="operation-card" data-phase5-action="student-approvals" data-student="'+studentId+'"><span>↗</span><strong>Course Readiness Approval</strong><small>Grant manual instructor approval for progression-gated courses.</small></button><button class="operation-card" data-phase5-action="set-lifecycle" data-student="'+studentId+'" data-status="Completed"><span>✓</span><strong>Mark Completed</strong><small>Preserve section access and mark course participation complete.</small></button><button class="operation-card danger-operation" data-phase5-action="withdraw-certify" data-student="'+studentId+'"><span>W</span><strong>Withdraw & Certify</strong><small>Waive unfinished assessments, certify a coursework-based final grade, decide whether an adjustment is permitted, then close enrollment.</small></button><button class="operation-card danger-operation" data-phase5-action="set-lifecycle" data-student="'+studentId+'" data-status="Removed"><span>×</span><strong>Remove</strong><small>Remove active access while preserving academic evidence and history.</small></button></div>',
+    body:'<div class="operations-grid compact-operations"><button class="operation-card" data-phase5-action="academic-standing" data-student="'+studentId+'"><span>A</span><strong>Academic Standing</strong><small>Record Good Standing, Academic Warning, or Incomplete with an audited note.</small></button><button class="operation-card" data-phase5-action="student-approvals" data-student="'+studentId+'"><span>↗</span><strong>Course Readiness Approval</strong><small>Grant manual instructor approval for progression-gated courses.</small></button><button class="operation-card" data-phase5-action="set-lifecycle" data-student="'+studentId+'" data-status="Completed"><span>✓</span><strong>Mark Completed</strong><small>Preserve section access and mark course participation complete.</small></button><button class="operation-card danger-operation" data-phase5-action="withdraw-certify" data-student="'+studentId+'"><span>W</span><strong>Withdraw & Certify</strong><small>Waive unfinished assessments, certify a coursework-based final grade, decide whether an adjustment is permitted, then close enrollment.</small></button><button class="operation-card danger-operation" data-phase5-action="set-lifecycle" data-student="'+studentId+'" data-status="Removed"><span>×</span><strong>Remove</strong><small>Remove active access while preserving academic evidence and history.</small></button></div>',
     footer:'<button class="secondary-btn" data-close-modal>Cancel</button>'
   });
 }
@@ -886,6 +1004,11 @@ document.addEventListener("click",async e=>{
   if(a==="course-staff")return courseStaffManagementModal(b.dataset.course);
   if(a==="remove-course-staff")return removeCourseStaff(b.dataset.course,b.dataset.user);
   if(a==="section-operations")return sectionOperationsModal(b.dataset.section);
+  if(a==="request-withdrawal")return withdrawalRequestModal(b.dataset.section);
+  if(a==="withdrawal-requests"){closeModal();return withdrawalRequestsModal(b.dataset.section);}
+  if(a==="approve-withdrawal-request")return approveWithdrawalRequest(state()?.currentSection?.id,b.dataset.id);
+  if(a==="deny-withdrawal-request")return denyWithdrawalRequest(state()?.currentSection?.id,b.dataset.id);
+  if(a==="academic-standing"){closeModal();return academicStandingModal(b.dataset.student);}
   if(a==="archive-section"){closeModal();return archiveSection(b.dataset.section);}
   if(a==="restore-section"){closeModal();return restoreSection(b.dataset.section);}
   if(a==="staff-management"){closeModal();return staffManagementModal(b.dataset.section);}
