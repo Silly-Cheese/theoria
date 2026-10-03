@@ -59,7 +59,7 @@ async function renderAdminCenter(){
   const activeSections=m.sections.filter(x=>x.status!=="Archived"),publishedCourses=m.courses.filter(x=>x.catalogPublished===true);
   el.innerHTML='<div class="academic-banner"><div class="kicker">System Owner Control Center</div><h3>Theoria Platform Administration</h3><p>Catalog health, data integrity, feature controls, diagnostics, migration tools, and academic-package management.</p></div>'+
     '<div class="admin-metric-grid"><div><span>Catalog Courses</span><strong>'+m.courses.length+'</strong><small>'+publishedCourses.length+' published</small></div><div><span>Teaching Sections</span><strong>'+m.sections.length+'</strong><small>'+activeSections.length+' active</small></div><div><span>Users</span><strong>'+m.users.length+'</strong><small>'+m.users.filter(x=>x.role==="instructor").length+' instructors</small></div><div><span>Assessments</span><strong>'+m.assessments.length+'</strong><small>'+m.assessments.filter(x=>x.sectionId).length+' assigned</small></div><div><span>Question Bank</span><strong>'+m.questionCount+'</strong><small>master questions</small></div><div><span>Framework Units</span><strong>'+m.unitCount+'</strong><small>'+m.competencyCount+' competencies</small></div></div>'+
-    '<div class="operations-grid admin-operations"><button class="operation-card" data-admin-action="integrity-scan"><span>01</span><strong>Data Integrity Scanner</strong><small>Find orphaned references, legacy records, and incomplete mappings.</small></button><button class="operation-card" data-admin-action="diagnostics"><span>02</span><strong>System Health & Diagnostics</strong><small>Verify essential Firestore reads and subsystem availability.</small></button><button class="operation-card" data-admin-action="feature-flags"><span>03</span><strong>Feature Flags</strong><small>Control major platform systems without removing code.</small></button><button class="operation-card" data-admin-action="migration-tools"><span>04</span><strong>Migration Tools</strong><small>Normalize legacy questions, assignments, and sections.</small></button><button class="operation-card" data-admin-action="import-export"><span>05</span><strong>Import / Export Center</strong><small>Course packages, catalog backup, grade and roster exports.</small></button><button class="operation-card" data-admin-action="system-announcement"><span>06</span><strong>System Announcement</strong><small>Publish platform-wide academic or maintenance notices.</small></button></div>'+
+    '<div class="operations-grid admin-operations"><button class="operation-card" data-admin-action="integrity-scan"><span>01</span><strong>Data Integrity Scanner</strong><small>Find orphaned references, legacy records, and incomplete mappings.</small></button><button class="operation-card" data-admin-action="diagnostics"><span>02</span><strong>System Health & Diagnostics</strong><small>Verify essential Firestore reads and subsystem availability.</small></button><button class="operation-card" data-admin-action="feature-flags"><span>03</span><strong>Feature Flags</strong><small>Control major platform systems without removing code.</small></button><button class="operation-card" data-admin-action="migration-tools"><span>04</span><strong>Migration Tools</strong><small>Normalize legacy questions, assignments, and sections.</small></button><button class="operation-card" data-admin-action="import-export"><span>05</span><strong>Import / Export Center</strong><small>Course packages, catalog backup, grade and roster exports.</small></button><button class="operation-card" data-admin-action="system-announcement"><span>06</span><strong>System Announcement</strong><small>Publish platform-wide academic or maintenance notices.</small></button><button class="operation-card" data-admin-action="academic-year-rollover"><span>07</span><strong>Academic Year Rollover</strong><small>Create next-term teaching sections in bulk while preserving historical records.</small></button></div>'+
     '<div class="panel" style="margin-top:18px"><div class="panel-head"><div><div class="panel-title">Platform Configuration</div><div class="panel-subtitle">Current administrative configuration snapshot.</div></div></div><div class="panel-body"><div class="detail-list"><div><span>Configuration Version</span><strong>'+esc(config.version||1)+'</strong></div><div><span>Last Migration</span><strong>'+esc(config.lastMigrationLabel||"Not recorded")+'</strong></div><div><span>Maintenance Mode</span><strong>'+(config.features?.maintenanceMode?"Enabled":"Disabled")+'</strong></div></div></div></div>';
 }
 
@@ -131,7 +131,7 @@ const FLAG_DEFS=[
   ["programMap","Program Map"],
   ["transcript","Multi-Course Transcript"],
   ["courseVersioning","Course Versioning"],
-  ["termRollover","Section Rollover"],
+  ["termRollover","Academic Year / Section Rollover"],
   ["importExport","Import / Export Center"],
   ["accessibility","Accessibility Controls"],
   ["recovery","Offline & Autosave Recovery"],
@@ -359,36 +359,96 @@ async function courseVersionModal(courseId){
   };
 }
 
-/* -------------------- SECTION ROLLOVER -------------------- */
+/* -------------------- ACADEMIC YEAR / SECTION ROLLOVER -------------------- */
+
+async function cloneSectionToTerm(source,{sectionName,term,startDate="",endDate=""}={}){
+  const joinCode=await uniqueJoinCode(),ref=doc(collection(db,"sections"));
+  const sectionData={...source};
+  ["id","archivedAt","entranceAssessmentId","entranceExamTitle","entranceConfiguredAt","entranceTemplateSourceId","pacingPlan"].forEach(k=>delete sectionData[k]);
+  if(sectionData.gradingPolicy){
+    const periods=sectionData.gradingPolicy.gradingPeriods?.length?sectionData.gradingPolicy.gradingPeriods:["Overall"],gradingPeriodSettings={};
+    periods.forEach(period=>gradingPeriodSettings[period]={locked:false,finalizedAt:null,finalizedBy:"",reopenedAt:null,reopenedBy:""});
+    sectionData.gradingPolicy={...sectionData.gradingPolicy,selectionOpen:true,selectionDeadline:null,gradingPeriodSettings};
+  }
+  Object.assign(sectionData,{
+    ownerId:state().user.uid,
+    instructorName:state().profile?.displayName||state().user.displayName||source.instructorName,
+    sectionName:String(sectionName||((source.sectionName||"Section")+" — New Term")).trim(),
+    term:String(term||"").trim(),startDate:String(startDate||""),endDate:String(endDate||""),
+    joinCode,joinOpen:false,status:"Active",createdAt:serverTimestamp(),updatedAt:serverTimestamp(),
+    rolledOverFrom:source.id,academicYearRollover:true
+  });
+  await setDoc(ref,sectionData);
+  await setDoc(doc(db,"joinCodes",joinCode),{sectionId:ref.id,active:false,courseId:source.courseId,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+  for(const name of ["assignments","resources"]){
+    const rows=await docs(["sections",source.id,name]);
+    for(let i=0;i<rows.length;i+=350){
+      const batch=writeBatch(db);
+      rows.slice(i,i+350).forEach(row=>{
+        const rr=doc(collection(db,"sections",ref.id,name)),copy={...row};delete copy.id;
+        if(name==="assignments"){copy.status="Draft";copy.dueDate="";copy.gradingPeriod=copy.gradingPeriod||"Overall";}
+        batch.set(rr,{...copy,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+      });
+      await batch.commit();
+    }
+  }
+  await p5()?.logSectionEvent?.(source.id,"section_rolled_over","section",ref.id,{newTerm:sectionData.term,newSectionName:sectionData.sectionName});
+  return {id:ref.id,...sectionData};
+}
 
 async function rolloverSection(sectionId){
   const source=state()?.sections?.find(x=>x.id===sectionId)||null;if(!source)return;
   const m=modal({
     eyebrow:"Term Rollover",
     title:"Copy Section to New Term",
-    body:'<form id="rolloverForm"><div class="academic-banner"><div class="kicker">'+esc(source.courseCode||"Course")+'</div><h3>'+esc(source.sectionName||source.courseTitle)+'</h3><p>Assignments, resources, and grading policy are copied. The course-level rubric library and reusable assessment templates remain available automatically. Students, grades, attendance, submissions, and academic records are not copied.</p></div><div class="compact-field-grid"><div class="field"><label>New Section Name</label><input name="sectionName" value="'+esc((source.sectionName||"Section")+" — New Term")+'" required></div><div class="field"><label>Term</label><input name="term" placeholder="Spring 2027" required></div></div><div class="compact-field-grid"><div class="field"><label>Start Date</label><input name="startDate" type="date"></div><div class="field"><label>End Date</label><input name="endDate" type="date"></div></div><div class="modal-foot"><button class="secondary-btn" type="button" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Create Rolled-Over Section</button></div></form>'
+    body:'<form id="rolloverForm"><div class="academic-banner"><div class="kicker">'+esc(source.courseCode||"Course")+'</div><h3>'+esc(source.sectionName||source.courseTitle)+'</h3><p>Assignments and resources are copied as the next-term working set. Grading locks, pathway deadlines, pacing dates, students, grades, attendance, submissions, and academic records are not copied. Historical records remain in the original section.</p></div><div class="compact-field-grid"><div class="field"><label>New Section Name</label><input name="sectionName" value="'+esc((source.sectionName||"Section")+" — New Term")+'" required></div><div class="field"><label>Term</label><input name="term" placeholder="Spring 2027" required></div></div><div class="compact-field-grid"><div class="field"><label>Start Date</label><input name="startDate" type="date"></div><div class="field"><label>End Date</label><input name="endDate" type="date"></div></div><div class="modal-foot"><button class="secondary-btn" type="button" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Create Rolled-Over Section</button></div></form>'
   });
   m.querySelector("#rolloverForm").onsubmit=async e=>{
-    e.preventDefault();const fd=new FormData(e.currentTarget),joinCode=await uniqueJoinCode(),ref=doc(collection(db,"sections"));
+    e.preventDefault();const fd=new FormData(e.currentTarget),button=e.currentTarget.querySelector('button[type="submit"]');
+    button.disabled=true;button.textContent="Creating…";
     try{
-      const sectionData={...source};["id","archivedAt","entranceAssessmentId","entranceExamTitle","entranceConfiguredAt","entranceTemplateSourceId"].forEach(k=>delete sectionData[k]);
-      if(sectionData.gradingPolicy){
-        const periods=sectionData.gradingPolicy.gradingPeriods?.length?sectionData.gradingPolicy.gradingPeriods:["Overall"],gradingPeriodSettings={};
-        periods.forEach(period=>gradingPeriodSettings[period]={locked:false,finalizedAt:null,finalizedBy:"",reopenedAt:null,reopenedBy:""});
-        sectionData.gradingPolicy={...sectionData.gradingPolicy,selectionOpen:true,selectionDeadline:null,gradingPeriodSettings};
-      }
-      Object.assign(sectionData,{ownerId:state().user.uid,instructorName:state().profile?.displayName||state().user.displayName||source.instructorName,sectionName:String(fd.get("sectionName")).trim(),term:String(fd.get("term")).trim(),startDate:String(fd.get("startDate")||""),endDate:String(fd.get("endDate")||""),joinCode,joinOpen:false,status:"Active",createdAt:serverTimestamp(),updatedAt:serverTimestamp(),rolledOverFrom:source.id});
-      await setDoc(ref,sectionData);
-      await setDoc(doc(db,"joinCodes",joinCode),{sectionId:ref.id,active:false,courseId:source.courseId,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
-      for(const name of ["assignments","resources"]){
-        const rows=await docs(["sections",source.id,name]);
-        for(let i=0;i<rows.length;i+=350){
-          const batch=writeBatch(db);rows.slice(i,i+350).forEach(row=>{const rr=doc(collection(db,"sections",ref.id,name)),copy={...row};delete copy.id;if(name==="assignments"){copy.status="Draft";copy.dueDate="";}batch.set(rr,{...copy,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});});await batch.commit();
-        }
-      }
-      await p5()?.logSectionEvent?.(source.id,"section_rolled_over","section",ref.id,{newTerm:sectionData.term,newSectionName:sectionData.sectionName});
-      closeModal();toast("New-term section created with enrollment closed.");await core().loadWorkspace();core().openSection(ref.id);
-    }catch(error){toast(error.message||"Unable to roll over section.");}
+      const created=await cloneSectionToTerm(source,{
+        sectionName:String(fd.get("sectionName")).trim(),term:String(fd.get("term")).trim(),
+        startDate:String(fd.get("startDate")||""),endDate:String(fd.get("endDate")||"")
+      });
+      closeModal();toast("New-term section created with enrollment closed.");await core().loadWorkspace();core().openSection(created.id);
+    }catch(error){button.disabled=false;button.textContent="Create Rolled-Over Section";toast(error.message||"Unable to roll over section.");}
+  };
+}
+
+async function academicYearRolloverModal(){
+  const s=state();if(!s?.isSystemOwner)return toast("System Owner access required.");
+  const sections=(s.sections||[]).filter(x=>x.status!=="Archived");
+  if(!sections.length)return toast("No active sections are available for rollover.");
+  const m=modal({
+    eyebrow:"Academic Year Operations",
+    title:"Bulk Academic Year Rollover",
+    wide:true,
+    body:'<form id="academicYearRolloverForm"><div class="academic-banner"><div class="kicker">Historical Separation</div><h3>Create the next teaching term without carrying student records forward.</h3><p>Selected sections are cloned with enrollment closed. Coursework becomes Draft, grading-period locks are reset, and the next term starts with no students, grades, submissions, attendance, academic records, entrance configuration, or pacing dates.</p></div>'+
+      '<div class="compact-field-grid"><div class="field"><label>New Term</label><input name="term" placeholder="2027–2028 / Fall 2027" required></div><div class="field"><label>Section Name Suffix</label><input name="suffix" value=" — New Term"></div><div class="field"><label>Start Date</label><input name="startDate" type="date"></div><div class="field"><label>End Date</label><input name="endDate" type="date"></div></div>'+
+      '<div class="panel" style="margin-top:16px"><div class="panel-head"><div><div class="panel-title">Sections to Roll Over</div><div class="panel-subtitle">Choose each live teaching section that should receive a next-term copy.</div></div><div class="inline-actions"><button type="button" class="text-btn" id="rolloverSelectAll">Select All</button><button type="button" class="text-btn" id="rolloverClear">Clear</button></div></div><div class="panel-body"><div class="policy-grid">'+sections.map(sec=>'<label class="policy-card compact-policy"><input type="checkbox" name="sectionId" value="'+sec.id+'"><div><strong>'+esc((sec.courseCode||"Course")+" — "+(sec.sectionName||sec.courseTitle))+'</strong><span>'+esc(sec.term||"Current term")+'</span></div></label>').join("")+'</div></div></div>'+
+      '<div class="modal-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Create Next-Term Sections</button></div></form>'
+  });
+  const form=m.querySelector("#academicYearRolloverForm");
+  m.querySelector("#rolloverSelectAll").onclick=()=>form.querySelectorAll('[name="sectionId"]').forEach(x=>x.checked=true);
+  m.querySelector("#rolloverClear").onclick=()=>form.querySelectorAll('[name="sectionId"]').forEach(x=>x.checked=false);
+  form.onsubmit=async e=>{
+    e.preventDefault();const fd=new FormData(form),selected=fd.getAll("sectionId"),term=String(fd.get("term")||"").trim(),suffix=String(fd.get("suffix")||""),button=form.querySelector('button[type="submit"]');
+    if(!selected.length)return toast("Select at least one section.");
+    button.disabled=true;let created=0,failed=0;
+    for(let i=0;i<selected.length;i++){
+      const source=sections.find(x=>x.id===selected[i]);if(!source)continue;
+      button.textContent="Rolling over "+(i+1)+" / "+selected.length+"…";
+      try{
+        await cloneSectionToTerm(source,{
+          sectionName:(source.sectionName||source.courseTitle||"Section")+suffix,term,
+          startDate:String(fd.get("startDate")||""),endDate:String(fd.get("endDate")||"")
+        });
+        created++;
+      }catch(error){console.warn("Academic year rollover failed for",source.id,error);failed++;}
+    }
+    closeModal();await core().loadWorkspace();core().setPage("sections");
+    toast(created+" next-term section"+(created===1?"":"s")+" created"+(failed?" • "+failed+" failed":"")+".");
   };
 }
 
@@ -574,10 +634,11 @@ function bind(){
     if(a==="import-course"){closeModal();return importCoursePackageModal();}
     if(a==="version-course")return courseVersionModal(b.dataset.course);
     if(a==="rollover-section")return rolloverSection(b.dataset.section);
+    if(a==="academic-year-rollover")return academicYearRolloverModal();
   });
 }
 
 export function initAdmin(){
   bind();
-  return {renderAdminCenter,renderProgramMap,renderTranscript,courseVersionModal,rolloverSection,integrityScan,diagnostics};
+  return {renderAdminCenter,renderProgramMap,renderTranscript,courseVersionModal,rolloverSection,academicYearRolloverModal,integrityScan,diagnostics};
 }
