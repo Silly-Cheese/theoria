@@ -1223,7 +1223,7 @@ async function calculateAssessmentCompetencyBlueprint(assessment,questions,fwOve
 
 async function assessmentModal(existing){
   const s=state();if(!s?.courses?.length)return toast("Create a course before creating an assessment.");
-  const types=["Academic Exercise","Unit Evaluation","Semester I Examination","Comprehensive Final Examination","Oral Examination","Disputation"];
+  const types=["Topic Practice","Progress Check","Unit Assessment","Unit Evaluation","Practice Examination","Academic Exercise","Semester I Examination","Comprehensive Final Examination","Oral Examination","Disputation","Recommended Practice"];
   let selectedCourse=s.courses.find(c=>c.id===existing?.courseId)||s.courses[0];
   let fw=await framework(selectedCourse.id);
   let bankQuestions=[];
@@ -1250,8 +1250,9 @@ async function assessmentModal(existing){
       '</section>'+
       '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Administration Defaults</h3><p>These settings are copied when the template is assigned and can be adjusted for the section.</p></div></div>'+
         '<div class="compact-field-grid"><div class="field"><label>Duration</label><div class="input-with-suffix"><input name="durationMinutes" type="number" min="0" value="'+esc(existing?.durationMinutes??60)+'"><span>min</span></div></div><div class="field"><label>Opens</label><input name="opensAt" type="datetime-local" value="'+esc(localDateTime(existing?.opensAt))+'"></div><div class="field"><label>Closes</label><input name="closesAt" type="datetime-local" value="'+esc(localDateTime(existing?.closesAt))+'"></div></div>'+
-        '<div class="policy-card-grid"><label class="policy-card"><input type="checkbox" name="anonymousGrading" '+(existing?.anonymousGrading!==false?'checked':'')+'><div><strong>Anonymous Grading</strong><span>Use candidate numbers while evaluating.</span></div></label><label class="policy-card"><input type="checkbox" name="backtracking" '+(existing?.backtracking!==false?'checked':'')+'><div><strong>Allow Backtracking</strong><span>Students may revisit earlier questions.</span></div></label><label class="policy-card"><input type="checkbox" name="randomizeQuestions" '+(existing?.randomizeQuestions?'checked':'')+'><div><strong>Shuffle Question Order</strong><span>Shuffle the final question order for each student.</span></div></label></div>'+
-        '<div class="field"><label>Results Visibility</label><input type="hidden" name="feedbackPolicy" value="automatic"><div class="static-field">Results become visible to the student automatically when grading is complete.</div></div>'+
+        '<div class="policy-card-grid"><label class="policy-card"><input type="checkbox" name="anonymousGrading" '+(existing?.anonymousGrading!==false?'checked':'')+'><div><strong>Anonymous Grading</strong><span>Use candidate numbers while evaluating.</span></div></label><label class="policy-card"><input type="checkbox" name="backtracking" '+(existing?.backtracking!==false?'checked':'')+'><div><strong>Allow Backtracking</strong><span>Students may revisit earlier questions.</span></div></label><label class="policy-card"><input type="checkbox" name="randomizeQuestions" '+(existing?.randomizeQuestions?'checked':'')+'><div><strong>Shuffle Question Order</strong><span>Shuffle the final question order for each student.</span></div></label><label class="policy-card"><input type="checkbox" name="countsTowardComposite" '+((existing?existing.countsTowardComposite!==false:!["Topic Practice","Progress Check","Practice Examination","Recommended Practice"].includes(currentType))?'checked':'')+'><div><strong>Count in Composite Grade</strong><span>Include this assessment in the General Assessments component. Leave off for formative practice.</span></div></label></div>'+
+        '<input type="hidden" name="feedbackPolicy" value="automatic">'+
+        '<div class="result-policy-builder"><div class="panel-subtitle">Student Result Release</div><div class="policy-card-grid"><label class="policy-card"><input type="checkbox" name="showQuestionScores" '+(existing?.releasePolicy?.showQuestionScores!==false?'checked':'')+'><div><strong>Question Scores</strong><span>Show points earned per question.</span></div></label><label class="policy-card"><input type="checkbox" name="showExplanations" '+(existing?.releasePolicy?.showExplanations?'checked':'')+'><div><strong>Explanations</strong><span>Show Question Bank explanations after release.</span></div></label><label class="policy-card"><input type="checkbox" name="showCompetencies" '+(existing?.releasePolicy?.showCompetencies!==false?'checked':'')+'><div><strong>Content & Skills</strong><span>Show topic and competency performance.</span></div></label></div></div>'+
       '</section>'+
       '<section class="form-section"><div class="form-section-head"><div><span>03</span><h3>Student Instructions</h3><p>Add concise instructions one line at a time.</p></div><button type="button" class="secondary-btn small-btn" id="addAssessmentInstruction">+ Add Instruction</button></div><div id="assessmentInstructions" class="structured-list"></div></section>'+
       '<section class="form-section"><div class="form-section-head"><div><span>04</span><h3>Content Blueprint</h3><p>Choose course units and assign their intended share of the assessment.</p></div><div class="inline-actions"><button type="button" class="secondary-btn small-btn" id="balanceContentBlueprint">Balance</button><button type="button" class="secondary-btn small-btn" id="addContentBlueprint">+ Add Target</button></div></div><div id="contentBlueprintRows" class="blueprint-builder"></div><div class="builder-total"><span>Total</span><strong id="contentBlueprintTotal">0%</strong></div></section>'+
@@ -1550,7 +1551,21 @@ async function assessmentModal(existing){
       instructions:instructionSteps.join("\n"),instructionSteps,anonymousGrading:form.querySelector('[name="anonymousGrading"]')?.checked===true,backtracking:form.querySelector('[name="backtracking"]')?.checked===true,randomizeQuestions:randomDrawEnabled?true:form.querySelector('[name="randomizeQuestions"]')?.checked===true,
       randomDrawEnabled:existing?!!existing.randomDrawEnabled:randomDrawEnabled,
       randomDrawPlan:existing?(existing.randomDrawPlan||[]):randomDrawPlan,
-      feedbackPolicy:String(fd.get("feedbackPolicy")),contentBlueprint,competencyBlueprint,competencyBlueprintAuto:true,competencyBlueprintMappedPoints:competencyDerivation.taggedExpectedPoints,competencyBlueprintUnmappedPoints:competencyDerivation.untaggedExpectedPoints,parts:existing?.parts?.length?existing.parts:defaultParts(type),
+      feedbackPolicy:String(fd.get("feedbackPolicy")),
+      countsTowardComposite:form.querySelector('[name="countsTowardComposite"]')?.checked===true,
+      formative:form.querySelector('[name="countsTowardComposite"]')?.checked!==true,
+      releasePolicy:{
+        ...(existing?.releasePolicy||{}),
+        showOverallScore:existing?.releasePolicy?.showOverallScore!==false,
+        showQuestionScores:form.querySelector('[name="showQuestionScores"]')?.checked!==false,
+        showCorrectAnswers:existing?.releasePolicy?.showCorrectAnswers===true,
+        showExplanations:form.querySelector('[name="showExplanations"]')?.checked===true,
+        showCompetencies:form.querySelector('[name="showCompetencies"]')?.checked!==false,
+        showClassAverage:existing?.releasePolicy?.showClassAverage===true,
+        releaseMode:existing?.releasePolicy?.releaseMode||"when-graded"
+      },
+      correctionPolicy:existing?.correctionPolicy||{enabled:false,instructions:""},
+      contentBlueprint,competencyBlueprint,competencyBlueprintAuto:true,competencyBlueprintMappedPoints:competencyDerivation.taggedExpectedPoints,competencyBlueprintUnmappedPoints:competencyDerivation.untaggedExpectedPoints,parts:existing?.parts?.length?existing.parts:defaultParts(type),
       questionIds:existing?.questionIds||[],questionPool:existing?(existing.questionPool||[]):[],
       poolQuestionCount:existing?Number(existing.poolQuestionCount||existing.questionIds?.length||0):chosenQuestions.length,
       questionCount:existing?Number(existing.questionCount||0):plannedQuestionCount,
@@ -1672,8 +1687,8 @@ function assessmentTabs(active){
   const tabs=[["overview","Overview"],["items","Questions"],["blueprint","Blueprint"]];
   if(securityEnabled)tabs.push(["security","Security"]);
   if(P3.current?.sectionId){
-    tabs.push(["candidates","Candidates"],["grading","Grading"]);
-    if(analyticsEnabled)tabs.push(["analytics","Analytics"]);
+    tabs.push(["candidates","Progress"],["results","Student Results"],["grading","Grading"]);
+    if(analyticsEnabled)tabs.push(["analytics","Content & Skills"]);
   }
   return '<div class="tabs">'+tabs.map(([id,label])=>'<button class="tab-btn '+(active===id?'active':'')+'" data-phase3-action="assessment-tab" data-tab="'+id+'">'+label+'</button>').join("")+'</div>';
 }
@@ -2014,6 +2029,14 @@ function candidatesView(){
 }
 
 
+function studentResultsView(){
+  const d=P3.detail,a=d.assessment,resMap=new Map(d.results.map(x=>[x.studentId,x])),subMap=new Map(d.submissions.map(x=>[x.studentId,x]));
+  if(!d.members.length)return '<div class="empty-state"><div class="empty-symbol">R</div><h3>No students in this assessment yet.</h3></div>';
+  const complete=d.results.filter(x=>x.complete===true),avg=complete.length?Math.round(complete.reduce((n,x)=>n+Number(x.percent||0),0)/complete.length*10)/10:null;
+  return '<div class="section-summary"><div class="summary-block"><div class="summary-label">Students</div><div class="summary-value">'+d.members.length+'</div></div><div class="summary-block"><div class="summary-label">Submitted</div><div class="summary-value">'+d.submissions.filter(x=>["submitted","graded"].includes(x.status)).length+'</div></div><div class="summary-block"><div class="summary-label">Complete Results</div><div class="summary-value">'+complete.length+'</div></div><div class="summary-block"><div class="summary-label">Class Average</div><div class="summary-value">'+(avg===null?"—":avg+"%")+'</div></div></div>'+
+    '<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Student</th><th>Attempt</th><th>Status</th><th>Score</th><th>Released</th><th>Action</th></tr></thead><tbody>'+d.members.map(m=>{const r=resMap.get(m.id),sub=subMap.get(m.id);return '<tr><td><strong>'+esc(m.displayName||"Student")+'</strong><span class="grade-sub">'+esc(m.email||"")+'</span></td><td>'+esc(sub?.attemptNumber||r?.attemptNumber||1)+'</td><td>'+esc(r?.complete?"Graded":sub?.status||"Not started")+'</td><td>'+(r?.complete?'<strong>'+esc(r.percent)+'%</strong>':"—")+'</td><td>'+(r?.released?'<span class="badge live">Released</span>':'<span class="badge">Private</span>')+'</td><td><div class="inline-actions">'+(sub?'<button class="text-btn" data-phase3-action="grade-candidate" data-student="'+m.id+'">Open Result</button>':'')+(r?.complete?'<button class="text-btn" data-phase3-action="toggle-release" data-student="'+m.id+'">'+(r.released?"Make Private":"Release")+'</button>':'')+'</div></td></tr>';}).join("")+'</tbody></table></div>';
+}
+
 function gradingView(){
   const d=P3.detail;
   return '<div class="academic-banner"><div class="kicker">Grading Workspace</div><h3>'+d.submissions.filter(x=>x.status==="submitted"||x.status==="graded").length+' submitted candidates</h3><p>Objective items can be scored in the instructor session; written work can be graded horizontally or candidate-by-candidate.</p></div>'+
@@ -2025,7 +2048,7 @@ function renderAssessment(tab="overview"){
   const a=P3.current;if(!a)return;
   const template=!a.sectionId;
   if(template&&(tab==="candidates"||tab==="grading"))tab="overview";
-  const body=tab==="items"?itemsView():tab==="blueprint"?'<div id="phase6BlueprintDesigner"><div class="empty-mini">Building assessment blueprint…</div></div>':tab==="security"?'<div id="phase6AssessmentSecurity"><div class="empty-mini">Loading security policy…</div></div>':tab==="candidates"?candidatesView():tab==="grading"?gradingView():tab==="analytics"?'<div id="phase5AssessmentAnalytics"><div class="empty-mini">Calculating assessment analytics…</div></div>':overviewView();
+  const body=tab==="items"?itemsView():tab==="blueprint"?'<div id="phase6BlueprintDesigner"><div class="empty-mini">Building assessment blueprint…</div></div>':tab==="security"?'<div id="phase6AssessmentSecurity"><div class="empty-mini">Loading security policy…</div></div>':tab==="candidates"?candidatesView():tab==="results"?studentResultsView():tab==="grading"?gradingView():tab==="analytics"?'<div id="phase5AssessmentAnalytics"><div class="empty-mini">Calculating content & skills report…</div></div>':overviewView();
   let statusButton="";
   if(a.entranceExam===true)statusButton='';
   else if(template)statusButton='<button class="primary-btn small-btn" data-phase3-action="assign-assessment" data-id="'+a.id+'">Assign to Section</button>';
@@ -2640,7 +2663,11 @@ async function assignAssessmentModal(assessmentId,preferredSectionId=""){
     const fd=new FormData(form),section=sections.find(sec=>sec.id===String(fd.get("sectionId"))),initialStatus=String(fd.get("initialStatus")||"Draft");
     if(!section)return toast("Choose a section.");
     const opensAt=timestampFrom(fd.get("opensAt")),closesAt=timestampFrom(fd.get("closesAt"));
+    const makeupOpensAt=timestampFrom(fd.get("makeupOpensAt")),makeupClosesAt=timestampFrom(fd.get("makeupClosesAt"));
     if(opensAt&&closesAt&&opensAt.toMillis()>=closesAt.toMillis())return toast("The close time must be after the open time.");
+    if(makeupOpensAt&&makeupClosesAt&&makeupOpensAt.toMillis()>=makeupClosesAt.toMillis())return toast("The makeup close time must be after its open time.");
+    const administrationWindows=(makeupOpensAt||makeupClosesAt)?[{kind:"makeup",label:"Makeup Administration",opensAt:makeupOpensAt||null,closesAt:makeupClosesAt||null}]:[];
+    const countsTowardComposite=form.elements.countsTowardComposite.checked===true;
 
     const duplicate=P3.assessments.find(x=>x.sectionId===section.id&&x.templateSourceId===a.id);
     if(duplicate&&!confirm("This template is already assigned to "+section.sectionName+". Assign another copy anyway?"))return;
@@ -2702,7 +2729,9 @@ async function editAssignedAssessmentModal(assessmentId){
       '</section>'+
       '<section class="form-section"><div class="form-section-head"><div><span>02</span><h3>Schedule</h3><p>Adjust the live section administration settings.</p></div></div>'+
         '<div class="compact-field-grid"><div class="field"><label>Duration</label><div class="input-with-suffix"><input name="durationMinutes" type="number" min="0" value="'+esc(a.durationMinutes||0)+'"><span>min</span></div></div><div class="field"><label>Opens</label><input name="opensAt" type="datetime-local" value="'+esc(localDateTime(a.opensAt))+'"></div><div class="field"><label>Closes</label><input name="closesAt" type="datetime-local" value="'+esc(localDateTime(a.closesAt))+'"></div></div>'+
+        '<div class="panel-subtitle" style="margin-top:14px">Optional Makeup Administration</div><div class="compact-field-grid"><div class="field"><label>Makeup Opens</label><input name="makeupOpensAt" type="datetime-local" value="'+esc(localDateTime((a.administrationWindows||[]).find(x=>x.kind==="makeup")?.opensAt))+'"></div><div class="field"><label>Makeup Closes</label><input name="makeupClosesAt" type="datetime-local" value="'+esc(localDateTime((a.administrationWindows||[]).find(x=>x.kind==="makeup")?.closesAt))+'"></div></div>'+
       '</section>'+
+      '<section class="form-section"><div class="form-section-head"><div><span>03</span><h3>Academic Treatment</h3><p>Control whether this assigned assessment changes the Composite final grade.</p></div></div><label class="policy-card"><input type="checkbox" name="countsTowardComposite" '+(a.countsTowardComposite!==false?'checked':'')+'><div><strong>Count in Composite Grade</strong><span>Include this assessment in General Assessments. Turn off for formative Topic Practice, Progress Checks, and practice exams.</span></div></label></section>'+
       '<div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Assignment Changes</button></div></form>'
   });
   const form=modal.querySelector("#editAssignedAssessmentForm");
@@ -2717,12 +2746,16 @@ async function editAssignedAssessmentModal(assessmentId){
     try{
       const batch=writeBatch(db);
       batch.update(doc(db,"assessments",a.id),{
-        title,durationMinutes,opensAt,closesAt,sectionId:newSectionId,sectionName:newSection.sectionName,updatedAt:serverTimestamp()
+        title,durationMinutes,opensAt,closesAt,administrationWindows,countsTowardComposite,formative:!countsTowardComposite,sectionId:newSectionId,sectionName:newSection.sectionName,updatedAt:serverTimestamp()
       });
       if(a.status==="Published"){
         if(moved)batch.delete(doc(db,"sections",a.sectionId,"assessmentRefs",a.id));
         batch.set(doc(db,"sections",newSectionId,"assessmentRefs",a.id),{
-          assessmentId:a.id,title,type:a.type,assessmentType:a.type,totalPoints:Number(a.totalPoints||0),status:a.status,opensAt:opensAt||null,closesAt:closesAt||null,durationMinutes,updatedAt:serverTimestamp()
+          assessmentId:a.id,title,type:a.type,assessmentType:a.type,totalPoints:Number(a.totalPoints||0),status:a.status,opensAt:opensAt||null,closesAt:closesAt||null,durationMinutes,
+          catalogKind:a.catalogKind||"",officialMaterial:a.officialMaterial===true,formative:!countsTowardComposite,countsTowardComposite,
+          frameworkUnitId:a.frameworkUnitId||"",frameworkUnitNumber:Number(a.frameworkUnitNumber||0),frameworkUnitTitle:a.frameworkUnitTitle||"",
+          frameworkTopicId:a.frameworkTopicId||"",frameworkTopicNumber:a.frameworkTopicNumber||"",frameworkTopicTitle:a.frameworkTopicTitle||"",
+          updatedAt:serverTimestamp()
         },{merge:true});
       }
       await batch.commit();
@@ -2947,6 +2980,16 @@ async function cloneAssessmentTemplateToSection(template,detail,section,{initial
       opensAt:clone.opensAt||null,
       closesAt:clone.closesAt||null,
       durationMinutes:clone.durationMinutes||0,
+      catalogKind:clone.catalogKind||"",
+      officialMaterial:clone.officialMaterial===true,
+      formative:clone.formative===true,
+      countsTowardComposite:clone.countsTowardComposite!==false,
+      frameworkUnitId:clone.frameworkUnitId||"",
+      frameworkUnitNumber:Number(clone.frameworkUnitNumber||0),
+      frameworkUnitTitle:clone.frameworkUnitTitle||"",
+      frameworkTopicId:clone.frameworkTopicId||"",
+      frameworkTopicNumber:clone.frameworkTopicNumber||"",
+      frameworkTopicTitle:clone.frameworkTopicTitle||"",
       updatedAt:serverTimestamp()
     });
   }
@@ -4116,6 +4159,7 @@ document.addEventListener("click",async e=>{
   if(a==="revoke-retake")return revokeRetake(b.dataset.student);
   if(a==="attempt-history")return attemptHistoryModal(b.dataset.student);
   if(a==="reset-entrance-attempt")return resetEntranceAttempt(b.dataset.student);
+  if(a==="toggle-release")return toggleRelease(b.dataset.student);
   if(a==="auto-score")return autoScore();
   if(a==="horizontal-grade")return horizontalGrade(b.dataset.question);
   if(a==="exam-jump"){if(P3.exam&&(P3.exam.assessment.backtracking!==false||Number(b.dataset.index)>P3.exam.index)){P3.exam.index=Number(b.dataset.index);scheduleSave();renderExam();}return;}
