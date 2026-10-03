@@ -88,6 +88,40 @@ async function runAcademicWorkflowChecks(){
       }
     }catch(_){}
     try{
+      const withdrawalSnap=await getDocs(collection(db,"sections",section.id,"withdrawalRequests"));
+      const pending=withdrawalSnap.docs.filter(d=>d.data().status==="Pending");
+      if(pending.length){
+        const id="workflow_withdrawal_"+section.id;
+        const ref=doc(db,"users",uid,"notifications",id),existing=await getDoc(ref);
+        const body=pending.length+" withdrawal request"+(pending.length===1?" is":"s are")+" waiting for review in "+(section.sectionName||section.courseTitle)+".";
+        if(!existing.exists()||existing.data().body!==body)await setDoc(ref,{type:"workflow",title:"Withdrawal requests need review",body,sectionId:section.id,targetPage:"sections",read:false,createdAt:serverTimestamp()},{merge:true});
+      }
+    }catch(_){}
+    try{
+      const [members,pathways]=await Promise.all([
+        getDocs(collection(db,"sections",section.id,"members")),
+        getDocs(collection(db,"sections",section.id,"gradingPathways"))
+      ]);
+      const selected=new Set(pathways.docs.map(d=>d.id));
+      const missing=members.docs.filter(d=>!selected.has(d.id)).length;
+      if(missing){
+        const id="workflow_pathway_"+section.id;
+        const ref=doc(db,"users",uid,"notifications",id),existing=await getDoc(ref);
+        const body=missing+" student"+(missing===1?" has":"s have")+" not selected a grading pathway in "+(section.sectionName||section.courseTitle)+".";
+        if(!existing.exists()||existing.data().body!==body)await setDoc(ref,{type:"workflow",title:"Grading pathways are incomplete",body,sectionId:section.id,targetPage:"sections",read:false,createdAt:serverTimestamp()},{merge:true});
+      }
+    }catch(_){}
+    try{
+      const refs=await getDocs(collection(db,"sections",section.id,"assessmentRefs")),now=Date.now(),horizon=now+48*60*60*1000;
+      const opening=refs.docs.filter(d=>{const t=d.data().opensAt?.toMillis?.();return t&&t>=now&&t<=horizon;});
+      if(opening.length){
+        const id="workflow_assessment_open_"+section.id;
+        const ref=doc(db,"users",uid,"notifications",id),existing=await getDoc(ref);
+        const body=opening.length+" assessment"+(opening.length===1?" opens":"s open")+" within 48 hours in "+(section.sectionName||section.courseTitle)+". Review security, access, and scheduling.";
+        if(!existing.exists()||existing.data().body!==body)await setDoc(ref,{type:"workflow",title:"Assessment administration approaching",body,sectionId:section.id,targetPage:"assessments",read:false,createdAt:serverTimestamp()},{merge:true});
+      }
+    }catch(_){}
+    try{
       const assessments=await getDocs(query(collection(db,"assessments"),where("sectionId","==",section.id)));
       let pendingGrading=0,pendingEntrance=0;
       for(const assessmentDoc of assessments.docs){
