@@ -3,6 +3,7 @@ import {initProductivity} from "./modules/productivity.js?v=20260930-securityenf
 import {initTeaching} from "./modules/teaching.js?v=20260930-securityenforced2";
 import {initAdmin} from "./modules/admin.js?v=20260930-securityenforced2";
 import {initResilience} from "./modules/resilience.js?v=20260930-securityenforced2";
+import {initClassroom} from "./modules/classroom.js?v=20261002-classroom1";
 
 const core=()=>window.TheoriaCore;
 const state=()=>core()?.getState?.();
@@ -12,6 +13,7 @@ const productivity=initProductivity();
 const teaching=initTeaching();
 const admin=initAdmin();
 const resilience=initResilience();
+const classroom=initClassroom();
 
 async function loadFeatureFlags(){
   try{
@@ -140,6 +142,7 @@ function enhanceCurrentContext(){
     const actions=document.querySelector("#courseDetail .detail-top .inline-actions,#courseDetail .detail-hero .inline-actions");
     if(actions&&!actions.querySelector('[data-admin-action="version-course"]'))actions.insertAdjacentHTML("beforeend",'<button class="secondary-btn small-btn" data-admin-action="version-course" data-course="'+s.currentCourse.id+'">New Version</button>');
   }
+  classroom.enhanceAll?.();
   const p3=window.TheoriaPhase3,current=p3?.getCurrent?.();
   if(current&&document.querySelector("#page-assessment-detail.active")){
     const actions=document.querySelector("#assessmentDetail .detail-top .inline-actions");
@@ -177,7 +180,7 @@ window.TheoriaPlatform={
 };
 
 window.TheoriaPhase6={
-  productivity,teaching,admin,resilience,
+  productivity,teaching,admin,resilience,classroom,
   applyFeatureFlags,
   runAcademicWorkflowChecks,
   preflightSecurity:(assessment)=>teaching.preflightSecurity(assessment),
