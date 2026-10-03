@@ -263,6 +263,11 @@ service cloud.firestore {
                 && assessmentData(assessmentId).makeupClosesAt != null
                 && request.time >= assessmentData(assessmentId).makeupOpensAt
                 && request.time <= assessmentData(assessmentId).makeupClosesAt
+                && (
+                  !('makeupStudentIds' in assessmentData(assessmentId))
+                  || assessmentData(assessmentId).makeupStudentIds.size() == 0
+                  || uid() in assessmentData(assessmentId).makeupStudentIds
+                )
               )
             )
           )
