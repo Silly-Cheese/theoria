@@ -2724,3 +2724,33 @@ html{font-size:calc(16px * var(--user-font-scale,1))}
 @media(max-width:430px){
   .makeup-student-grid{grid-template-columns:1fr}
 }
+
+
+/* Current instructional focus */
+.current-course-unit{
+  border-color:#b98d9d!important;
+  box-shadow:0 0 0 2px rgba(122,49,80,.08);
+}
+.current-course-unit>.unit-head{
+  background:linear-gradient(180deg,#fff 0%,#fbf5f7 100%);
+}
+.current-unit-choice-list{
+  display:grid;
+  gap:8px;
+  margin-top:14px;
+}
+.current-unit-choice-list .policy-card{
+  width:100%;
+}
+.current-unit-choice-list .policy-card input{
+  align-self:flex-start;
+  margin-top:3px;
+}
+@media(max-width:760px){
+  .current-unit-choice-list{
+    gap:10px;
+  }
+  .current-unit-choice-list .policy-card{
+    min-height:54px;
+  }
+}
