@@ -233,6 +233,100 @@ function assignedFor(refs,kind,unitId="",topicId=""){
   );
 }
 
+
+function resolvedCurrentUnit(section,units){
+  const rows=safe(units);
+  if(!rows.length)return null;
+  if(section?.currentUnitMode==="manual"&&section?.currentUnitId){
+    const manual=rows.find(u=>u.id===section.currentUnitId);
+    if(manual)return manual;
+  }
+  const pacing=safe(section?.pacingPlan?.units),today=nowDate();
+  const active=pacing.find(row=>{
+    const start=row.startDate?new Date(row.startDate+"T00:00:00"):null;
+    const end=row.endDate?new Date(row.endDate+"T23:59:59"):null;
+    return start&&end&&today>=start&&today<=end;
+  });
+  return rows.find(u=>u.id===active?.unitId)||rows[0]||null;
+}
+
+function currentUnitLabelFromSection(section){
+  if(section?.currentUnitMode==="manual"&&section?.currentUnitId){
+    return "Unit "+(section.currentUnitNumber||"")+" — "+(section.currentUnitTitle||"Current Unit");
+  }
+  const pacing=safe(section?.pacingPlan?.units),today=nowDate();
+  const active=pacing.find(row=>{
+    const start=row.startDate?new Date(row.startDate+"T00:00:00"):null;
+    const end=row.endDate?new Date(row.endDate+"T23:59:59"):null;
+    return start&&end&&today>=start&&today<=end;
+  });
+  return active?("Unit "+(active.unitNumber||"")+" — "+(active.title||"Current Unit")):"Course Guide";
+}
+
+async function saveCurrentUnit(unitId=""){
+  const s=state(),section=s?.currentSection,data=s?.sectionData;
+  if(!s?.user||s.role!=="instructor"||!section||!data)return;
+  if(section.ownerId!==s.user.uid)return toast("Only the section owner can change the current unit.");
+  const units=safe(data.framework?.units);
+  const unit=unitId?units.find(u=>u.id===unitId):null;
+  if(unitId&&!unit)return toast("That unit could not be found.");
+
+  const patch=unit?{
+    currentUnitMode:"manual",
+    currentUnitId:unit.id,
+    currentUnitNumber:Number(unit.order||0),
+    currentUnitTitle:unit.title||"Unit",
+    currentUnitUpdatedAt:serverTimestamp(),
+    currentUnitUpdatedBy:s.user.uid,
+    updatedAt:serverTimestamp()
+  }:{
+    currentUnitMode:"automatic",
+    currentUnitId:"",
+    currentUnitNumber:null,
+    currentUnitTitle:"",
+    currentUnitUpdatedAt:serverTimestamp(),
+    currentUnitUpdatedBy:s.user.uid,
+    updatedAt:serverTimestamp()
+  };
+
+  try{
+    await updateDoc(doc(db,"sections",section.id),patch);
+    Object.assign(section,{
+      ...patch,
+      currentUnitUpdatedAt:Timestamp.now(),
+      updatedAt:Timestamp.now()
+    });
+    const index=s.sections?.findIndex?.(x=>x.id===section.id)??-1;
+    if(index>=0)Object.assign(s.sections[index],section);
+    toast(unit?("Current unit set to Unit "+(unit.order||"")+" — "+unit.title+"."):"Current unit will now follow the pacing calendar.");
+    await core().reloadCurrentSection?.("framework");
+  }catch(error){
+    toast(error.message||"Unable to change the current unit.");
+  }
+}
+
+function currentUnitModal(){
+  const s=state(),section=s?.currentSection,data=s?.sectionData;
+  if(!section||!data||s?.role!=="instructor")return;
+  const units=safe(data.framework?.units);
+  if(!units.length)return toast("Build the course framework before selecting a current unit.");
+  const selected=section.currentUnitMode==="manual"?section.currentUnitId:"";
+  const m=modal({
+    eyebrow:"Instructional Focus",
+    title:"Set Current Unit",
+    body:'<form id="currentUnitForm"><div class="academic-banner"><div class="kicker">'+esc(section.courseCode||"Course")+'</div><h3>Choose what the class is working on now.</h3><p>A manual selection overrides pacing dates until you switch back to automatic pacing.</p></div><div class="current-unit-choice-list">'+
+      '<label class="policy-card"><input type="radio" name="unitId" value="" '+(!selected?'checked':'')+'><div><strong>Automatic from Pacing</strong><span>Theoria chooses the current unit from the unit date ranges.</span></div></label>'+
+      units.map(unit=>'<label class="policy-card"><input type="radio" name="unitId" value="'+unit.id+'" '+(selected===unit.id?'checked':'')+'><div><strong>Unit '+esc(unit.order||"")+' — '+esc(unit.title||"Unit")+'</strong><span>Make this the current instructional focus now.</span></div></label>').join("")+
+      '</div><div class="modal-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Current Unit</button></div></form>'
+  });
+  m.querySelector("#currentUnitForm").onsubmit=async e=>{
+    e.preventDefault();
+    const unitId=String(new FormData(e.currentTarget).get("unitId")||"");
+    closeModal();
+    await saveCurrentUnit(unitId);
+  };
+}
+
 function enhanceCourseGuide(){
   const s=state(),section=s?.currentSection,data=s?.sectionData;
   if(!section||!data||!document.querySelector("#page-section-detail.active"))return;
@@ -242,21 +336,18 @@ function enhanceCourseGuide(){
   const units=data.framework?.units||[],refs=data.assessmentRefs||[];
   const instructor=s.role==="instructor";
   const pacing=section.pacingPlan?.units||[];
-  const today=nowDate();
-  const currentPacing=pacing.find(row=>{
-    const start=row.startDate?new Date(row.startDate+"T00:00:00"):null,end=row.endDate?new Date(row.endDate+"T23:59:59"):null;
-    return start&&end&&today>=start&&today<=end;
-  });
-  const currentUnit=units.find(u=>u.id===currentPacing?.unitId)||units[0]||null;
+  const currentUnit=resolvedCurrentUnit(section,units);
 
   root.insertAdjacentHTML("afterbegin",
     '<div class="academic-banner classroom-flow-banner"><div class="kicker">Course Guide • Learning Flow</div><h3>'+(currentUnit?'Current focus: Unit '+esc(currentUnit.order||"")+' — '+esc(currentUnit.title||""):'Course framework')+'</h3><p>Move from topic instruction to formative practice, unit progress checks, summative assessment, and content/skills review without leaving the course guide.</p>'+
-    (instructor?'<div class="card-actions"><button class="secondary-btn small-btn" data-classroom-action="pacing">Pacing</button><button class="secondary-btn small-btn" data-classroom-action="create-practice-exam">Create Practice Exam</button></div>':'')+
+    (instructor?'<div class="card-actions"><button class="primary-btn small-btn" data-classroom-action="change-current-unit">Change Current Unit</button><button class="secondary-btn small-btn" data-classroom-action="pacing">Pacing</button><button class="secondary-btn small-btn" data-classroom-action="create-practice-exam">Create Practice Exam</button></div>':'')+
     '</div>'
   );
 
   [...root.querySelectorAll(".unit-card")].forEach((card,index)=>{
     const unit=units[index];if(!unit)return;
+    const isCurrent=currentUnit?.id===unit.id;
+    card.classList.toggle("current-course-unit",isCurrent);
     const unitRefs=refs.filter(r=>r.frameworkUnitId===unit.id);
     const progress=assignedFor(refs,"progress-check",unit.id);
     const summative=assignedFor(refs,"unit-assessment",unit.id);
@@ -269,7 +360,7 @@ function enhanceCourseGuide(){
     if(head){
       head.insertAdjacentHTML("beforeend",
         '<div class="course-flow-tools"><div class="course-flow-status"><span>'+unitAssignments.length+' coursework</span><span>'+unitResources.length+' resources</span><span>'+unitPractice.length+' topic practice</span><span>'+esc(pacingText)+'</span>'+(progress.length?'<b>Progress Check assigned</b>':'')+(summative.length?'<b>Unit Assessment assigned</b>':'')+'</div>'+
-        (instructor?'<div class="inline-actions"><button class="secondary-btn small-btn" data-classroom-action="create-progress-check" data-unit="'+unit.id+'">Progress Check</button><button class="primary-btn small-btn" data-classroom-action="create-unit-assessment" data-unit="'+unit.id+'">Unit Assessment</button></div>':'')+
+        (instructor?'<div class="inline-actions">'+(isCurrent?'<span class="badge live">Current Unit</span>':'<button class="text-btn" data-classroom-action="set-current-unit" data-unit="'+unit.id+'">Set Current</button>')+'<button class="secondary-btn small-btn" data-classroom-action="create-progress-check" data-unit="'+unit.id+'">Progress Check</button><button class="primary-btn small-btn" data-classroom-action="create-unit-assessment" data-unit="'+unit.id+'">Unit Assessment</button></div>':'')+
         '</div>'
       );
     }
@@ -298,10 +389,7 @@ function enhanceOverview(){
   const active=document.querySelector('#sectionDetail .tab-btn.active[data-tab="overview"]');if(!active)return;
   const body=document.querySelector("#sectionTabBody");if(!body||body.querySelector(".student-course-now"))return;
   const units=data.framework?.units||[],assignments=(data.assignments||[]).filter(a=>a.status!=="Draft"),refs=(data.assessmentRefs||[]).filter(a=>a.status!=="Draft");
-  const pacing=section.pacingPlan?.units||[],today=nowDate();
-  let current=units[0]||null;
-  const row=pacing.find(x=>{const a=x.startDate?new Date(x.startDate+"T00:00:00"):null,b=x.endDate?new Date(x.endDate+"T23:59:59"):null;return a&&b&&today>=a&&today<=b;});
-  if(row)current=units.find(u=>u.id===row.unitId)||current;
+  const current=resolvedCurrentUnit(section,units);
   const unitAssignments=current?assignments.filter(a=>a.unitId===current.id):[];
   const unitAssessments=current?refs.filter(a=>a.frameworkUnitId===current.id):[];
   body.insertAdjacentHTML("afterbegin",
@@ -426,7 +514,15 @@ function enhanceAssessmentDetail(){
 
 async function enhanceInstructorHome(){
   const s=state();if(!s?.user||s.role!=="instructor"||!document.querySelector("#page-home.active"))return;
-  const stats=document.querySelector("#homeStats");if(!stats||document.querySelector("#instructorMyClasses"))return;
+  const stats=document.querySelector("#homeStats");if(!stats)return;
+  const existing=[...document.querySelectorAll("#instructorMyClasses, .instructor-my-classes[data-classroom-generated='1']")];
+  if(existing.length){
+    existing.slice(1).forEach(node=>node.remove());
+    stats.dataset.classroomInstructorHome="ready";
+    return;
+  }
+  if(stats.dataset.classroomInstructorHome==="loading")return;
+  stats.dataset.classroomInstructorHome="loading";
   const today=new Date(),rows=[];
   for(const section of (s.sections||[]).filter(x=>x.status!=="Archived")){
     let members=0,refs=[];
@@ -437,20 +533,18 @@ async function enhanceInstructorHome(){
       ]);
       members=m.size;refs=r.docs.map(d=>({id:d.id,...d.data()})).filter(x=>x.status!=="Draft");
     }catch(_){}
-    const pacing=safe(section.pacingPlan?.units);
-    const active=pacing.find(row=>{
-      const a=row.startDate?new Date(row.startDate+"T00:00:00"):null,b=row.endDate?new Date(row.endDate+"T23:59:59"):null;
-      return a&&b&&today>=a&&today<=b;
-    });
-    const currentUnit=active?("Unit "+(active.unitNumber||"")+" — "+(active.title||"Current Unit")):"Course Guide";
+    const currentUnit=currentUnitLabelFromSection(section);
     const future=refs.map(ref=>({ref,when:ref.opensAt?.toDate?.()||null})).filter(x=>x.when&&x.when>=today).sort((a,b)=>a.when-b.when)[0];
     rows.push({section,members,currentUnit,next:future||null});
   }
+  document.querySelectorAll("#instructorMyClasses, .instructor-my-classes[data-classroom-generated='1']").forEach(node=>node.remove());
+  if(!document.querySelector("#page-home.active")){stats.dataset.classroomInstructorHome="";return;}
   stats.insertAdjacentHTML("afterend",
-    '<section id="instructorMyClasses" class="instructor-my-classes"><div class="page-head compact-head"><div><div class="panel-title">My Classes</div><p class="page-subtitle">Current unit, enrollment, and next administration for each active teaching section.</p></div></div>'+
+    '<section id="instructorMyClasses" class="instructor-my-classes" data-classroom-generated="1"><div class="page-head compact-head"><div><div class="panel-title">My Classes</div><p class="page-subtitle">Current unit, enrollment, and next administration for each active teaching section.</p></div></div>'+
     (rows.length?'<div class="my-classes-grid">'+rows.map(row=>'<article class="my-class-card"><div class="card-kicker">'+esc(row.section.courseCode||"Course")+' • '+esc(row.section.term||"")+'</div><h3>'+esc(row.section.sectionName||row.section.courseTitle||"Section")+'</h3><div class="detail-list compact-detail-list"><div><span>Students</span><strong>'+row.members+'</strong></div><div><span>Current Focus</span><strong>'+esc(row.currentUnit)+'</strong></div><div><span>Next Assessment</span><strong>'+(row.next?esc(row.next.ref.title||"Assessment")+" • "+esc(row.next.when.toLocaleDateString(undefined,{month:"short",day:"numeric"})):"None scheduled")+'</strong></div></div><div class="card-actions"><button class="primary-btn small-btn" data-action="open-section" data-id="'+row.section.id+'">Open Class</button></div></article>').join("")+'</div>':'<div class="empty-mini">No active teaching sections.</div>')+
     '</section>'
   );
+  stats.dataset.classroomInstructorHome="ready";
 }
 
 async function enhanceStudentHome(){
@@ -471,10 +565,7 @@ async function enhanceStudentHome(){
       refs=rs.docs.map(d=>({id:d.id,...d.data()})).filter(x=>x.status!=="Draft");
       assessmentGrades=gs.docs.map(d=>({id:d.id,...d.data()}));
     }catch(_){}
-    let currentUnitLabel="Course Guide";
-    const pacing=safe(section.pacingPlan?.units);
-    const active=pacing.find(row=>{const a=row.startDate?new Date(row.startDate+"T00:00:00"):null,b=row.endDate?new Date(row.endDate+"T23:59:59"):null;return a&&b&&today>=a&&today<=b;});
-    if(active)currentUnitLabel="Unit "+(active.unitNumber||"")+" — "+(active.title||"Current Unit");
+    const currentUnitLabel=currentUnitLabelFromSection(section);
     cards.push({section,currentUnitLabel});
     assignments.forEach(a=>{
       if(!a.dueDate)return;const d=new Date(a.dueDate+"T23:59:59");
@@ -511,6 +602,8 @@ function bind(){
     if(a==="create-progress-check")return frameworkAssessmentModal("progress-check",b.dataset.unit);
     if(a==="create-unit-assessment")return frameworkAssessmentModal("unit-assessment",b.dataset.unit);
     if(a==="create-practice-exam")return frameworkAssessmentModal("practice-exam");
+    if(a==="change-current-unit")return currentUnitModal();
+    if(a==="set-current-unit")return saveCurrentUnit(b.dataset.unit);
     if(a==="pacing")return pacingModal();
     if(a==="release-policy")return releasePolicyModal();
     if(a==="recommended-practice")return recommendedPracticeModal(b.dataset.id||window.TheoriaPhase3?.getCurrent?.()?.id);
@@ -521,5 +614,5 @@ function bind(){
 
 export function initClassroom(){
   bind();
-  return {enhanceAll,enhanceCourseGuide,enhanceInstructorHome,enhanceStudentHome,frameworkAssessmentModal,recommendedPracticeModal,releasePolicyModal,pacingModal,createAssessmentFromItems};
+  return {enhanceAll,enhanceCourseGuide,enhanceInstructorHome,enhanceStudentHome,currentUnitModal,saveCurrentUnit,frameworkAssessmentModal,recommendedPracticeModal,releasePolicyModal,pacingModal,createAssessmentFromItems};
 }
