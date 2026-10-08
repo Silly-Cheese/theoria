@@ -1,21 +1,25 @@
 import {db,auth,collection,doc,getDocs,getDoc,addDoc,setDoc,updateDoc,serverTimestamp,query,where} from "./firebase.js";
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const $=id=>document.getElementById(id);
-let current=null,me=null,records=[],reqs=[],offerings=[],policies=[],attendance=[],guardianLinks=[];
+let current=null,me=null,records=[],reqs=[],offerings=[],policies=[],attendance=[],guardianLinks=[],members=[],studentLabels=new Map();
 const roleAdmin=()=>current && me && (current.ownerUid===me.uid||window.TheoriaSchoolAdmin?.canAdmin?.(current.id));
 async function read(name){try{const s=await getDocs(collection(db,"institutions",current.id,name));return s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){console.warn(name,e);return [];}}
-async function refresh(){if(!current||!me)return;const id=current.id;const result=await Promise.all(["studentRecords","requests","offerings","graduationPolicies","attendance","guardianLinks"].map(read));if(id!==current?.id)return;[records,reqs,offerings,policies,attendance,guardianLinks]=result;draw();}
+async function refresh(){if(!current||!me)return;const id=current.id;const result=await Promise.all(["studentRecords","requests","offerings","graduationPolicies","attendance","guardianLinks","members"].map(read));if(id!==current?.id)return;[records,reqs,offerings,policies,attendance,guardianLinks,members]=result;
+ const ids=[...new Set([...members.map(x=>x.studentUid),...reqs.map(x=>x.studentUid),...records.map(x=>x.studentUid)].filter(Boolean))];
+ studentLabels=new Map();await Promise.all(ids.map(async uid=>{try{const snap=await getDoc(doc(db,"directory",uid));if(snap.exists())studentLabels.set(uid,snap.data().displayName||snap.data().name||snap.data().email||uid);}catch(error){console.warn("Directory label unavailable",error);}}));draw();}
+const studentName=uid=>studentLabels.get(uid)||members.find(m=>m.studentUid===uid)?.studentName||reqs.find(r=>r.studentUid===uid)?.studentName||uid;
+const studentOptions=()=>[...new Set([...members.map(m=>m.studentUid),...reqs.map(r=>r.studentUid),...records.map(r=>r.studentUid)].filter(Boolean))].map(uid=>[uid,studentName(uid)]);
 const stat=(value,label)=>'<div><strong>'+esc(value)+'</strong><span>'+esc(label)+'</span></div>';
 function draw(){
  const root=$("schoolRegistrarExpansion");if(!root)return;
  if(!roleAdmin()){root.innerHTML="";return;}
- root.innerHTML='<section class="school-admin"><div class="eyebrow">Student Services</div><h2>Registrar & Student Records</h2><p class="school-subtle">Record verified enrollments, grade certifications, attendance and graduation requirements. Approval alone never creates a section membership.</p><div class="school-metrics">'+stat(records.length,"Student records")+stat(reqs.filter(x=>x.status==="approved").length,"Approved requests")+stat(policies.length,"Graduation requirements")+stat(attendance.length,"Attendance entries")+'</div><div class="school-admin-tabs">'+["Enrollment","Records","Attendance","Graduation","Guardians"].map((x,i)=>'<button data-reg-tab="'+i+'" class="'+(tab===i?"selected":"")+'">'+x+'</button>').join("")+'</div><div id="schoolRegistrarBody">'+body()+'</div></section>';
+ root.innerHTML='<section class="school-admin"><div class="eyebrow">Student Services</div><h2>Registrar & Student Records</h2><p class="school-subtle">Record verified enrollments, grade certifications, attendance and graduation requirements. Approval alone never creates a section membership.</p><div class="school-metrics">'+stat(records.length,"Student records")+stat(reqs.filter(x=>x.status==="pending").length,"Pending requests")+stat(policies.length,"Graduation requirements")+stat(attendance.length,"Attendance entries")+'</div><div class="school-admin-tabs">'+["Enrollment","Records","Attendance","Graduation","Guardians"].map((x,i)=>'<button data-reg-tab="'+i+'" class="'+(tab===i?"selected":"")+'">'+x+'</button>').join("")+'</div><div id="schoolRegistrarBody">'+body()+'</div></section>';
 }
 let tab=0;
 const action=(name,id)=>'<button class="secondary-btn small-btn" data-reg-action="'+id+'">'+name+'</button>';
 const list=(arr,fn)=>arr.length?'<div class="school-list">'+arr.map(v=>'<div class="school-entry">'+fn(v)+'</div>').join("")+'</div>':'<p class="school-empty">No records in this category yet.</p>';
 function body(){
- if(tab===0)return '<div class="school-section-head"><h3>Approved registration requests</h3>'+action("Refresh","refresh")+'</div>'+list(reqs.filter(r=>r.status==="approved"),r=>'<strong>'+esc(r.studentName||r.studentUid)+'</strong><span>'+esc(offerings.find(o=>o.id===r.offeringId)?.title||r.offeringId)+'</span>'+action("Finalize enrollment","finalize:"+r.id))+'<p class="school-subtle">The registrar confirms placement here; creating actual Theoria section membership requires the established classroom enrollment workflow.</p>';
+ if(tab===0)return '<div class="school-section-head"><h3>All registration requests</h3>'+action("Refresh","refresh")+'</div>'+list([...reqs].sort((a,b)=>({pending:0,approved:1,declined:2}[a.status]??3)-({pending:0,approved:1,declined:2}[b.status]??3)),r=>'<strong>'+esc(studentName(r.studentUid))+'</strong><span>'+esc(offerings.find(o=>o.id===r.offeringId)?.title||r.offeringId)+' · '+esc(r.status)+'</span>'+(r.status==="pending"?action("Approve","decision:approved:"+r.id)+action("Decline","decision:declined:"+r.id):r.status==="approved"?action("Finalize placement","finalize:"+r.id):''))+'<p class="school-subtle">Requests appear here as soon as they are submitted, including those awaiting approval. Final placement remains separate from classroom roster enrollment.</p>';
  if(tab===1)return '<div class="school-section-head"><h3>Institutional academic records</h3>'+action("New record","record")+'</div>'+list(records,r=>'<strong>'+esc(r.studentName||r.studentUid)+'</strong><span>'+esc(r.courseTitle||"Course")+' · '+esc(r.finalGrade||"Pending")+' · '+esc(r.status)+'</span>')+'<p class="school-subtle">Records are separate from existing Theoria instructor-certified transcripts and do not overwrite them.</p>';
  if(tab===2)return '<div class="school-section-head"><h3>Class attendance</h3>'+action("Record attendance","attendance")+'</div>'+list(attendance,a=>'<strong>'+esc(a.studentName||a.studentUid)+'</strong><span>'+esc(a.day)+' · '+esc(a.status)+' · '+esc(a.offeringTitle)+'</span>');
  if(tab===3)return '<div class="school-section-head"><h3>Graduation requirements</h3>'+action("Add requirement","policy")+'</div>'+list(policies,p=>'<strong>'+esc(p.name)+'</strong><span>'+esc(p.requiredCredits)+' required credits · '+esc(p.description)+'</span>')+'<p class="school-subtle">Requirements are defined here; automatic graduation certification requires verified course-credit equivalency.</p>';
@@ -31,6 +35,13 @@ const options=(key,label,values)=>'<label>'+label+'<select name="'+key+'">'+valu
 function handle(action){
  if(!roleAdmin())return;
  if(action==="refresh"){refresh();return;}
+ if(action.startsWith("decision:")){
+  const parts=action.split(":"),status=parts[1],id=parts.slice(2).join(":");const r=reqs.find(x=>x.id===id);
+  if(!r||r.status!=="pending"||!["approved","declined"].includes(status))return;
+  if(!confirm((status==="approved"?"Approve":"Decline")+" "+studentName(r.studentUid)+"'s request?"))return;
+  updateDoc(doc(db,"institutions",current.id,"requests",id),{status,reviewedBy:me.uid,reviewedAt:serverTimestamp()}).then(refresh).catch(err=>alert("Unable to review request: "+err.message));
+  return;
+ }
  if(action.startsWith("finalize:")){
   const r=reqs.find(x=>x.id===action.slice(9));if(!r)return;
   modal("Finalize institutional placement",'<p class="school-subtle">This confirms institutional placement only, not access to the teaching section.</p>'+input("sectionReference","Section ID or code")+input("studentName","Student name"),async f=>{
@@ -44,7 +55,14 @@ function handle(action){
  });
  if(action==="attendance")modal("Record student attendance",input("studentUid","Student UID")+input("studentName","Student name")+input("offeringTitle","Course / section")+input("day","Class date","date")+options("status","Attendance status",[["present","Present"],["absent","Absent"],["late","Late"],["excused","Excused"]]),async f=>addDoc(collection(db,"institutions",current.id,"attendance"),{studentUid:f.get("studentUid").trim(),studentName:f.get("studentName").trim(),offeringTitle:f.get("offeringTitle").trim(),day:f.get("day"),status:f.get("status"),recordedBy:me.uid,recordedAt:serverTimestamp()}));
  if(action==="policy")modal("Add graduation requirement",input("name","Subject / requirement")+input("requiredCredits","Credits required","number")+input("description","Requirement notes"),async f=>addDoc(collection(db,"institutions",current.id,"graduationPolicies"),{name:f.get("name").trim(),requiredCredits:Number(f.get("requiredCredits")),description:f.get("description").trim(),createdBy:me.uid,createdAt:serverTimestamp()}));
- if(action==="guardian")modal("Record guardian verification request",input("studentUid","Student UID")+input("studentName","Student name")+input("guardianEmail","Guardian email","email"),async f=>addDoc(collection(db,"institutions",current.id,"guardianLinks"),{studentUid:f.get("studentUid").trim(),studentName:f.get("studentName").trim(),guardianEmail:f.get("guardianEmail").trim().toLowerCase(),status:"pending_verification",createdBy:me.uid,createdAt:serverTimestamp()}));
+ if(action==="guardian"){
+  const available=studentOptions();
+  if(!available.length){alert("No students found in school membership or enrollment records. Students must request to join the institution first.");return;}
+  modal("Invite parent or guardian",options("studentUid","Select student",available)+input("guardianEmail","Parent or guardian email","email"),async f=>{
+    const uid=String(f.get("studentUid")||"");if(!available.some(([id])=>id===uid))throw Error("Choose a student from the list.");
+    await addDoc(collection(db,"institutions",current.id,"guardianLinks"),{studentUid:uid,studentName:studentName(uid),guardianEmail:f.get("guardianEmail").trim().toLowerCase(),status:"pending_verification",createdBy:me.uid,createdAt:serverTimestamp()});
+  });return;
+ }
 }
 document.addEventListener("click",event=>{
  const t=event.target.closest("[data-reg-tab]");if(t){tab=Number(t.dataset.regTab);draw();return;}
