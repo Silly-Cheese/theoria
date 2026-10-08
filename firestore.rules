@@ -1276,7 +1276,19 @@ service cloud.firestore {
       }
       match /staff/{staffUid} {
         allow read: if signedIn() && (institutionOwner(instId) || staffUid == uid());
-        allow create, update: if institutionOwner(instId)
+        allow create: if (
+          institutionOwner(instId)
+          || (
+            signedIn()
+            && staffUid == uid()
+            && request.auth.token.email != null
+            && exists(/databases/$(database)/documents/institutions/$(instId)/invitations/$(request.auth.token.email))
+            && get(/databases/$(database)/documents/institutions/$(instId)/invitations/$(request.auth.token.email)).data.status == 'pending'
+            && request.resource.data.role == get(/databases/$(database)/documents/institutions/$(instId)/invitations/$(request.auth.token.email)).data.role
+            && request.resource.data.email == request.auth.token.email
+            && request.resource.data.assignedBy == get(/databases/$(database)/documents/institutions/$(instId)/invitations/$(request.auth.token.email)).data.invitedBy
+          )
+        )
           && request.resource.data.keys().hasOnly(['uid','email','displayName','role','assignedBy','assignedAt'])
           && request.resource.data.uid == staffUid
           && request.resource.data.email is string
@@ -1284,6 +1296,19 @@ service cloud.firestore {
           && request.resource.data.role in ['principal','assistant_principal','district_admin','registrar','counselor','department_head','instructor','staff']
           && request.resource.data.assignedBy == uid()
           && request.resource.data.assignedAt == request.time;
+        allow update, delete: if institutionOwner(instId);
+      }
+      match /invitations/{email} {
+        allow get: if institutionOwner(instId)
+          || (signedIn() && request.auth.token.email == email);
+        allow list: if institutionOwner(instId);
+        allow create, update: if institutionOwner(instId)
+          && request.resource.data.keys().hasOnly(['email','role','status','invitedBy','invitedAt'])
+          && request.resource.data.email == email
+          && request.resource.data.status == 'pending'
+          && request.resource.data.role in ['principal','assistant_principal','district_admin','registrar','counselor','department_head','instructor','staff']
+          && request.resource.data.invitedBy == uid()
+          && request.resource.data.invitedAt == request.time;
         allow delete: if institutionOwner(instId);
       }
 
