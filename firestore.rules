@@ -1283,7 +1283,7 @@ service cloud.firestore {
         allow update, delete: if false;
       }
       match /staff/{staffUid} {
-        allow read: if signedIn() && (institutionOwner(instId) || staffUid == uid());
+        allow read: if signedIn() && (institutionAdmin(instId) || staffUid == uid());
         allow create: if (
           institutionOwner(instId)
           || (
