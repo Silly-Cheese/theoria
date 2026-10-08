@@ -50,7 +50,7 @@ async function render(){
  root.innerHTML='<div class="institution-heading"><div><div class="eyebrow">'+escapeHTML(inst.kind==="district"?"District workspace":"School course catalog")+'</div><h2>'+escapeHTML(inst.name)+'</h2><p class="page-subtitle">'+escapeHTML(inst.description||"Academic programs and registration")+'</p></div>'+(isManager(inst)?'<button class="secondary-btn small-btn" data-inst-action="new-offering">Publish offering</button>':'')+'</div>'+
  (inst.parentDistrictId?'<p class="fineprint">Part of a school district</p>':'')+
  (profileRole==="student"?'<div class="institution-member-status" id="institutionMemberStatus"></div>':'')+'<div id="institutionOfferings" aria-live="polite">Loading course catalog…</div><div id="schoolManagementArea"></div>';
- const membership=memberships.get(inst.id);const statusEl=$("#institutionMemberStatus");if(statusEl)statusEl.innerHTML=membership?'<p class="page-subtitle">School membership: <strong>'+escapeHTML(membership.status)+'</strong></p>':(inst.kind==="school"?'<p class="page-subtitle">You are not enrolled in this school yet.</p><button class="primary-btn" data-inst-join="'+escapeHTML(inst.id)+'">Request to join school</button>':'<p class="page-subtitle">Select a school within this district to request membership.</p>');
+ const membership=memberships.get(inst.id);const statusEl=$("#institutionMemberStatus");if(statusEl)statusEl.innerHTML=membership?'<p class="page-subtitle">School membership: <strong>'+escapeHTML(membership.status)+'</strong></p>' :'<p class="page-subtitle">You have not joined this '+(inst.kind==="district"?'district':'school')+' yet.</p><button class="primary-btn" data-inst-join="'+escapeHTML(inst.id)+'">Request to join '+(inst.kind==="district"?'district':'school')+'</button>';
  try{
   const snap=await getDocs(query(collection(db,"institutions",inst.id,"offerings"),where("published","==",true)));
   let own=[];
@@ -141,7 +141,7 @@ async function createOffering(){
 }
 async function requestMembership(instId){
  if(profileRole!=="student")return;
- const target=institutions.find(i=>i.id===instId);if(!target||target.kind!=="school")return;
+ const target=institutions.find(i=>i.id===instId);if(!target||!["school","district"].includes(target.kind))return;
  try{await setDoc(doc(db,"institutions",instId,"members",currentUser.uid),{studentUid:currentUser.uid,status:"pending",requestedAt:serverTimestamp()});await refresh();notice("Membership request submitted. School administration must approve it.");}
  catch(error){notice("Could not request membership: "+error.message);}
 }
