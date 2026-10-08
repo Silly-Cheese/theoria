@@ -3,12 +3,12 @@ const e=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt
 const roles=["principal","assistant_principal","district_admin","registrar","counselor","department_head","instructor","staff"];
 let memberAdmin=false;
 const canWrite=(inst,me)=>inst.ownerUid===me?.uid||memberAdmin;
-let inst=null,user=null,terms=[],offerings=[],staff=[],requests=[],departments=[],invitations=[],activeTab="overview";
+let inst=null,user=null,terms=[],offerings=[],staff=[],requests=[],departments=[],invitations=[],members=[],activeTab="overview";
 const html=(s)=>document.getElementById(s);
 async function readSub(name){try{const s=await getDocs(collection(db,"institutions",inst.id,name));return s.docs.map(d=>({id:d.id,...d.data()}));}catch(x){console.warn("School workspace:",name,x);return [];}}
-async function load(){if(!inst||!user)return;const saved=inst.id;const [t,o,s,r,d,i]=await Promise.all(["terms","offerings","staff","requests","departments","invitations"].map(readSub));if(inst?.id!==saved)return;[terms,offerings,staff,requests,departments,invitations]=[t,o,s,r,d,i];paint();window.TheoriaRegistrar?.mount(inst,user);}
+async function load(){if(!inst||!user)return;const saved=inst.id;const [t,o,s,r,d,i,m]=await Promise.all(["terms","offerings","staff","requests","departments","invitations","members"].map(readSub));if(inst?.id!==saved)return;[terms,offerings,staff,requests,departments,invitations,members]=[t,o,s,r,d,i,m];paint();window.TheoriaRegistrar?.mount(inst,user);}
 const actionButton=(label,act)=>'<button type="button" class="secondary-btn small-btn" data-school-action="'+act+'">'+label+'</button>';
-const tabs=[["overview","Overview"],["terms","Academic years"],["departments","Departments"],["faculty","Faculty & roles"],["schedule","Schedules"],["registrar","Registrar"]];
+const tabs=[["overview","Overview"],["terms","Academic years"],["departments","Departments"],["faculty","Faculty & roles"],["schedule","Schedules"],["registrar","Registrar"],["membership","Student membership"]];
 function paint(){
  const root=html("schoolManagementArea");if(!root)return;
  if(!html("schoolRegistrarExpansion")){const extra=document.createElement("div");extra.id="schoolRegistrarExpansion";root.insertAdjacentElement("afterend",extra);}
@@ -21,6 +21,7 @@ function body(){
  if(activeTab==="departments")return '<div class="school-section-head"><h3>Departments & curriculum</h3>'+actionButton("Create department","department")+'</div>'+listing(departments,d=>'<strong>'+e(d.name)+'</strong><span>'+e(d.description)+'</span>');
  if(activeTab==="faculty")return '<div class="school-section-head"><h3>Administrative and teaching staff</h3>'+actionButton("Assign staff","staff")+'</div>'+listing(staff,s=>'<strong>'+e(s.displayName||s.email)+'</strong><span>'+e(s.email)+' · '+e(s.role.replaceAll("_"," "))+'</span>')+'<h4>Pending invitations</h4>'+listing(invitations.filter(i=>i.status==="pending"),i=>'<strong>'+e(i.email)+'</strong><span>'+e(i.role.replaceAll("_"," "))+' · Pending acceptance</span>')+'<p class="school-subtle">Staff receive access only after signing in and accepting their invitation.</p>';
  if(activeTab==="schedule")return '<div class="school-section-head"><h3>Class schedule & course offerings</h3>'+actionButton("Schedule a course","schedule")+'</div>'+listing(offerings,o=>'<strong>'+e(o.code||"COURSE")+' — '+e(o.title)+'</strong><span>'+e(o.term)+' · '+e(o.period||"Period not set")+' · '+e(o.room||"Room TBD")+'</span><span>Seats: '+e(o.capacity||"Unlimited")+' · '+e(o.instructorName||"Unassigned")+'</span>')+'<p class="school-subtle">Scheduling entries describe offerings; actual enrollment remains a separate approval step.</p>';
+ if(activeTab==="membership")return '<div class="school-section-head"><h3>Student school membership requests</h3>'+actionButton("Refresh","refresh")+'</div>'+listing(members,m=>'<strong>'+e(m.studentUid)+'</strong><span>'+e(m.status)+'</span>'+(m.status==="pending"?'<div class="institution-actions"><button class="secondary-btn small-btn" data-school-member="'+e(m.id)+'" data-school-decision="active">Approve</button> <button class="secondary-btn small-btn" data-school-member="'+e(m.id)+'" data-school-decision="declined">Decline</button></div>':''));
  if(activeTab==="registrar")return '<div class="school-section-head"><h3>Enrollment request register</h3>'+actionButton("Refresh","refresh")+'</div>'+listing(requests,r=>'<strong>'+e(r.studentName||r.studentUid)+'</strong><span>Offering: '+e(offerings.find(o=>o.id===r.offeringId)?.title||r.offeringId)+' · '+e(r.status)+'</span>')+'<p class="school-subtle">Approved requests are not automatically registered into a live classroom section. The registrar must complete roster assignment.</p>';
  return "";
 }
@@ -54,7 +55,11 @@ function begin(action){
   await updateDoc(doc(db,"institutions",inst.id,"offerings",id),{period:String(f.get("period")||"").slice(0,80),room:String(f.get("room")||"").slice(0,100),capacity:cap,instructorUid:member?.uid||"",instructorName:member?.displayName||"",scheduledBy:user.uid,scheduledAt:serverTimestamp()});
  });
 }
-document.addEventListener("click",evt=>{
+document.addEventListener("click",async evt=>{
+ const member=evt.target.closest("[data-school-member]");
+ if(member){if(!canWrite(inst,user))return;try{
+ await updateDoc(doc(db,"institutions",inst.id,"members",member.dataset.schoolMember),{status:member.dataset.schoolDecision,reviewedBy:user.uid,reviewedAt:serverTimestamp()});await load();
+ }catch(error){alert("Unable to review membership: "+error.message);}return;}
  const tab=evt.target.closest("[data-school-tab]");if(tab){activeTab=tab.dataset.schoolTab;paint();return;}
  const act=evt.target.closest("[data-school-action]");if(act)begin(act.dataset.schoolAction);
 });
