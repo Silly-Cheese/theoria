@@ -1252,6 +1252,41 @@ service cloud.firestore {
         );
       allow update, delete: if false;
 
+      match /terms/{termId} {
+        allow read: if signedIn() && (institutionOwner(instId) || get(/databases/$(database)/documents/institutions/$(instId)).data.status == 'active');
+        allow create: if institutionOwner(instId)
+          && request.resource.data.keys().hasOnly(['title','startDate','endDate','gradingScheme','createdBy','createdAt'])
+          && request.resource.data.createdBy == uid()
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.title is string && request.resource.data.title.size() <= 120
+          && request.resource.data.startDate is string && request.resource.data.endDate is string
+          && request.resource.data.startDate <= request.resource.data.endDate
+          && request.resource.data.gradingScheme in ['standard','semester','quarter'];
+        allow update, delete: if false;
+      }
+      match /departments/{departmentId} {
+        allow read: if signedIn() && (institutionOwner(instId) || get(/databases/$(database)/documents/institutions/$(instId)).data.status == 'active');
+        allow create: if institutionOwner(instId)
+          && request.resource.data.keys().hasOnly(['name','description','createdBy','createdAt'])
+          && request.resource.data.createdBy == uid()
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.name is string && request.resource.data.name.size() <= 120
+          && request.resource.data.description is string && request.resource.data.description.size() <= 500;
+        allow update, delete: if false;
+      }
+      match /staff/{staffUid} {
+        allow read: if signedIn() && (institutionOwner(instId) || staffUid == uid());
+        allow create, update: if institutionOwner(instId)
+          && request.resource.data.keys().hasOnly(['uid','email','displayName','role','assignedBy','assignedAt'])
+          && request.resource.data.uid == staffUid
+          && request.resource.data.email is string
+          && request.resource.data.displayName is string
+          && request.resource.data.role in ['principal','assistant_principal','district_admin','registrar','counselor','department_head','instructor','staff']
+          && request.resource.data.assignedBy == uid()
+          && request.resource.data.assignedAt == request.time;
+        allow delete: if institutionOwner(instId);
+      }
+
       match /offerings/{offeringId} {
         allow read: if signedIn() && (resource.data.published == true || institutionOwner(instId));
         allow create: if institutionOwner(instId)
@@ -1273,7 +1308,16 @@ service cloud.firestore {
           && request.resource.data.openAt < request.resource.data.closeAt
           && request.resource.data.published == true
           && request.resource.data.createdAt == request.time;
-        allow update, delete: if false;
+        allow update: if institutionOwner(instId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['period','room','capacity','instructorUid','instructorName','scheduledBy','scheduledAt'])
+          && request.resource.data.period is string && request.resource.data.period.size() <= 80
+          && request.resource.data.room is string && request.resource.data.room.size() <= 100
+          && request.resource.data.capacity is int && request.resource.data.capacity >= 0 && request.resource.data.capacity <= 10000
+          && request.resource.data.instructorUid is string
+          && request.resource.data.instructorName is string
+          && request.resource.data.scheduledBy == uid()
+          && request.resource.data.scheduledAt == request.time;
+        allow delete: if false;
       }
 
       match /requests/{requestId} {
