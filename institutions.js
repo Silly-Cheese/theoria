@@ -5,10 +5,10 @@ const $=s=>document.querySelector(s);
 const escapeHTML=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const safeDate=v=>v?new Date(v+"T00:00:00").getTime():NaN;
 const today=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");};
-let currentUser=null, institutions=[], activeId="", busy=false, onboardingShownFor="";
+let currentUser=null, institutions=[], activeId="", busy=false, onboardingShownFor="", managedInstitutionIds=new Set();
 function notice(msg){const el=$("#institutionNotice");if(el){el.textContent=msg;el.hidden=false;} }
 function validName(s){return String(s||"").trim().slice(0,100);}
-function isManager(inst){return inst?.ownerUid===currentUser?.uid;}
+function isManager(inst){return !!inst&&(inst.ownerUid===currentUser?.uid||managedInstitutionIds.has(inst.id));}
 async function refresh(){
  if(!currentUser)return;
  const [mine,all]=await Promise.all([
@@ -18,6 +18,8 @@ async function refresh(){
  const map=new Map();
  [...mine.docs,...all.docs].forEach(d=>map.set(d.id,{id:d.id,...d.data()}));
  institutions=[...map.values()].sort((a,b)=>a.name.localeCompare(b.name));
+ managedInstitutionIds=new Set();
+ await Promise.all(institutions.filter(i=>i.ownerUid!==currentUser.uid).map(async i=>{try{const m=await getDoc(doc(db,"institutions",i.id,"staff",currentUser.uid));if(m.exists()&&["principal","assistant_principal","district_admin","registrar"].includes(m.data().role))managedInstitutionIds.add(i.id);}catch(e){/* No membership */}}));
  if(!institutions.find(i=>i.id===activeId))activeId=institutions.find(i=>isManager(i))?.id||institutions[0]?.id||"";
  await render();
 }
