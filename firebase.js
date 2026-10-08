@@ -5,7 +5,9 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut,
-  updateProfile
+  updateProfile,
+  sendEmailVerification,
+  reload
 } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
 import {
   getFirestore,
@@ -43,7 +45,7 @@ export {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut,
-  updateProfile,
+  updateProfile, sendEmailVerification, reload,
   doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc,
   collection, getDocs, query, where, orderBy, writeBatch, Timestamp,
   serverTimestamp
