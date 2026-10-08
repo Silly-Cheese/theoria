@@ -22,8 +22,17 @@ async function refresh(){
  managedInstitutionIds=new Set();memberships=new Map();
  await Promise.all(institutions.map(async i=>{try{const m=await getDoc(doc(db,"institutions",i.id,"members",currentUser.uid));if(m.exists())memberships.set(i.id,m.data());}catch(err){console.warn(err);}}));
  await Promise.all(institutions.filter(i=>i.ownerUid!==currentUser.uid).map(async i=>{try{const m=await getDoc(doc(db,"institutions",i.id,"staff",currentUser.uid));if(m.exists()&&["principal","assistant_principal","district_admin","registrar"].includes(m.data().role))managedInstitutionIds.add(i.id);}catch(e){/* No membership */}}));
- if(!institutions.find(i=>i.id===activeId))activeId=institutions.find(i=>isManager(i))?.id||institutions[0]?.id||"";
+ if(!institutions.find(i=>i.id===activeId))activeId=institutions.find(i=>isManager(i))?.id||institutions.find(i=>i.kind==="school")?.id||institutions[0]?.id||"";
  await render();
+ const joinNotice=$("#studentSchoolNotice");
+ if(joinNotice)joinNotice.remove();
+ if(profileRole==="student"&&![...memberships.values()].some(m=>m.status==="active")){
+  const home=$("#page-home");
+  if(home){const banner=document.createElement("div");banner.id="studentSchoolNotice";banner.className="institution-notice";banner.innerHTML='<strong>Connect with your school</strong><p>To register for school courses, select your school and request membership. You can continue existing independent coursework while the school reviews your request.</p><button type="button" class="primary-btn" id="findSchoolBtn">Find my school</button>';
+  home.insertBefore(banner,home.firstChild);
+  banner.querySelector("button").onclick=()=>document.querySelector('[data-page="institutions"]')?.click();
+  }
+ }
 }
 function shell(){
  return '<div class="page-head"><div><div class="eyebrow">Theoria Institutions</div><h1 class="page-title">Schools & Districts</h1><p class="page-subtitle">Create academic institutions, publish school catalogs, and manage defined course-registration windows. Independent courses remain unchanged.</p></div></div>'+
