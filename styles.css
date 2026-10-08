@@ -2790,3 +2790,12 @@ html{font-size:calc(16px * var(--user-font-scale,1))}
 .institution-request-list{padding:20px}
 .institution-request{display:flex;align-items:center;flex-wrap:wrap;gap:10px;border-bottom:1px solid var(--line);padding:12px 0}
 @media(max-width:850px){.institution-grid{grid-template-columns:1fr}.institution-date-pair{grid-template-columns:1fr}.theoria-intro{padding:22px 18px}.institution-heading,.institution-offering-top{flex-wrap:wrap}}
+
+/* Account creation: third academic role and district onboarding */
+.role-picker{grid-template-columns:repeat(3,minmax(0,1fr));align-items:stretch}
+.role-picker .role-option{min-width:0;min-height:106px}
+.district-registration-fields{margin:18px 0;padding:17px;background:var(--paper2);border:1px solid var(--line);border-radius:var(--radius)}
+.district-registration-fields .field{margin-bottom:12px}
+.district-registration-fields select{width:100%;padding:12px;border:1px solid var(--lineDark);border-radius:8px;background:var(--white);color:var(--ink)}
+#districtSetupDetails[hidden]{display:none}
+@media(max-width:1150px){.role-picker{grid-template-columns:1fr}.role-picker .role-option{min-height:0}}
