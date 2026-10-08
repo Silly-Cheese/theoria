@@ -1296,7 +1296,7 @@ service cloud.firestore {
         allow update, delete: if false;
       }
       match /studentRecords/{recordId} {
-        allow read: if institutionAdmin(instId) || (signedIn() && resource.data.studentUid == uid());
+        allow read: if institutionAdmin(instId) || (signedIn() && resource.data.studentUid == uid()) || guardianApproved(resource.data.studentUid);
         allow create: if institutionAdmin(instId)
           && request.resource.data.keys().hasOnly(['studentUid','studentName','courseTitle','credits','finalGrade','status','recordedBy','recordedAt'])
           && request.resource.data.recordedBy == uid()
@@ -1308,7 +1308,7 @@ service cloud.firestore {
         allow update, delete: if false;
       }
       match /attendance/{attendanceId} {
-        allow read: if institutionAdmin(instId) || (signedIn() && resource.data.studentUid == uid());
+        allow read: if institutionAdmin(instId) || (signedIn() && resource.data.studentUid == uid()) || guardianApproved(resource.data.studentUid);
         allow create: if institutionAdmin(instId)
           && request.resource.data.keys().hasOnly(['studentUid','studentName','offeringTitle','day','status','recordedBy','recordedAt'])
           && request.resource.data.recordedBy == uid() && request.resource.data.recordedAt == request.time
