@@ -27,7 +27,7 @@ function body(){
  if(tab===1)return '<div class="school-section-head"><h3>Institutional academic records</h3>'+action("New record","record")+'</div>'+list(records,r=>'<strong>'+esc(r.studentName||r.studentUid)+'</strong><span>'+esc(r.courseTitle||"Course")+' · '+esc(r.finalGrade||"Pending")+' · '+esc(r.status)+'</span>')+'<p class="school-subtle">Records are separate from existing Theoria instructor-certified transcripts and do not overwrite them.</p>';
  if(tab===2)return '<div class="school-section-head"><h3>Class attendance</h3>'+action("Record attendance","attendance")+'</div>'+list(attendance,a=>'<strong>'+esc(a.studentName||a.studentUid)+'</strong><span>'+esc(a.day)+' · '+esc(a.status)+' · '+esc(a.offeringTitle)+'</span>');
  if(tab===3)return '<div class="school-section-head"><h3>Graduation requirements</h3>'+action("Add requirement","policy")+'</div>'+list(policies,p=>'<strong>'+esc(p.name)+'</strong><span>'+esc(p.requiredCredits)+' required credits · '+esc(p.description)+'</span>')+'<p class="school-subtle">Requirements are defined here; automatic graduation certification requires verified course-credit equivalency.</p>';
- return '<div class="school-section-head"><h3>Guardian access requests</h3>'+action("Record guardian link","guardian")+'</div>'+list(guardianLinks,g=>'<strong>'+esc(g.studentName||g.studentUid)+'</strong><span>'+esc(g.guardianEmail)+' · '+esc(g.status)+'</span>')+'<p class="school-subtle">Guardian requests are recorded for verification only. No student data is exposed to guardians by this workflow.</p>';
+ return '<div class="school-section-head"><h3>Guardian access requests</h3>'+action("Record guardian link","guardian")+'</div>'+list(guardianLinks,g=>'<strong>'+esc(g.studentName||g.studentUid)+'</strong><span>'+esc(g.guardianEmail)+' · '+esc(g.status)+'</span>'+action('Copy setup link','copy-parent:'+g.id))+'<p class="school-subtle">Guardian requests are recorded for verification only. No student data is exposed to guardians by this workflow.</p>';
 }
 function modal(title,fields,save){
  const host=$("modalRoot");host.innerHTML='<div class="modal-backdrop institution-modal-backdrop"><div class="modal institution-dialog"><div class="modal-header"><h2>'+esc(title)+'</h2><button type="button" class="secondary-btn" id="regClose">Close</button></div><form id="regForm" class="institution-form">'+fields+'<button class="primary-btn" type="submit">Save</button><div id="regError" role="alert"></div></form></div></div>';
@@ -39,6 +39,7 @@ const options=(key,label,values)=>'<label>'+label+'<select name="'+key+'">'+valu
 function handle(action){
  if(!roleAdmin())return;
  if(action==="refresh"){refresh();return;}
+ if(action.startsWith("copy-parent:")){const link=guardianLinks.find(g=>g.id===action.slice(12));if(!link)return;const url=new URL(location.href);url.search="";url.hash="";url.searchParams.set("parentInvite",current.id+"."+link.id);navigator.clipboard.writeText(url.toString()).then(()=>alert("Parent setup link copied. Send it only to the intended guardian.")).catch(()=>prompt("Copy parent setup link:",url.toString()));return;}
  if(action.startsWith("member:")){
   const parts=action.split(":"),status=parts[1],id=parts.slice(2).join(":");
   const membership=members.find(m=>m.id===id);
