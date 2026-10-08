@@ -5,7 +5,7 @@ const $=s=>document.querySelector(s);
 const escapeHTML=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const safeDate=v=>v?new Date(v+"T00:00:00").getTime():NaN;
 const today=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");};
-let currentUser=null, institutions=[], activeId="", busy=false;
+let currentUser=null, institutions=[], activeId="", busy=false, onboardingShownFor="";
 function notice(msg){const el=$("#institutionNotice");if(el){el.textContent=msg;el.hidden=false;} }
 function validName(s){return String(s||"").trim().slice(0,100);}
 function isManager(inst){return inst?.ownerUid===currentUser?.uid;}
@@ -50,6 +50,44 @@ async function render(){
   }).join(""):'<p class="page-subtitle">No published offerings yet. Administrators can create the school catalog here.</p>';
  }catch(e){console.error(e);$("#institutionOfferings").textContent="Unable to load offerings. Check access and Firestore rules.";}
 }
+
+async function finishDistrictOnboarding(profile,name,title){
+ const districtName=validName(name),position=String(title||"district_administrator");
+ if(districtName.length<3){alert("Please enter a district name.");return;}
+ const own=await getDocs(query(collection(db,"institutions"),where("ownerUid","==",currentUser.uid)));
+ let district=own.docs.find(d=>d.data().kind==="district"&&d.data().name.toLowerCase()===districtName.toLowerCase());
+ if(!district){
+  district=await addDoc(collection(db,"institutions"),{name:districtName,kind:"district",parentDistrictId:"",description:"",ownerUid:currentUser.uid,status:"active",verified:false,createdAt:serverTimestamp()});
+ }
+ await updateDoc(doc(db,"users",currentUser.uid),{districtAdminOnboarding:"completed",districtAdminTitle:position,districtInstitutionId:district.id,updatedAt:serverTimestamp()});
+ activeId=district.id;
+ $("#modalRoot").innerHTML="";
+ await refresh();
+ notice("Your unverified district workspace is ready. Add schools and publish course registration periods.");
+}
+async function maybeOnboard(){
+ if(!currentUser||onboardingShownFor===currentUser.uid)return;
+ const snap=await getDoc(doc(db,"users",currentUser.uid));
+ if(!snap.exists())return;
+ const profile=snap.data();
+ if(profile.role!=="instructor")return;
+ if(profile.districtAdminOnboarding==="completed"||profile.districtAdminOnboarding==="declined")return;
+ onboardingShownFor=currentUser.uid;
+ const requested=profile.districtAdminOnboarding==="pending";
+ openModal(requested?"Complete district administrator registration":"Institutional account setup",'<form id="districtSetupForm" class="institution-form"><p class="page-subtitle">'+(requested?"Finish establishing your district.":"Are you a superintendent or district administrator? You can create a district workspace now, or continue as an independent instructor.")+'</p><label>District administrator status<select id="districtSetupChoice"><option value="yes"'+(requested?' selected':'')+'>Yes, I administer a district</option><option value="no"'+(!requested?' selected':'')+'>No, continue as an instructor</option></select></label><div id="districtSetupDetails"><label>School district name<input id="districtSetupName" maxlength="100" placeholder="Full district name" value="'+escapeHTML(profile.districtSetupName||"")+'"></label><label>Your title<select id="districtSetupTitle"><option value="superintendent">Superintendent</option><option value="assistant_superintendent">Assistant Superintendent</option><option value="district_administrator">District Administrator</option></select></label></div><p class="fineprint">Institutional claims remain unverified until independently reviewed. You will not receive access to any existing district automatically.</p><button type="submit" class="primary-btn">Save account setup</button></form>');
+ $("#districtSetupTitle").value=["superintendent","assistant_superintendent","district_administrator"].includes(profile.districtAdminTitle)?profile.districtAdminTitle:"district_administrator";
+ const choice=$("#districtSetupChoice"),details=$("#districtSetupDetails"),name=$("#districtSetupName");
+ const toggle=()=>{details.hidden=choice.value!=="yes";name.required=choice.value==="yes";};choice.onchange=toggle;toggle();
+ $("#districtSetupForm").onsubmit=async e=>{
+  e.preventDefault();if(busy)return;busy=true;
+  try{
+   if(choice.value==="yes")await finishDistrictOnboarding(profile,name.value,$("#districtSetupTitle").value);
+   else{await updateDoc(doc(db,"users",currentUser.uid),{districtAdminOnboarding:"declined",updatedAt:serverTimestamp()});$("#modalRoot").innerHTML="";}
+  }catch(error){alert("Unable to save account setup: "+error.message);console.error(error);}
+  finally{busy=false;}
+ };
+}
+
 function openModal(title,formHTML){
  const r=$("#modalRoot");if(!r)return;
  r.innerHTML='<div class="modal-backdrop institution-modal-backdrop"><div class="modal institution-dialog" role="dialog" aria-modal="true" aria-label="'+escapeHTML(title)+'"><div class="modal-header"><h2>'+escapeHTML(title)+'</h2><button type="button" class="secondary-btn" id="closeInstitutionModal">Close</button></div>'+formHTML+'</div></div>';
@@ -100,6 +138,7 @@ document.addEventListener("click",async e=>{
   try{await updateDoc(doc(db,"institutions",inst.id,"requests",decision.dataset.instDecision),{status:decision.dataset.status,reviewedBy:currentUser.uid,reviewedAt:serverTimestamp()});await reviewRequests((await getDoc(doc(db,"institutions",inst.id,"requests",decision.dataset.instDecision))).data().offeringId);}catch(error){notice("Review failed: "+error.message);}
  }
 });
-onAuthStateChanged(auth,user=>{currentUser=user;if(!user){institutions=[];activeId="";return;}const root=$("#institutionWorkspace");if(root)refresh().catch(console.error);});
+onAuthStateChanged(auth,user=>{currentUser=user;if(!user){institutions=[];activeId="";onboardingShownFor="";return;}const root=$("#institutionWorkspace");if(root)refresh().catch(console.error);});
+window.addEventListener("theoria:ready",()=>{maybeOnboard().catch(console.error);});
 window.addEventListener("theoria:page",e=>{if(e.detail.page==="institutions"&&currentUser)refresh().catch(error=>notice(error.message));});
 const page=$("#page-institutions");if(page)page.innerHTML=shell();
