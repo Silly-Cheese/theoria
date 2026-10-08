@@ -36,7 +36,7 @@ async function render(){
  if(!inst){root.innerHTML='<div class="institution-empty"><h3>Build an academic community</h3><p>Create an institution to organize courses, publish enrollment dates, and accept student requests.</p></div>';return;}
  root.innerHTML='<div class="institution-heading"><div><div class="eyebrow">'+escapeHTML(inst.kind==="district"?"District workspace":"School course catalog")+'</div><h2>'+escapeHTML(inst.name)+'</h2><p class="page-subtitle">'+escapeHTML(inst.description||"Academic programs and registration")+'</p></div>'+(isManager(inst)?'<button class="secondary-btn small-btn" data-inst-action="new-offering">Publish offering</button>':'')+'</div>'+
  (inst.parentDistrictId?'<p class="fineprint">Part of a school district</p>':'')+
- '<div id="institutionOfferings" aria-live="polite">Loading course catalog…</div>';
+ '<div id="institutionOfferings" aria-live="polite">Loading course catalog…</div><div id="schoolManagementArea"></div>';
  try{
   const snap=await getDocs(query(collection(db,"institutions",inst.id,"offerings"),where("published","==",true)));
   let own=[];
@@ -49,6 +49,7 @@ async function render(){
    (open&&!isManager(inst)?'<button class="primary-btn small-btn" data-inst-request="'+escapeHTML(o.id)+'">Request enrollment</button>':isManager(inst)?'<button class="secondary-btn small-btn" data-inst-requests="'+escapeHTML(o.id)+'">Review requests</button>':'')+'</article>';
   }).join(""):'<p class="page-subtitle">No published offerings yet. Administrators can create the school catalog here.</p>';
  }catch(e){console.error(e);$("#institutionOfferings").textContent="Unable to load offerings. Check access and Firestore rules.";}
+ window.TheoriaSchoolAdmin?.mount(inst,currentUser);
 }
 
 async function finishDistrictOnboarding(profile,name,title){
