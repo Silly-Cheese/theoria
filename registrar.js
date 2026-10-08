@@ -13,13 +13,17 @@ const stat=(value,label)=>'<div><strong>'+esc(value)+'</strong><span>'+esc(label
 function draw(){
  const root=$("schoolRegistrarExpansion");if(!root)return;
  if(!roleAdmin()){root.innerHTML="";return;}
- root.innerHTML='<section class="school-admin"><div class="eyebrow">Student Services</div><h2>Registrar & Student Records</h2><p class="school-subtle">Record verified enrollments, grade certifications, attendance and graduation requirements. Approval alone never creates a section membership.</p><div class="school-metrics">'+stat(records.length,"Student records")+stat(reqs.filter(x=>x.status==="pending").length,"Pending requests")+stat(policies.length,"Graduation requirements")+stat(attendance.length,"Attendance entries")+'</div>'+(readFailures.length?'<div class="institution-notice" role="alert"><strong>Some school records could not be loaded.</strong><p>'+readFailures.map(f=>esc(f.name)+': '+esc(f.message)).join('<br>')+'</p><p>Check deployed Firestore rules and your institution administrator role.</p></div>':'')+'<div class="school-admin-tabs">'+["Enrollment","Records","Attendance","Graduation","Guardians"].map((x,i)=>'<button data-reg-tab="'+i+'" class="'+(tab===i?"selected":"")+'">'+x+'</button>').join("")+'</div><div id="schoolRegistrarBody">'+body()+'</div></section>';
+ root.innerHTML='<section class="school-admin"><div class="eyebrow">Student Services</div><h2>Registrar & Student Records</h2><p class="school-subtle">Record verified enrollments, grade certifications, attendance and graduation requirements. Approval alone never creates a section membership.</p><div class="school-metrics">'+stat(records.length,"Student records")+stat(reqs.filter(x=>x.status==="pending").length+members.filter(x=>x.status==="pending").length,"Pending requests")+stat(policies.length,"Graduation requirements")+stat(attendance.length,"Attendance entries")+'</div>'+(readFailures.length?'<div class="institution-notice" role="alert"><strong>Some school records could not be loaded.</strong><p>'+readFailures.map(f=>esc(f.name)+': '+esc(f.message)).join('<br>')+'</p><p>Check deployed Firestore rules and your institution administrator role.</p></div>':'')+'<div class="school-admin-tabs">'+["Enrollment","Records","Attendance","Graduation","Guardians"].map((x,i)=>'<button data-reg-tab="'+i+'" class="'+(tab===i?"selected":"")+'">'+x+'</button>').join("")+'</div><div id="schoolRegistrarBody">'+body()+'</div></section>';
 }
 let tab=0;
 const action=(name,id)=>'<button class="secondary-btn small-btn" data-reg-action="'+id+'">'+name+'</button>';
 const list=(arr,fn)=>arr.length?'<div class="school-list">'+arr.map(v=>'<div class="school-entry">'+fn(v)+'</div>').join("")+'</div>':'<p class="school-empty">No records in this category yet.</p>';
 function body(){
- if(tab===0)return '<div class="school-section-head"><h3>All registration requests</h3>'+action("Refresh","refresh")+'</div>'+list([...reqs].sort((a,b)=>({pending:0,approved:1,declined:2}[a.status]??3)-({pending:0,approved:1,declined:2}[b.status]??3)),r=>'<strong>'+esc(studentName(r.studentUid))+'</strong><span>'+esc(offerings.find(o=>o.id===r.offeringId)?.title||r.offeringId)+' · '+esc(r.status)+'</span>'+(r.status==="pending"?action("Approve","decision:approved:"+r.id)+action("Decline","decision:declined:"+r.id):r.status==="approved"?action("Finalize placement","finalize:"+r.id):''))+'<p class="school-subtle">Requests appear here as soon as they are submitted, including those awaiting approval. Final placement remains separate from classroom roster enrollment.</p>';
+ if(tab===0)return '<div class="school-section-head"><h3>Pending school membership</h3>'+action("Refresh","refresh")+'</div>'+
+ list(members.filter(m=>m.status==="pending"),m=>'<strong>'+esc(studentName(m.studentUid))+'</strong><span>Request to join '+esc(current.name||"this institution")+'</span>'+action("Approve student","member:active:"+m.id)+action("Decline","member:declined:"+m.id))+
+ '<div class="school-section-head" style="margin-top:22px"><h3>Course registration requests</h3></div>'+
+ list([...reqs].sort((a,b)=>({pending:0,approved:1,declined:2}[a.status]??3)-({pending:0,approved:1,declined:2}[b.status]??3)),r=>'<strong>'+esc(studentName(r.studentUid))+'</strong><span>'+esc(offerings.find(o=>o.id===r.offeringId)?.title||r.offeringId)+' · '+esc(r.status)+'</span>'+(r.status==="pending"?action("Approve","decision:approved:"+r.id)+action("Decline","decision:declined:"+r.id):r.status==="approved"?action("Finalize placement","finalize:"+r.id):''))+
+ '<p class="school-subtle">First approve institution membership, then the student can request individual courses while registration is open. Approved course requests still require placement into an actual section.</p>';
  if(tab===1)return '<div class="school-section-head"><h3>Institutional academic records</h3>'+action("New record","record")+'</div>'+list(records,r=>'<strong>'+esc(r.studentName||r.studentUid)+'</strong><span>'+esc(r.courseTitle||"Course")+' · '+esc(r.finalGrade||"Pending")+' · '+esc(r.status)+'</span>')+'<p class="school-subtle">Records are separate from existing Theoria instructor-certified transcripts and do not overwrite them.</p>';
  if(tab===2)return '<div class="school-section-head"><h3>Class attendance</h3>'+action("Record attendance","attendance")+'</div>'+list(attendance,a=>'<strong>'+esc(a.studentName||a.studentUid)+'</strong><span>'+esc(a.day)+' · '+esc(a.status)+' · '+esc(a.offeringTitle)+'</span>');
  if(tab===3)return '<div class="school-section-head"><h3>Graduation requirements</h3>'+action("Add requirement","policy")+'</div>'+list(policies,p=>'<strong>'+esc(p.name)+'</strong><span>'+esc(p.requiredCredits)+' required credits · '+esc(p.description)+'</span>')+'<p class="school-subtle">Requirements are defined here; automatic graduation certification requires verified course-credit equivalency.</p>';
@@ -35,6 +39,14 @@ const options=(key,label,values)=>'<label>'+label+'<select name="'+key+'">'+valu
 function handle(action){
  if(!roleAdmin())return;
  if(action==="refresh"){refresh();return;}
+ if(action.startsWith("member:")){
+  const parts=action.split(":"),status=parts[1],id=parts.slice(2).join(":");
+  const membership=members.find(m=>m.id===id);
+  if(!membership||membership.status!=="pending"||!["active","declined"].includes(status))return;
+  if(!confirm((status==="active"?"Approve":"Decline")+" membership for "+studentName(membership.studentUid)+"?"))return;
+  updateDoc(doc(db,"institutions",current.id,"members",id),{status,reviewedBy:me.uid,reviewedAt:serverTimestamp()}).then(refresh).catch(err=>alert("Unable to review school membership: "+err.message));
+  return;
+ }
  if(action.startsWith("decision:")){
   const parts=action.split(":"),status=parts[1],id=parts.slice(2).join(":");const r=reqs.find(x=>x.id===id);
   if(!r||r.status!=="pending"||!["approved","declined"].includes(status))return;
