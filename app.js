@@ -4123,7 +4123,9 @@ async function toggleEnrollment(){
 $$(".auth-tab").forEach(btn=>btn.addEventListener("click",()=>switchAuthTab(btn.dataset.authTab)));
 $$(".role-option").forEach(btn=>btn.addEventListener("click",()=>{
   state.role=btn.dataset.role;
-  $$(".role-option").forEach(option=>option.classList.toggle("selected",option===btn));
+  const districtFields=$("#districtRegistrationFields");
+  if(districtFields){districtFields.classList.toggle("hidden",state.role!=="district-admin");$("#registerDistrictName").required=state.role==="district-admin";}
+  $(".role-option").forEach(option=>option.classList.toggle("selected",option===btn));
 }));
 
 signInForm.addEventListener("submit",async event=>{
@@ -4139,13 +4141,17 @@ registerForm.addEventListener("submit",async event=>{
   const name=$("#registerName").value.trim(),email=$("#registerEmail").value.trim(),password=$("#registerPassword").value;
   const button=registerForm.querySelector("button[type=submit]");button.disabled=true;button.textContent="Creating account…";
   try{
-    const requestedRole=state.role==="instructor"?"instructor":"student";
+    const districtSignup=state.role==="district-admin";
+    const requestedRole=(state.role==="instructor"||districtSignup)?"instructor":"student";
+    const districtName=districtSignup?$("#registerDistrictName").value.trim():"";
+    if(districtSignup && districtName.length<3)throw new Error("Enter the full school district name.");
     const credential=await createUserWithEmailAndPassword(auth,email,password);
     await updateProfile(credential.user,{displayName:name});
     await setDoc(doc(db,"users",credential.user.uid),{
       displayName:name,
       email,
       role:requestedRole,
+      ...(districtSignup?{districtAdminOnboarding:"pending",districtSetupName:districtName,districtAdminTitle:$("#registerDistrictTitle").value}:{}),
       createdAt:serverTimestamp(),
       updatedAt:serverTimestamp()
     });
