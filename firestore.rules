@@ -1260,6 +1260,59 @@ service cloud.firestore {
         );
       allow update, delete: if false;
 
+      match /placements/{placementId} {
+        allow read: if institutionAdmin(instId) || (signedIn() && resource.data.studentUid == uid());
+        allow create: if institutionAdmin(instId)
+          && request.resource.data.keys().hasOnly(['studentUid','studentName','offeringId','sectionReference','status','approvedRequestId','placedBy','placedAt'])
+          && request.resource.data.placedBy == uid()
+          && request.resource.data.placedAt == request.time
+          && request.resource.data.status == 'placed'
+          && placementId == request.resource.data.approvedRequestId
+          && exists(/databases/$(database)/documents/institutions/$(instId)/requests/$(placementId))
+          && get(/databases/$(database)/documents/institutions/$(instId)/requests/$(placementId)).data.status == 'approved'
+          && request.resource.data.studentUid == get(/databases/$(database)/documents/institutions/$(instId)/requests/$(placementId)).data.studentUid
+          && request.resource.data.offeringId == get(/databases/$(database)/documents/institutions/$(instId)/requests/$(placementId)).data.offeringId;
+        allow update, delete: if false;
+      }
+      match /studentRecords/{recordId} {
+        allow read: if institutionAdmin(instId) || (signedIn() && resource.data.studentUid == uid());
+        allow create: if institutionAdmin(instId)
+          && request.resource.data.keys().hasOnly(['studentUid','studentName','courseTitle','credits','finalGrade','status','recordedBy','recordedAt'])
+          && request.resource.data.recordedBy == uid()
+          && request.resource.data.recordedAt == request.time
+          && request.resource.data.studentUid is string
+          && request.resource.data.credits is number
+          && request.resource.data.credits >= 0 && request.resource.data.credits <= 50
+          && request.resource.data.status in ['pending','certified','withdrawn'];
+        allow update, delete: if false;
+      }
+      match /attendance/{attendanceId} {
+        allow read: if institutionAdmin(instId) || (signedIn() && resource.data.studentUid == uid());
+        allow create: if institutionAdmin(instId)
+          && request.resource.data.keys().hasOnly(['studentUid','studentName','offeringTitle','day','status','recordedBy','recordedAt'])
+          && request.resource.data.recordedBy == uid() && request.resource.data.recordedAt == request.time
+          && request.resource.data.status in ['present','absent','late','excused'];
+        allow update, delete: if false;
+      }
+      match /graduationPolicies/{policyId} {
+        allow read: if signedIn();
+        allow create: if institutionAdmin(instId)
+          && request.resource.data.keys().hasOnly(['name','requiredCredits','description','createdBy','createdAt'])
+          && request.resource.data.createdBy == uid() && request.resource.data.createdAt == request.time
+          && request.resource.data.requiredCredits is number
+          && request.resource.data.requiredCredits >= 0 && request.resource.data.requiredCredits <= 1000;
+        allow update, delete: if false;
+      }
+      match /guardianLinks/{linkId} {
+        allow read: if institutionAdmin(instId) || (signedIn() && resource.data.studentUid == uid());
+        allow create: if institutionAdmin(instId)
+          && request.resource.data.keys().hasOnly(['studentUid','studentName','guardianEmail','status','createdBy','createdAt'])
+          && request.resource.data.createdBy == uid()
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.status == 'pending_verification';
+        allow update, delete: if false;
+      }
+
       match /terms/{termId} {
         allow read: if signedIn() && (institutionAdmin(instId) || get(/databases/$(database)/documents/institutions/$(instId)).data.status == 'active');
         allow create: if institutionAdmin(instId)
