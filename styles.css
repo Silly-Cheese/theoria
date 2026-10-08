@@ -2799,3 +2799,18 @@ html{font-size:calc(16px * var(--user-font-scale,1))}
 .district-registration-fields select{width:100%;padding:12px;border:1px solid var(--lineDark);border-radius:8px;background:var(--white);color:var(--ink)}
 #districtSetupDetails[hidden]{display:none}
 @media(max-width:1150px){.role-picker{grid-template-columns:1fr}.role-picker .role-option{min-height:0}}
+
+/* School administration expansion — inherited Theoria palette */
+.school-admin{margin-top:24px;border:1px solid var(--line);background:var(--white);border-radius:var(--radius);padding:22px}
+.school-admin-title{margin-bottom:18px}.school-admin-title h2{font:700 23px "Libre Baskerville",Georgia,serif;margin:8px 0;color:var(--burgundyDeep)}
+.school-admin-title p,.school-subtle{color:var(--slate);font-size:13px;line-height:1.65}
+.school-admin-tabs{display:flex;gap:8px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:16px}
+.school-admin-tabs button{padding:9px 13px;border:1px solid var(--line);border-radius:7px;background:var(--paper);color:var(--ink)}
+.school-admin-tabs button.selected{background:var(--burgundy);border-color:var(--burgundy);color:white}
+.school-section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.school-section-head h3{font-size:17px}
+.school-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:10px}
+.school-metrics>div{padding:18px 12px;border:1px solid var(--line);border-radius:9px;background:var(--paper2)}
+.school-metrics strong{display:block;font-size:25px;color:var(--burgundyDeep)}.school-metrics span{display:block;font-size:12px;color:var(--slate);margin-top:5px}
+.school-list{display:grid;gap:9px}.school-entry{padding:13px;border:1px solid var(--line);border-radius:8px;display:grid;gap:7px;overflow-wrap:anywhere}
+.school-entry span{color:var(--slate);font-size:12px}.school-empty{padding:22px;color:var(--slate);border:1px dashed var(--line);border-radius:9px;text-align:center}
+@media(max-width:720px){.school-admin{padding:14px}.school-section-head{align-items:flex-start}}
