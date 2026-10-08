@@ -1227,6 +1227,14 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/institutions/$(instId)).data.ownerUid == uid();
     }
 
+    function institutionAdmin(instId) {
+      return institutionOwner(instId)
+        || (signedIn()
+          && exists(/databases/$(database)/documents/institutions/$(instId)/staff/$(uid()))
+          && get(/databases/$(database)/documents/institutions/$(instId)/staff/$(uid())).data.role
+            in ['principal','assistant_principal','district_admin','registrar']);
+    }
+
     match /institutions/{instId} {
       allow read: if signedIn() && (resource.data.status == 'active' || resource.data.ownerUid == uid());
       allow create: if signedIn()
@@ -1253,8 +1261,8 @@ service cloud.firestore {
       allow update, delete: if false;
 
       match /terms/{termId} {
-        allow read: if signedIn() && (institutionOwner(instId) || get(/databases/$(database)/documents/institutions/$(instId)).data.status == 'active');
-        allow create: if institutionOwner(instId)
+        allow read: if signedIn() && (institutionAdmin(instId) || get(/databases/$(database)/documents/institutions/$(instId)).data.status == 'active');
+        allow create: if institutionAdmin(instId)
           && request.resource.data.keys().hasOnly(['title','startDate','endDate','gradingScheme','createdBy','createdAt'])
           && request.resource.data.createdBy == uid()
           && request.resource.data.createdAt == request.time
@@ -1265,8 +1273,8 @@ service cloud.firestore {
         allow update, delete: if false;
       }
       match /departments/{departmentId} {
-        allow read: if signedIn() && (institutionOwner(instId) || get(/databases/$(database)/documents/institutions/$(instId)).data.status == 'active');
-        allow create: if institutionOwner(instId)
+        allow read: if signedIn() && (institutionAdmin(instId) || get(/databases/$(database)/documents/institutions/$(instId)).data.status == 'active');
+        allow create: if institutionAdmin(instId)
           && request.resource.data.keys().hasOnly(['name','description','createdBy','createdAt'])
           && request.resource.data.createdBy == uid()
           && request.resource.data.createdAt == request.time
@@ -1313,8 +1321,8 @@ service cloud.firestore {
       }
 
       match /offerings/{offeringId} {
-        allow read: if signedIn() && (resource.data.published == true || institutionOwner(instId));
-        allow create: if institutionOwner(instId)
+        allow read: if signedIn() && (resource.data.published == true || institutionAdmin(instId));
+        allow create: if institutionAdmin(instId)
           && request.resource.data.keys().hasOnly(['title','code','term','description','openDate','closeDate','openAt','closeAt','published','createdBy','createdAt'])
           && request.resource.data.createdBy == uid()
           && request.resource.data.title is string
@@ -1333,7 +1341,7 @@ service cloud.firestore {
           && request.resource.data.openAt < request.resource.data.closeAt
           && request.resource.data.published == true
           && request.resource.data.createdAt == request.time;
-        allow update: if institutionOwner(instId)
+        allow update: if institutionAdmin(instId)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['period','room','capacity','instructorUid','instructorName','scheduledBy','scheduledAt'])
           && request.resource.data.period is string && request.resource.data.period.size() <= 80
           && request.resource.data.room is string && request.resource.data.room.size() <= 100
@@ -1347,7 +1355,7 @@ service cloud.firestore {
 
       match /requests/{requestId} {
         allow get, list: if signedIn()
-          && (institutionOwner(instId) || resource.data.studentUid == uid());
+          && (institutionAdmin(instId) || resource.data.studentUid == uid());
         allow create: if signedIn()
           && request.resource.data.keys().hasOnly(['offeringId','studentUid','status','createdAt'])
           && request.resource.data.studentUid == uid()
@@ -1358,7 +1366,7 @@ service cloud.firestore {
           && get(/databases/$(database)/documents/institutions/$(instId)/offerings/$(request.resource.data.offeringId)).data.published == true
           && request.time >= get(/databases/$(database)/documents/institutions/$(instId)/offerings/$(request.resource.data.offeringId)).data.openAt
           && request.time < get(/databases/$(database)/documents/institutions/$(instId)/offerings/$(request.resource.data.offeringId)).data.closeAt;
-        allow update: if institutionOwner(instId)
+        allow update: if institutionAdmin(instId)
           && resource.data.status == 'pending'
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','reviewedBy','reviewedAt'])
           && request.resource.data.status in ['approved','declined']
