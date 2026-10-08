@@ -1302,7 +1302,13 @@ service cloud.firestore {
           && request.resource.data.email is string
           && request.resource.data.displayName is string
           && request.resource.data.role in ['principal','assistant_principal','district_admin','registrar','counselor','department_head','instructor','staff']
-          && request.resource.data.assignedBy == uid()
+          && (
+            (institutionOwner(instId) && request.resource.data.assignedBy == uid())
+            || (
+              signedIn() && staffUid == uid()
+              && request.resource.data.assignedBy == get(/databases/$(database)/documents/institutions/$(instId)/invitations/$(request.auth.token.email)).data.invitedBy
+            )
+          )
           && request.resource.data.assignedAt == request.time;
         allow update, delete: if institutionOwner(instId);
       }
