@@ -354,7 +354,7 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow create: if isSelf(userId)
-        && request.resource.data.role in ['student', 'instructor'];
+        && request.resource.data.role in ['student', 'instructor', 'parent'];
       allow read: if isSelf(userId) || isSystemOwner();
       allow update: if isSelf(userId)
         && (
@@ -1325,13 +1325,35 @@ service cloud.firestore {
         allow update, delete: if false;
       }
       match /guardianLinks/{linkId} {
-        allow read: if institutionAdmin(instId) || (signedIn() && resource.data.studentUid == uid());
+        allow get: if institutionAdmin(instId)
+          || (signedIn() && resource.data.studentUid == uid())
+          || (signedIn()
+            && request.auth.token.email_verified == true
+            && request.auth.token.email == resource.data.guardianEmail);
+        allow list: if institutionAdmin(instId);
         allow create: if institutionAdmin(instId)
           && request.resource.data.keys().hasOnly(['studentUid','studentName','guardianEmail','status','createdBy','createdAt'])
           && request.resource.data.createdBy == uid()
           && request.resource.data.createdAt == request.time
           && request.resource.data.status == 'pending_verification';
-        allow update, delete: if false;
+        allow update: if (
+          institutionAdmin(instId)
+          && resource.data.status == 'awaiting_school_approval'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','reviewedBy','reviewedAt'])
+          && request.resource.data.status in ['approved','declined']
+          && request.resource.data.reviewedBy == uid()
+          && request.resource.data.reviewedAt == request.time
+        ) || (
+          signedIn()
+          && request.auth.token.email_verified == true
+          && request.auth.token.email == resource.data.guardianEmail
+          && resource.data.status == 'pending_verification'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','guardianUid','claimedAt'])
+          && request.resource.data.status == 'awaiting_school_approval'
+          && request.resource.data.guardianUid == uid()
+          && request.resource.data.claimedAt == request.time
+        );
+        allow delete: if false;
       }
 
       match /terms/{termId} {
