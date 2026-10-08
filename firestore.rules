@@ -1282,7 +1282,7 @@ service cloud.firestore {
       }
 
       match /placements/{placementId} {
-        allow read: if institutionAdmin(instId) || (signedIn() && resource.data.studentUid == uid());
+        allow read: if institutionAdmin(instId) || (signedIn() && resource.data.studentUid == uid()) || guardianApproved(resource.data.studentUid);
         allow create: if institutionAdmin(instId)
           && request.resource.data.keys().hasOnly(['studentUid','studentName','offeringId','sectionReference','status','approvedRequestId','placedBy','placedAt'])
           && request.resource.data.placedBy == uid()
@@ -1324,11 +1324,30 @@ service cloud.firestore {
           && request.resource.data.requiredCredits >= 0 && request.resource.data.requiredCredits <= 1000;
         allow update, delete: if false;
       }
+      function guardianApproved(studentId) {
+        return signedIn()
+          && exists(/databases/$(database)/documents/institutions/$(instId)/guardianAccess/$(uid() + '_' + studentId))
+          && get(/databases/$(database)/documents/institutions/$(instId)/guardianAccess/$(uid() + '_' + studentId)).data.guardianUid == uid()
+          && get(/databases/$(database)/documents/institutions/$(instId)/guardianAccess/$(uid() + '_' + studentId)).data.studentUid == studentId;
+      }
+      match /guardianAccess/{accessId} {
+        allow read: if institutionAdmin(instId) || (signedIn() && resource.data.guardianUid == uid());
+        allow create: if institutionAdmin(instId)
+          && request.resource.data.keys().hasOnly(['guardianUid','studentUid','studentName','inviteId','approvedBy','approvedAt'])
+          && accessId == request.resource.data.guardianUid + '_' + request.resource.data.studentUid
+          && request.resource.data.approvedBy == uid()
+          && request.resource.data.approvedAt == request.time
+          && exists(/databases/$(database)/documents/institutions/$(instId)/guardianLinks/$(request.resource.data.inviteId))
+          && get(/databases/$(database)/documents/institutions/$(instId)/guardianLinks/$(request.resource.data.inviteId)).data.status == 'approved'
+          && get(/databases/$(database)/documents/institutions/$(instId)/guardianLinks/$(request.resource.data.inviteId)).data.guardianUid == request.resource.data.guardianUid
+          && get(/databases/$(database)/documents/institutions/$(instId)/guardianLinks/$(request.resource.data.inviteId)).data.studentUid == request.resource.data.studentUid;
+        allow update: if false;
+        allow delete: if institutionAdmin(instId);
+      }
       match /guardianLinks/{linkId} {
         allow get: if institutionAdmin(instId)
           || (signedIn() && resource.data.studentUid == uid())
           || (signedIn()
-            && request.auth.token.email_verified == true
             && request.auth.token.email == resource.data.guardianEmail);
         allow list: if institutionAdmin(instId);
         allow create: if institutionAdmin(instId)
@@ -1345,7 +1364,6 @@ service cloud.firestore {
           && request.resource.data.reviewedAt == request.time
         ) || (
           signedIn()
-          && request.auth.token.email_verified == true
           && request.auth.token.email == resource.data.guardianEmail
           && resource.data.status == 'pending_verification'
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','guardianUid','claimedAt'])
