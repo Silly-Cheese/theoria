@@ -48,6 +48,9 @@ function begin(action){
   const id=f.get("offeringId");if(!offerings.some(o=>o.id===id))throw Error("Choose an existing offering.");
   const cap=Number(f.get("capacity")||0);if(!Number.isInteger(cap)||cap<0||cap>10000)throw Error("Enter a valid seat capacity.");
   const member=staff.find(s=>s.uid===f.get("staffUid"));
+  const period=String(f.get("period")||"").trim(),room=String(f.get("room")||"").trim();
+  const conflicts=offerings.filter(o=>o.id!==id&&o.term===offerings.find(x=>x.id===id)?.term&&period&&o.period===period&&(room&&o.room===room||member&&o.instructorUid===member.uid));
+  if(conflicts.length)throw Error("Schedule conflict: another course uses the same room or instructor during this period.");
   await updateDoc(doc(db,"institutions",inst.id,"offerings",id),{period:String(f.get("period")||"").slice(0,80),room:String(f.get("room")||"").slice(0,100),capacity:cap,instructorUid:member?.uid||"",instructorName:member?.displayName||"",scheduledBy:user.uid,scheduledAt:serverTimestamp()});
  });
 }
