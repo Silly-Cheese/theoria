@@ -1317,6 +1317,15 @@ service cloud.firestore {
           && request.resource.data.role in ['principal','assistant_principal','district_admin','registrar','counselor','department_head','instructor','staff']
           && request.resource.data.invitedBy == uid()
           && request.resource.data.invitedAt == request.time;
+        allow update: if signedIn()
+          && request.auth.token.email == email
+          && resource.data.status == 'pending'
+          && exists(/databases/$(database)/documents/institutions/$(instId)/staff/$(uid()))
+          && get(/databases/$(database)/documents/institutions/$(instId)/staff/$(uid())).data.email == email
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','acceptedBy','acceptedAt'])
+          && request.resource.data.status == 'accepted'
+          && request.resource.data.acceptedBy == uid()
+          && request.resource.data.acceptedAt == request.time;
         allow delete: if institutionOwner(instId);
       }
 
