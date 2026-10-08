@@ -14,15 +14,14 @@ if(invitation&&/^[A-Za-z0-9_-]{8,128}\.[A-Za-z0-9_-]{8,128}$/.test(invitation)){
    document.getElementById("parentCreate").onclick=()=>createParent(actions);return;
   }
   const ref=doc(db,"institutions",institutionId,"guardianLinks",invitationId);
+  if(!user.emailVerified){actions.innerHTML='<p>Verify your email address to view the invitation.</p><button class="secondary-btn" id="sendVerification">Send verification email</button><button class="primary-btn" id="checkVerification">I verified my email</button>';document.getElementById("sendVerification").onclick=async()=>{try{await sendEmailVerification(user);message("Verification email sent.");}catch(err){message(err.message);}};document.getElementById("checkVerification").onclick=async()=>{try{await reload(user);await user.getIdToken(true);if(!user.emailVerified)return message("Email is not verified yet.");await display();}catch(err){message(err.message);}};return;}
   try{
    const snap=await getDoc(ref);
    if(!snap.exists()){message("Invitation not found, or it is intended for another email address.");return;}
    const data=snap.data();
    document.getElementById("parentDetails").textContent="Invitation to connect with "+(data.studentName||"a student")+" at this institution.";
    if(data.status==="pending_verification"){
-    actions.innerHTML='<p>Please verify your email address before accepting your invitation.</p><button class="secondary-btn" id="sendVerification">Send verification email</button><button class="primary-btn" id="checkVerification">I verified my email</button>';
-    document.getElementById("sendVerification").onclick=async()=>{try{await sendEmailVerification(user);message("Verification email sent. Check your inbox.");}catch(error){message(error.message);}};
-    document.getElementById("checkVerification").onclick=async()=>{try{await reload(user);if(!user.emailVerified)return message("Email not verified yet. Please check the verification link.");await updateDoc(ref,{status:"awaiting_school_approval",guardianUid:user.uid,claimedAt:serverTimestamp()});await display();}catch(error){message(error.message);}};return;
+    actions.innerHTML='<p>Your email is verified. Claim this invitation for school review.</p><button class="primary-btn" id="claimParentInvitation">Request parent access</button>';document.getElementById("claimParentInvitation").onclick=async()=>{try{await updateDoc(ref,{status:"awaiting_school_approval",guardianUid:user.uid,claimedAt:serverTimestamp()});await display();}catch(error){message(error.message);}};return;
    }
    actions.innerHTML='<p>'+escape(data.status==="awaiting_school_approval"?"Your account is linked to the invitation. The school must approve family access.":data.status==="approved"?"Your parent portal access has been approved.":"This invitation is no longer available.")+'</p>';
   }catch(error){message("Unable to open invitation: "+error.message);}
