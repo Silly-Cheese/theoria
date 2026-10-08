@@ -6,11 +6,12 @@ const canWrite=(inst,me)=>inst.ownerUid===me?.uid||memberAdmin;
 let inst=null,user=null,terms=[],offerings=[],staff=[],requests=[],departments=[],invitations=[],activeTab="overview";
 const html=(s)=>document.getElementById(s);
 async function readSub(name){try{const s=await getDocs(collection(db,"institutions",inst.id,name));return s.docs.map(d=>({id:d.id,...d.data()}));}catch(x){console.warn("School workspace:",name,x);return [];}}
-async function load(){if(!inst||!user)return;const saved=inst.id;const [t,o,s,r,d,i]=await Promise.all(["terms","offerings","staff","requests","departments","invitations"].map(readSub));if(inst?.id!==saved)return;[terms,offerings,staff,requests,departments,invitations]=[t,o,s,r,d,i];paint();}
+async function load(){if(!inst||!user)return;const saved=inst.id;const [t,o,s,r,d,i]=await Promise.all(["terms","offerings","staff","requests","departments","invitations"].map(readSub));if(inst?.id!==saved)return;[terms,offerings,staff,requests,departments,invitations]=[t,o,s,r,d,i];paint();window.TheoriaRegistrar?.mount(inst,user);}
 const actionButton=(label,act)=>'<button type="button" class="secondary-btn small-btn" data-school-action="'+act+'">'+label+'</button>';
 const tabs=[["overview","Overview"],["terms","Academic years"],["departments","Departments"],["faculty","Faculty & roles"],["schedule","Schedules"],["registrar","Registrar"]];
 function paint(){
  const root=html("schoolManagementArea");if(!root)return;
+ if(!html("schoolRegistrarExpansion")){const extra=document.createElement("div");extra.id="schoolRegistrarExpansion";root.insertAdjacentElement("afterend",extra);}
  if(!canWrite(inst,user)){root.innerHTML='<div class="school-subtle">Institutional administration is restricted to authorized staff.</div>';return;}
  root.innerHTML='<section class="school-admin"><div class="school-admin-title"><div><div class="eyebrow">Academic administration</div><h2>School management center</h2><p>Organize academic years, departments, staff, class schedules and enrollment records.</p></div></div><div class="school-admin-tabs">'+tabs.map(([id,label])=>'<button class="'+(id===activeTab?'selected':'')+'" data-school-tab="'+id+'">'+label+'</button>').join("")+'</div><div id="schoolAdminBody">'+body()+'</div></section>';
 }
@@ -74,4 +75,4 @@ async function showInvitation(){
   target.prepend(bar);
  }catch(error){console.warn("Invitation check failed",error);}
 }
-window.TheoriaSchoolAdmin={mount(nextInst,nextUser){inst=nextInst;user=nextUser;activeTab="overview";memberAdmin=false;const currentId=inst.id;(async()=>{try{const docSnap=await getDoc(doc(db,"institutions",currentId,"staff",user.uid));if(inst.id!==currentId)return;memberAdmin=docSnap.exists()&&["principal","assistant_principal","district_admin","registrar"].includes(docSnap.data().role);}catch(error){console.warn("Admin role lookup failed",error);}await load();await showInvitation();})().catch(console.error);}};
+window.TheoriaSchoolAdmin={canAdmin(id){return !!(inst&&inst.id===id&&canWrite(inst,user));},mount(nextInst,nextUser){inst=nextInst;user=nextUser;activeTab="overview";memberAdmin=false;const currentId=inst.id;(async()=>{try{const docSnap=await getDoc(doc(db,"institutions",currentId,"staff",user.uid));if(inst.id!==currentId)return;memberAdmin=docSnap.exists()&&["principal","assistant_principal","district_admin","registrar"].includes(docSnap.data().role);}catch(error){console.warn("Admin role lookup failed",error);}await load();await showInvitation();})().catch(console.error);}};
