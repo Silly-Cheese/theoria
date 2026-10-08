@@ -1,4 +1,4 @@
-import {auth,db,onAuthStateChanged,collection,doc,addDoc,getDocs,getDoc,query,where,serverTimestamp,updateDoc,setDoc} from "./firebase.js";
+import {auth,db,onAuthStateChanged,collection,doc,addDoc,getDocs,getDoc,query,where,serverTimestamp,updateDoc,setDoc,Timestamp} from "./firebase.js";
 
 // Institutional workspace: deliberately separate from independent educator courses.
 const $=s=>document.querySelector(s);
@@ -74,7 +74,7 @@ function createOffering(){
   e.preventDefault();if(busy)return;const f=new FormData(e.currentTarget);
   const title=validName(f.get("title")),openDate=String(f.get("openDate")),closeDate=String(f.get("closeDate"));
   if(title.length<3||!Number.isFinite(safeDate(openDate))||safeDate(closeDate)<safeDate(openDate)){notice("Enter a title and a valid registration period.");return;}
-  busy=true;try{await addDoc(collection(db,"institutions",activeId,"offerings"),{title,code:String(f.get("code")||"").slice(0,24),term:String(f.get("term")||"").slice(0,80),description:String(f.get("description")||"").slice(0,1000),openDate,closeDate,published:true,createdBy:currentUser.uid,createdAt:serverTimestamp()});$("#modalRoot").innerHTML="";await render();notice("Course offering published.");}catch(error){notice("Unable to publish: "+error.message);}finally{busy=false;}
+  busy=true;try{await addDoc(collection(db,"institutions",activeId,"offerings"),{title,code:String(f.get("code")||"").slice(0,24),term:String(f.get("term")||"").slice(0,80),description:String(f.get("description")||"").slice(0,1000),openDate,closeDate,openAt:Timestamp.fromDate(new Date(openDate+"T00:00:00Z")),closeAt:Timestamp.fromDate(new Date(new Date(closeDate+"T00:00:00Z").getTime()+86400000)),published:true,createdBy:currentUser.uid,createdAt:serverTimestamp()});$("#modalRoot").innerHTML="";await render();notice("Course offering published.");}catch(error){notice("Unable to publish: "+error.message);}finally{busy=false;}
  };
 }
 async function requestOffering(offeringId){
@@ -97,7 +97,7 @@ document.addEventListener("click",async e=>{
  const see=e.target.closest("[data-inst-requests]");if(see){await reviewRequests(see.dataset.instRequests);return;}
  const decision=e.target.closest("[data-inst-decision]");if(decision){
   const inst=institutions.find(i=>i.id===activeId);if(!isManager(inst))return;
-  try{await updateDoc(doc(db,"institutions",inst.id,"requests",decision.dataset.instDecision),{status:decision.dataset.status,reviewedBy:currentUser.uid,reviewedAt:serverTimestamp()});await reviewRequests(decision.dataset.instDecision.split("_")[0]);}catch(error){notice("Review failed: "+error.message);}
+  try{await updateDoc(doc(db,"institutions",inst.id,"requests",decision.dataset.instDecision),{status:decision.dataset.status,reviewedBy:currentUser.uid,reviewedAt:serverTimestamp()});await reviewRequests((await getDoc(doc(db,"institutions",inst.id,"requests",decision.dataset.instDecision))).data().offeringId);}catch(error){notice("Review failed: "+error.message);}
  }
 });
 onAuthStateChanged(auth,user=>{currentUser=user;if(!user){institutions=[];activeId="";return;}const root=$("#institutionWorkspace");if(root)refresh().catch(console.error);});
