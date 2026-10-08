@@ -5,13 +5,13 @@ const $=s=>document.querySelector(s);
 const escapeHTML=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const safeDate=v=>v?new Date(v+"T00:00:00").getTime():NaN;
 const today=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");};
-let currentUser=null, institutions=[], activeId="", busy=false, onboardingShownFor="", managedInstitutionIds=new Set(),profileRole="student",memberships=new Map(),enrollmentRequests=new Map();
+let currentUser=null, institutions=[], activeId="", busy=false, onboardingShownFor="", managedInstitutionIds=new Set(),profileRole="student",memberships=new Map(),enrollmentRequests=new Map(),profileName="";
 function notice(msg){const el=$("#institutionNotice");if(el){el.textContent=msg;el.hidden=false;} }
 function validName(s){return String(s||"").trim().slice(0,100);}
 function isManager(inst){return !!inst&&(inst.ownerUid===currentUser?.uid||managedInstitutionIds.has(inst.id));}
 async function refresh(){
  if(!currentUser)return;
- const profile=await getDoc(doc(db,"users",currentUser.uid));profileRole=profile.data()?.role||"student";
+ const profile=await getDoc(doc(db,"users",currentUser.uid));profileRole=profile.data()?.role||"student";profileName=String(profile.data()?.displayName||currentUser.displayName||"Student").slice(0,100);
  const [mine,all]=await Promise.all([
   getDocs(query(collection(db,"institutions"),where("ownerUid","==",currentUser.uid))),
   getDocs(query(collection(db,"institutions"),where("status","==","active")))
@@ -143,14 +143,14 @@ async function createOffering(){
 async function requestMembership(instId){
  if(profileRole!=="student")return;
  const target=institutions.find(i=>i.id===instId);if(!target||!["school","district"].includes(target.kind))return;
- try{await setDoc(doc(db,"institutions",instId,"members",currentUser.uid),{studentUid:currentUser.uid,status:"pending",requestedAt:serverTimestamp()});await refresh();notice("Membership request submitted. School administration must approve it.");}
+ try{await setDoc(doc(db,"institutions",instId,"members",currentUser.uid),{studentUid:currentUser.uid,studentName:profileName,status:"pending",requestedAt:serverTimestamp()});await refresh();notice("Membership request submitted. School administration must approve it.");}
  catch(error){notice("Could not request membership: "+error.message);}
 }
 async function requestOffering(offeringId){
  const inst=institutions.find(i=>i.id===activeId);if(!inst||!currentUser||profileRole!=="student"||memberships.get(inst.id)?.status!=="active")return notice("Join the school before requesting courses.");
  if(!confirm("Submit an enrollment request to "+inst.name+"? This is not confirmed enrollment."))return;
  const reqRef=doc(db,"institutions",inst.id,"requests",offeringId+"_"+currentUser.uid);
- try{await setDoc(reqRef,{offeringId,studentUid:currentUser.uid,status:"pending",createdAt:serverTimestamp()});await refresh();notice("Enrollment request submitted. An administrator must review it.");}
+ try{await setDoc(reqRef,{offeringId,studentUid:currentUser.uid,studentName:profileName,status:"pending",createdAt:serverTimestamp()});await refresh();notice("Enrollment request submitted. An administrator must review it.");}
  catch(error){notice("Request could not be submitted: "+error.message);}
 }
 async function reviewRequests(offeringId){
