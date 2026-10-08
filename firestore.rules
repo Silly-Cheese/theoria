@@ -1265,7 +1265,7 @@ service cloud.firestore {
         allow list: if institutionAdmin(instId);
         allow create: if isSelf(studentUid)
           && userData().role == 'student'
-          && get(/databases/$(database)/documents/institutions/$(instId)).data.kind == 'school'
+          && get(/databases/$(database)/documents/institutions/$(instId)).data.kind in ['school','district']
           && request.resource.data.keys().hasOnly(['studentUid','status','requestedAt'])
           && request.resource.data.studentUid == uid()
           && request.resource.data.status == 'pending'
