@@ -30,7 +30,17 @@ async function show(){
   document.getElementById("familyDescription").textContent="Family access request for "+(data.studentName||"the invited student")+".";
   if(data.status==="pending_verification"){
    actionBox().innerHTML='<form id="claimFamily" class="institution-form"><p>Enter the student’s full name exactly as provided to the school. The school must still approve your relationship before any records are shown.</p><label>Student full name<input required name="studentName" maxlength="100" autocomplete="off"></label><button class="primary-btn">Request access</button></form>';
-   document.getElementById("claimFamily").onsubmit=async event=>{event.preventDefault();const name=String(new FormData(event.currentTarget).get("studentName")||"").trim();if(name!==String(data.studentName||"").trim())return error("The student name does not match the invitation.");try{await updateDoc(ref,{status:"awaiting_school_approval",guardianUid:activeUser.uid,claimedAt:serverTimestamp()});await show();}catch(e){error(e.message);}};
+   document.getElementById("claimFamily").onsubmit=async event=>{event.preventDefault();const name=String(new FormData(event.currentTarget).get("studentName")||"").trim();if(name!==String(data.studentName||"").trim())return error("The student name does not match the invitation.");try{
+     const signedEmail=String(activeUser.email||"").trim().toLowerCase();
+     const invitedEmail=String(data.guardianEmail||"").trim().toLowerCase();
+     if(!signedEmail||signedEmail!==invitedEmail){error("This invitation is addressed to "+invitedEmail+". Sign in with that email address, or ask your school to send a new invitation.");return;}
+     if(data.guardianUid&&data.guardianUid!==activeUser.uid){error("This invitation was already claimed by another account. Contact the school.");return;}
+     await updateDoc(ref,{status:"awaiting_school_approval",guardianUid:activeUser.uid,claimedAt:serverTimestamp()});
+     await show();
+    }catch(e){
+     console.error("Guardian invitation claim failed",e);
+     error(e.code==="permission-denied"?"The school invitation is visible, but Firestore rejected the claim. Ask the site administrator to deploy the latest firestore.rules. If the rules are already deployed, confirm the invitation email exactly matches your signed-in account.":"Unable to request access: "+e.message);
+    }};
    return;
   }
   actionBox().innerHTML='<p>'+esc(data.status==="awaiting_school_approval"?"Your request is awaiting school approval.":data.status==="approved"?"Your guardian access was approved.":"The school declined this request.")+'</p><button class="secondary-btn" id="familyDashboard">View guardian dashboard</button>';
