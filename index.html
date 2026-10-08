@@ -8,7 +8,7 @@
   <link rel="icon" type="image/svg+xml" href="./favicon.svg">
   <link rel="shortcut icon" href="./favicon.svg">
   <title>Theoria — Advanced Theological Studies</title>
-  <link rel="stylesheet" href="./styles.css?v=20261007-institutions1">
+  <link rel="stylesheet" href="./styles.css?v=20261008-institutions2">
 </head>
 <body>
   <section id="authShell" class="auth-shell">
@@ -46,9 +46,10 @@
             <label>Academic role</label>
             <div class="role-picker">
               <button type="button" class="role-option selected" data-role="student"><strong>Student</strong><span>Join sections and complete academic work.</span></button>
-              <button type="button" class="role-option" data-role="instructor"><strong>Instructor</strong><span>Create courses, sections, and academic frameworks.</span></button>
+              <button type="button" class="role-option" data-role="instructor"><strong>Instructor</strong><span>Create courses, sections, and academic frameworks.</span></button><button type="button" class="role-option" data-role="district-admin"><strong>District Administrator</strong><span>Establish a district and manage school registration.</span></button>
             </div>
           </div>
+          <div id="districtRegistrationFields" class="district-registration-fields hidden"><div class="field"><label for="registerDistrictName">School district name</label><input id="registerDistrictName" maxlength="100" placeholder="e.g. North Valley School District"></div><div class="field"><label for="registerDistrictTitle">Your district title</label><select id="registerDistrictTitle"><option value="superintendent">Superintendent</option><option value="district_administrator">District Administrator</option><option value="assistant_superintendent">Assistant Superintendent</option></select></div><p class="fineprint">Districts are initially unverified. Creating an account does not confer authority over an existing district.</p></div>
           <button class="primary-btn full-btn" type="submit">Create Theoria account</button>
         </form>
         <div id="authError" class="form-error"></div>
