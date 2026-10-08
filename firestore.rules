@@ -1219,6 +1219,86 @@ service cloud.firestore {
       }
     }
 
+
+    // Institution catalog: independent educator data is intentionally unchanged.
+    function institutionOwner(instId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/institutions/$(instId))
+        && get(/databases/$(database)/documents/institutions/$(instId)).data.ownerUid == uid();
+    }
+
+    match /institutions/{instId} {
+      allow read: if signedIn() && (resource.data.status == 'active' || resource.data.ownerUid == uid());
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['name','kind','description','parentDistrictId','ownerUid','status','verified','createdAt'])
+        && request.resource.data.ownerUid == uid()
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 3
+        && request.resource.data.name.size() <= 100
+        && request.resource.data.description is string
+        && request.resource.data.description.size() <= 750
+        && request.resource.data.kind in ['school','district']
+        && request.resource.data.status == 'active'
+        && request.resource.data.verified == false
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.parentDistrictId is string
+        && (
+          request.resource.data.parentDistrictId == ''
+          || (
+            request.resource.data.kind == 'school'
+            && institutionOwner(request.resource.data.parentDistrictId)
+            && get(/databases/$(database)/documents/institutions/$(request.resource.data.parentDistrictId)).data.kind == 'district'
+          )
+        );
+      allow update, delete: if false;
+
+      match /offerings/{offeringId} {
+        allow read: if signedIn() && (resource.data.published == true || institutionOwner(instId));
+        allow create: if institutionOwner(instId)
+          && request.resource.data.keys().hasOnly(['title','code','term','description','openDate','closeDate','openAt','closeAt','published','createdBy','createdAt'])
+          && request.resource.data.createdBy == uid()
+          && request.resource.data.title is string
+          && request.resource.data.title.size() >= 3
+          && request.resource.data.title.size() <= 120
+          && request.resource.data.code is string
+          && request.resource.data.code.size() <= 24
+          && request.resource.data.term is string
+          && request.resource.data.term.size() <= 80
+          && request.resource.data.description is string
+          && request.resource.data.description.size() <= 1000
+          && request.resource.data.openDate is string
+          && request.resource.data.closeDate is string
+          && request.resource.data.openAt is timestamp
+          && request.resource.data.closeAt is timestamp
+          && request.resource.data.openAt < request.resource.data.closeAt
+          && request.resource.data.published == true
+          && request.resource.data.createdAt == request.time;
+        allow update, delete: if false;
+      }
+
+      match /requests/{requestId} {
+        allow get, list: if signedIn()
+          && (institutionOwner(instId) || resource.data.studentUid == uid());
+        allow create: if signedIn()
+          && request.resource.data.keys().hasOnly(['offeringId','studentUid','status','createdAt'])
+          && request.resource.data.studentUid == uid()
+          && request.resource.data.status == 'pending'
+          && request.resource.data.createdAt == request.time
+          && requestId == request.resource.data.offeringId + '_' + uid()
+          && exists(/databases/$(database)/documents/institutions/$(instId)/offerings/$(request.resource.data.offeringId))
+          && get(/databases/$(database)/documents/institutions/$(instId)/offerings/$(request.resource.data.offeringId)).data.published == true
+          && request.time >= get(/databases/$(database)/documents/institutions/$(instId)/offerings/$(request.resource.data.offeringId)).data.openAt
+          && request.time < get(/databases/$(database)/documents/institutions/$(instId)/offerings/$(request.resource.data.offeringId)).data.closeAt;
+        allow update: if institutionOwner(instId)
+          && resource.data.status == 'pending'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','reviewedBy','reviewedAt'])
+          && request.resource.data.status in ['approved','declined']
+          && request.resource.data.reviewedBy == uid()
+          && request.resource.data.reviewedAt == request.time;
+        allow delete: if false;
+      }
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
