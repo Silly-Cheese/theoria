@@ -1266,8 +1266,10 @@ service cloud.firestore {
         allow create: if isSelf(studentUid)
           && userData().role == 'student'
           && get(/databases/$(database)/documents/institutions/$(instId)).data.kind in ['school','district']
-          && request.resource.data.keys().hasOnly(['studentUid','status','requestedAt'])
+          && request.resource.data.keys().hasOnly(['studentUid','studentName','status','requestedAt'])
           && request.resource.data.studentUid == uid()
+          && request.resource.data.studentName is string
+          && request.resource.data.studentName.size() <= 100
           && request.resource.data.status == 'pending'
           && request.resource.data.requestedAt == request.time;
         allow update: if institutionAdmin(instId)
@@ -1453,8 +1455,10 @@ service cloud.firestore {
           && userData().role == 'student'
           && exists(/databases/$(database)/documents/institutions/$(instId)/members/$(uid()))
           && get(/databases/$(database)/documents/institutions/$(instId)/members/$(uid())).data.status == 'active'
-          && request.resource.data.keys().hasOnly(['offeringId','studentUid','status','createdAt'])
+          && request.resource.data.keys().hasOnly(['offeringId','studentUid','studentName','status','createdAt'])
           && request.resource.data.studentUid == uid()
+          && request.resource.data.studentName is string
+          && request.resource.data.studentName.size() <= 100
           && request.resource.data.status == 'pending'
           && request.resource.data.createdAt == request.time
           && requestId == request.resource.data.offeringId + '_' + uid()
