@@ -1,0 +1,59 @@
+import {db,auth,collection,doc,getDocs,getDoc,query,where,addDoc,setDoc,updateDoc,serverTimestamp} from "./firebase.js";
+const e=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const roles=["principal","assistant_principal","district_admin","registrar","counselor","department_head","instructor","staff"];
+const canWrite=(inst,me)=>inst.ownerUid===me?.uid;
+let inst=null,user=null,terms=[],offerings=[],staff=[],requests=[],departments=[],activeTab="overview";
+const html=(s)=>document.getElementById(s);
+async function readSub(name){try{const s=await getDocs(collection(db,"institutions",inst.id,name));return s.docs.map(d=>({id:d.id,...d.data()}));}catch(x){console.warn("School workspace:",name,x);return [];}}
+async function load(){if(!inst||!user)return;const saved=inst.id;const [t,o,s,r,d]=await Promise.all(["terms","offerings","staff","requests","departments"].map(readSub));if(inst?.id!==saved)return;[terms,offerings,staff,requests,departments]=[t,o,s,r,d];paint();}
+const actionButton=(label,act)=>'<button type="button" class="secondary-btn small-btn" data-school-action="'+act+'">'+label+'</button>';
+const tabs=[["overview","Overview"],["terms","Academic years"],["departments","Departments"],["faculty","Faculty & roles"],["schedule","Schedules"],["registrar","Registrar"]];
+function paint(){
+ const root=html("schoolManagementArea");if(!root)return;
+ if(!canWrite(inst,user)){root.innerHTML='<div class="school-subtle">Institutional administration is restricted to authorized staff.</div>';return;}
+ root.innerHTML='<section class="school-admin"><div class="school-admin-title"><div><div class="eyebrow">Academic administration</div><h2>School management center</h2><p>Organize academic years, departments, staff, class schedules and enrollment records.</p></div></div><div class="school-admin-tabs">'+tabs.map(([id,label])=>'<button class="'+(id===activeTab?'selected':'')+'" data-school-tab="'+id+'">'+label+'</button>').join("")+'</div><div id="schoolAdminBody">'+body()+'</div></section>';
+}
+function body(){
+ if(activeTab==="overview")return '<div class="school-metrics">'+[[terms.length,"Academic terms"],[departments.length,"Departments"],[staff.length,"Staff assignments"],[offerings.length,"Course offerings"],[requests.filter(r=>r.status==="pending").length,"Pending requests"]].map(([n,label])=>'<div><strong>'+n+'</strong><span>'+label+'</span></div>').join("")+'</div><p class="school-subtle">Use the tabs to manage each administrative area. Registration approvals remain accessible from each course offering.</p>';
+ if(activeTab==="terms")return '<div class="school-section-head"><h3>Academic years & grading terms</h3>'+actionButton("Add term","term")+'</div>'+listing(terms,t=>'<strong>'+e(t.title)+'</strong><span>'+e(t.startDate)+' — '+e(t.endDate)+'</span><span>'+e(t.gradingScheme||"Standard grading")+'</span>');
+ if(activeTab==="departments")return '<div class="school-section-head"><h3>Departments & curriculum</h3>'+actionButton("Create department","department")+'</div>'+listing(departments,d=>'<strong>'+e(d.name)+'</strong><span>'+e(d.description)+'</span>');
+ if(activeTab==="faculty")return '<div class="school-section-head"><h3>Administrative and teaching staff</h3>'+actionButton("Assign staff","staff")+'</div>'+listing(staff,s=>'<strong>'+e(s.displayName||s.email)+'</strong><span>'+e(s.email)+' · '+e(s.role.replaceAll("_"," "))+'</span>')+'<p class="school-subtle">Only existing Theoria accounts can be assigned. Staff access is limited to authorized institutional records.</p>';
+ if(activeTab==="schedule")return '<div class="school-section-head"><h3>Class schedule & course offerings</h3>'+actionButton("Schedule a course","schedule")+'</div>'+listing(offerings,o=>'<strong>'+e(o.code||"COURSE")+' — '+e(o.title)+'</strong><span>'+e(o.term)+' · '+e(o.period||"Period not set")+' · '+e(o.room||"Room TBD")+'</span><span>Seats: '+e(o.capacity||"Unlimited")+' · '+e(o.instructorName||"Unassigned")+'</span>')+'<p class="school-subtle">Scheduling entries describe offerings; actual enrollment remains a separate approval step.</p>';
+ if(activeTab==="registrar")return '<div class="school-section-head"><h3>Enrollment request register</h3>'+actionButton("Refresh","refresh")+'</div>'+listing(requests,r=>'<strong>'+e(r.studentName||r.studentUid)+'</strong><span>Offering: '+e(offerings.find(o=>o.id===r.offeringId)?.title||r.offeringId)+' · '+e(r.status)+'</span>')+'<p class="school-subtle">Approved requests are not automatically registered into a live classroom section. The registrar must complete roster assignment.</p>';
+ return "";
+}
+function listing(items,format){return items.length?'<div class="school-list">'+items.map(i=>'<div class="school-entry">'+format(i)+'</div>').join("")+'</div>':'<div class="school-empty">Nothing has been added yet.</div>';}
+function modal(title,inner,onSubmit){
+ const root=html("modalRoot");root.innerHTML='<div class="modal-backdrop institution-modal-backdrop"><div class="modal institution-dialog" role="dialog" aria-modal="true"><div class="modal-header"><h2>'+e(title)+'</h2><button type="button" class="secondary-btn" id="schoolClose">Close</button></div><form id="schoolAdminForm" class="institution-form">'+inner+'<button class="primary-btn" type="submit">Save changes</button><p id="schoolFormError" role="alert"></p></form></div></div>';
+ html("schoolClose").onclick=()=>root.innerHTML="";
+ html("schoolAdminForm").onsubmit=async evt=>{evt.preventDefault();const btn=evt.currentTarget.querySelector("[type=submit]");btn.disabled=true;try{await onSubmit(new FormData(evt.currentTarget));root.innerHTML="";await load();}catch(err){html("schoolFormError").textContent=err.message||"Unable to save.";btn.disabled=false;}};
+}
+const inp=(key,title,type="text",required=true)=>'<label>'+e(title)+'<input name="'+key+'" type="'+type+'" '+(required?"required":"")+' maxlength="120"></label>';
+const sel=(key,label,items)=>'<label>'+e(label)+'<select name="'+key+'">'+items.map(([value,text])=>'<option value="'+e(value)+'">'+e(text)+'</option>').join("")+'</select></label>';
+function begin(action){
+ if(action==="refresh"){load();return;}
+ if(action==="term")modal("Add academic term",inp("title","Term name")+inp("startDate","First day","date")+inp("endDate","Last day","date")+sel("gradingScheme","Grading policy",[["standard","Standard"],["semester","Semester"],["quarter","Quarter"]]),async f=>{
+  if(f.get("endDate")<f.get("startDate"))throw Error("End date must follow start date.");
+  await addDoc(collection(db,"institutions",inst.id,"terms"),{title:f.get("title").trim(),startDate:f.get("startDate"),endDate:f.get("endDate"),gradingScheme:f.get("gradingScheme"),createdBy:user.uid,createdAt:serverTimestamp()});
+ }); 
+ if(action==="department")modal("Create academic department",inp("name","Department name")+ '<label>Description<textarea name="description" maxlength="500"></textarea></label>',async f=>addDoc(collection(db,"institutions",inst.id,"departments"),{name:f.get("name").trim(),description:f.get("description").trim(),createdBy:user.uid,createdAt:serverTimestamp()}));
+ if(action==="staff")modal("Assign school staff",inp("email","Existing user email","email")+sel("role","Assigned role",roles.map(r=>[r,r.replaceAll("_"," ")])),async f=>{
+  const email=f.get("email").toLowerCase().trim();
+  const found=await getDocs(query(collection(db,"directory"),where("email","==",email)));
+  const match=found.docs.find(d=>d.data().uid&&String(d.data().email||"").toLowerCase()===email);
+  if(!match)throw Error("Account not found in the Theoria user directory. Ask the user to sign in and complete their profile.");
+  const uid=match.data().uid;
+  await setDoc(doc(db,"institutions",inst.id,"staff",uid),{uid,email,displayName:match.data().displayName||email,role:f.get("role"),assignedBy:user.uid,assignedAt:serverTimestamp()});
+ });
+ if(action==="schedule")modal("Schedule course offering",sel("offeringId","Published course",offerings.map(o=>[o.id,(o.code||"")+" "+o.title]))+inp("period","Class period (e.g. 2nd period)", "text",false)+inp("room","Room / location","text",false)+inp("capacity","Maximum seats","number",false)+sel("staffUid","Assigned instructor", [["","Unassigned"],...staff.filter(s=>["instructor","department_head","principal"].includes(s.role)).map(s=>[s.uid,s.displayName||s.email])]),async f=>{
+  const id=f.get("offeringId");if(!offerings.some(o=>o.id===id))throw Error("Choose an existing offering.");
+  const cap=Number(f.get("capacity")||0);if(!Number.isInteger(cap)||cap<0||cap>10000)throw Error("Enter a valid seat capacity.");
+  const member=staff.find(s=>s.uid===f.get("staffUid"));
+  await updateDoc(doc(db,"institutions",inst.id,"offerings",id),{period:String(f.get("period")||"").slice(0,80),room:String(f.get("room")||"").slice(0,100),capacity:cap,instructorUid:member?.uid||"",instructorName:member?.displayName||"",scheduledBy:user.uid,scheduledAt:serverTimestamp()});
+ });
+}
+document.addEventListener("click",evt=>{
+ const tab=evt.target.closest("[data-school-tab]");if(tab){activeTab=tab.dataset.schoolTab;paint();return;}
+ const act=evt.target.closest("[data-school-action]");if(act)begin(act.dataset.schoolAction);
+});
+window.TheoriaSchoolAdmin={mount(nextInst,nextUser){inst=nextInst;user=nextUser;activeTab="overview";load().catch(console.error);}};
