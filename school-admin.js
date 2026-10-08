@@ -1,7 +1,8 @@
 import {db,auth,collection,doc,getDocs,getDoc,query,where,addDoc,setDoc,updateDoc,serverTimestamp} from "./firebase.js";
 const e=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const roles=["principal","assistant_principal","district_admin","registrar","counselor","department_head","instructor","staff"];
-const canWrite=(inst,me)=>inst.ownerUid===me?.uid;
+let memberAdmin=false;
+const canWrite=(inst,me)=>inst.ownerUid===me?.uid||memberAdmin;
 let inst=null,user=null,terms=[],offerings=[],staff=[],requests=[],departments=[],invitations=[],activeTab="overview";
 const html=(s)=>document.getElementById(s);
 async function readSub(name){try{const s=await getDocs(collection(db,"institutions",inst.id,name));return s.docs.map(d=>({id:d.id,...d.data()}));}catch(x){console.warn("School workspace:",name,x);return [];}}
@@ -67,9 +68,10 @@ async function showInvitation(){
   bar.innerHTML='<strong>School staff invitation</strong><p>You have been invited to '+e(inst.name)+' as '+e(invitation.role.replaceAll("_"," "))+'.</p><button class="primary-btn small-btn">Accept staff role</button>';
   bar.querySelector("button").onclick=async()=>{try{
    await setDoc(doc(db,"institutions",inst.id,"staff",auth.currentUser.uid),{uid:auth.currentUser.uid,email,displayName:auth.currentUser.displayName||email,role:invitation.role,assignedBy:invitation.invitedBy,assignedAt:serverTimestamp()});
+   await updateDoc(ref,{status:"accepted",acceptedBy:auth.currentUser.uid,acceptedAt:serverTimestamp()});
    bar.remove();alert("Staff role accepted. Your institution administrator can now confirm access.");await load();
   }catch(error){alert("Unable to accept invitation: "+error.message);}};
   target.prepend(bar);
  }catch(error){console.warn("Invitation check failed",error);}
 }
-window.TheoriaSchoolAdmin={mount(nextInst,nextUser){inst=nextInst;user=nextUser;activeTab="overview";load().then(showInvitation).catch(console.error);}};
+window.TheoriaSchoolAdmin={mount(nextInst,nextUser){inst=nextInst;user=nextUser;activeTab="overview";memberAdmin=false;const currentId=inst.id;(async()=>{try{const docSnap=await getDoc(doc(db,"institutions",currentId,"staff",user.uid));if(inst.id!==currentId)return;memberAdmin=docSnap.exists()&&["principal","assistant_principal","district_admin","registrar"].includes(docSnap.data().role);}catch(error){console.warn("Admin role lookup failed",error);}await load();await showInvitation();})().catch(console.error);}};
