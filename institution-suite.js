@@ -9,7 +9,7 @@ async function reload(){if(!admin())return;const id=inst.id;const sets=await Pro
 const safe=n=>Array.isArray(data[n])?data[n]:[];
 const choose=(n,label,arr)=>'<label>'+label+'<select name="'+n+'" required>'+arr.map(([id,s])=>'<option value="'+E(id)+'">'+E(s)+'</option>').join("")+'</select></label>';
 const inp=(n,label,type="text")=>'<label>'+label+'<input type="'+type+'" name="'+n+'" required maxlength="180"></label>';
-const studentList=()=>safe("members").filter(m=>m.status==="active").map(m=>[m.studentUid,m.studentName||"Student name unavailable"]);
+const studentList=()=>safe("members").filter(m=>m.status==="active").map(m=>[m.studentUid,m.studentName||safe("requests").find(r=>r.studentUid===m.studentUid)?.studentName||safe("studentRecords").find(r=>r.studentUid===m.studentUid)?.studentName||"Student name unavailable"]);
 const offerList=()=>safe("offerings").map(o=>[o.id,(o.code||"")+" "+o.title]);
 const box=(title,detail)=>'<div class="school-entry"><strong>'+E(title)+'</strong><span>'+E(detail)+'</span></div>';
 function modal(title,fields,save){
