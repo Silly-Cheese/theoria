@@ -1374,6 +1374,77 @@ service cloud.firestore {
         allow delete: if false;
       }
 
+      match /interventions/{recordId} {
+        allow read: if institutionAdmin(instId) || (signedIn() && resource.data.studentUid == uid());
+        allow create: if institutionAdmin(instId)
+          && request.resource.data.keys().hasOnly(['studentUid','studentName','concern','actionPlan','status','createdBy','createdAt'])
+          && request.resource.data.createdBy == uid()
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.studentUid is string;
+        allow update, delete: if false;
+      }
+      match /academicPrograms/{recordId} {
+        allow read: if institutionAdmin(instId);
+        allow create: if institutionAdmin(instId)
+          && request.resource.data.keys().hasOnly(['name','credits','description','status','createdBy','createdAt'])
+          && request.resource.data.createdBy == uid()
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.name is string;
+        allow update, delete: if false;
+      }
+      match /researchProjects/{recordId} {
+        allow read: if institutionAdmin(instId) || (signedIn() && resource.data.studentUid == uid());
+        allow create: if institutionAdmin(instId)
+          && request.resource.data.keys().hasOnly(['studentUid','studentName','title','supervisor','status','createdBy','createdAt'])
+          && request.resource.data.createdBy == uid()
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.studentUid is string;
+        allow update, delete: if false;
+      }
+      match /facultyPlans/{recordId} {
+        allow read: if institutionAdmin(instId);
+        allow create: if institutionAdmin(instId)
+          && request.resource.data.keys().hasOnly(['title','week','notes','createdBy','createdAt'])
+          && request.resource.data.createdBy == uid()
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.title is string;
+        allow update, delete: if false;
+      }
+      match /familyAlerts/{recordId} {
+        allow read: if institutionAdmin(instId) || (signedIn() && resource.data.studentUid == uid());
+        allow create: if institutionAdmin(instId)
+          && request.resource.data.keys().hasOnly(['studentUid','studentName','title','message','status','createdBy','createdAt'])
+          && request.resource.data.createdBy == uid()
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.studentUid is string;
+        allow update, delete: if false;
+      }
+      match /familyForms/{recordId} {
+        allow read: if institutionAdmin(instId);
+        allow create: if institutionAdmin(instId)
+          && request.resource.data.keys().hasOnly(['title','description','status','createdBy','createdAt'])
+          && request.resource.data.createdBy == uid()
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.title is string;
+        allow update, delete: if false;
+      }
+      match /familyMessages/{messageId} {
+        allow read: if institutionAdmin(instId) || guardianApproved(resource.data.studentUid);
+        allow create: if institutionAdmin(instId);
+        allow update, delete: if false;
+      }
+      match /conferences/{conferenceId} {
+        allow read: if institutionAdmin(instId) || guardianApproved(resource.data.studentUid);
+        allow create: if institutionAdmin(instId);
+        allow update, delete: if false;
+      }
+      match /auditEvents/{eventId} {
+        allow read: if institutionAdmin(instId);
+        allow create: if institutionAdmin(instId)
+          && request.resource.data.createdBy == uid()
+          && request.resource.data.createdAt == request.time;
+        allow update, delete: if false;
+      }
       match /terms/{termId} {
         allow read: if signedIn() && (institutionAdmin(instId) || get(/databases/$(database)/documents/institutions/$(instId)).data.status == 'active');
         allow create: if institutionAdmin(instId)
