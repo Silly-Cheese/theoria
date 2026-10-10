@@ -1,0 +1,14 @@
+{
+  "name": "theoria-security-validation",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check campus.js && node --check institution-suite.js && node --check family.js && node --check school-admin.js && node --check registrar.js && node --check institutions.js && node --check parent-portal.js",
+    "test": "node --test tests/firestore-rules.test.mjs"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
+    "firebase": "^12.3.0",
+    "firebase-tools": "^14.0.0"
+  }
+}
