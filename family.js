@@ -1,4 +1,4 @@
-import {auth,db,onAuthStateChanged,createUserWithEmailAndPassword,signInWithEmailAndPassword,signOut,updateProfile,doc,getDoc,getDocs,setDoc,collection,query,where,serverTimestamp} from "./firebase.js";
+import {auth,db,onAuthStateChanged,createUserWithEmailAndPassword,signInWithEmailAndPassword,signOut,updateProfile,doc,getDoc,getDocs,setDoc,addDoc,collection,query,where,serverTimestamp} from "./firebase.js";
 const $=s=>document.querySelector(s),esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let user=null,access=[],selection=0,page="overview",reports={},errorText="";
 const notice=msg=>$("#familyAuthMessage").textContent=msg;
@@ -15,7 +15,7 @@ async function load(){
   await Promise.all(schools.docs.map(async school=>{try{const links=await getDocs(query(collection(db,"institutions",school.id,"guardianAccess"),where("guardianUid","==",user.uid)));links.forEach(d=>access.push({id:d.id,institutionId:school.id,institutionName:school.data().name,...d.data()}));}catch(error){console.warn("Family grants",error);}}));
   access.sort((a,b)=>String(a.studentName||"").localeCompare(String(b.studentName||"")));
   selection=0;
-  await Promise.all(access.map(async a=>{const key=a.institutionId+"_"+a.studentUid;reports[key]={studentRecords:[],attendance:[],familyAlerts:[],issues:[]};await Promise.all(["studentRecords","attendance","familyAlerts"].map(async name=>{try{const snap=await getDocs(query(collection(db,"institutions",a.institutionId,name),where("studentUid","==",a.studentUid)));reports[key][name]=snap.docs.map(d=>({id:d.id,...d.data()}));}catch(e){reports[key].issues.push(name+": "+e.message);}}));}));
+  await Promise.all(access.map(async a=>{const key=a.institutionId+"_"+a.studentUid;reports[key]={studentRecords:[],attendance:[],familyAlerts:[],familyRequests:[],issues:[]};await Promise.all(["studentRecords","attendance","familyAlerts","familyRequests"].map(async name=>{try{const snap=await getDocs(query(collection(db,"institutions",a.institutionId,name),where("studentUid","==",a.studentUid)));reports[key][name]=snap.docs.map(d=>({id:d.id,...d.data()}));}catch(e){reports[key].issues.push(name+": "+e.message);}}));}));
  }catch(e){errorText="Unable to load participating institutions: "+e.message;}
  draw();
 }
@@ -30,7 +30,23 @@ function draw(){
  if(page==="overview"){target.innerHTML='<div class="family-metrics"><div><strong>'+records.length+'</strong><span>Academic records</span></div><div><strong>'+att.length+'</strong><span>Attendance entries</span></div><div><strong>'+att.filter(x=>x.status==="absent").length+'</strong><span>Absences recorded</span></div></div><h3>Recent academic results</h3>'+(records.length?records.slice(0,5).map(r=>row(r.courseTitle||"Course",String(r.finalGrade||"Pending")+" · "+(r.status||""))).join(""):'<p>No academic results have been published by the institution.</p>');}
  if(page==="academics"){target.innerHTML='<h3>Academic records</h3>'+(records.length?records.map(r=>row(r.courseTitle||"Course",String(r.finalGrade||"Pending")+" · "+(r.status||"")+" · "+String(r.credits??"—")+" credits")).join(""):'<p>No records are available yet.</p>');}
  if(page==="attendance"){target.innerHTML='<h3>Attendance history</h3>'+(att.length?att.sort((a,b)=>String(b.day||"").localeCompare(String(a.day||""))).map(r=>row(r.offeringTitle||"Class",String(r.day||"")+" · "+String(r.status||""))).join(""):'<p>No attendance entries are available yet.</p>');}
- if(page==="requests"){target.innerHTML='<h3>Family access and school support</h3><p>This student is linked to your account through an approved school invitation. To correct records, request additional student access, or change guardian permissions, contact the institution directly.</p>'+row("Institution",a.institutionName)+row("Access","School approved")+'<p class="family-note">Theoria does not disclose instructor-only assessments or confidential support information through the family portal.</p>';}
+ if(page==="requests"){target.innerHTML='<h3>Family access and school support</h3><p>This student is linked to your account through an approved school invitation. To correct records, request additional student access, or change guardian permissions, contact the institution directly.</p>'+row("Institution",a.institutionName)+row("Access","School approved")+'<div class="family-request-actions"><button class="primary-btn" data-parent-request="message">Message school</button> <button class="secondary-btn" data-parent-request="conference">Request conference</button> <button class="secondary-btn" data-parent-request="record_correction">Request record correction</button></div><h3>My requests</h3>'+(data.familyRequests.length?data.familyRequests.map(r=>row(r.subject,r.type+" · "+r.status)).join(""):'<p>No requests have been submitted.</p>')+'<p class="family-note">Theoria does not disclose instructor-only assessments or confidential support information through the family portal.</p>';}
  if(data.issues.length)target.innerHTML+='<p class="family-warning">Some records could not be loaded: '+esc(data.issues.join("; "))+'</p>';
 }
+document.addEventListener("click",async event=>{
+ const trigger=event.target.closest("[data-parent-request]");if(!trigger||!user)return;
+ const a=access[selection];if(!a)return;
+ const kind=trigger.dataset.parentRequest;
+ const subject=prompt(kind==="conference"?"Conference subject":kind==="record_correction"?"Correction subject":"Message subject");
+ if(!subject?.trim())return;
+ const message=prompt("Describe your request to the school");
+ if(!message?.trim())return;
+ if(subject.length>120||message.length>1500){alert("Please shorten your request.");return;}
+ try{
+  await addDoc(collection(db,"institutions",a.institutionId,"familyRequests"),{guardianUid:user.uid,studentUid:a.studentUid,type:kind,subject:subject.trim(),message:message.trim(),status:"pending",createdAt:serverTimestamp()});
+  const key=a.institutionId+"_"+a.studentUid;
+  reports[key].familyRequests.push({subject:subject.trim(),type:kind,status:"pending"});
+  draw();alert("Your request was submitted to the school.");
+ }catch(error){alert("Unable to submit: "+error.message);}
+});
 onAuthStateChanged(auth,async next=>{user=next;$("#familyAuth").classList.toggle("hidden",!!next);$("#familyDashboard").classList.toggle("hidden",!next);$("#familySignOut").classList.toggle("hidden",!next);$("#familyAccountName").textContent=next?.displayName||next?.email||"";if(next)await load();});
