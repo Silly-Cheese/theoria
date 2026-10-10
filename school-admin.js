@@ -6,11 +6,12 @@ const canWrite=(inst,me)=>inst.ownerUid===me?.uid||memberAdmin;
 let inst=null,user=null,terms=[],offerings=[],staff=[],requests=[],departments=[],invitations=[],members=[],activeTab="overview";
 const html=(s)=>document.getElementById(s);
 async function readSub(name){try{const s=await getDocs(collection(db,"institutions",inst.id,name));return s.docs.map(d=>({id:d.id,...d.data()}));}catch(x){console.warn("School workspace:",name,x);return [];}}
-async function load(){if(!inst||!user)return;const saved=inst.id;const [t,o,s,r,d,i,m]=await Promise.all(["terms","offerings","staff","requests","departments","invitations","members"].map(readSub));if(inst?.id!==saved)return;[terms,offerings,staff,requests,departments,invitations,members]=[t,o,s,r,d,i,m];paint();window.TheoriaRegistrar?.mount(inst,user);window.TheoriaInstitutionSuite?.mount(inst,user);}
+async function load(){if(!inst||!user)return;const saved=inst.id;const [t,o,s,r,d,i,m]=await Promise.all(["terms","offerings","staff","requests","departments","invitations","members"].map(readSub));if(inst?.id!==saved)return;[terms,offerings,staff,requests,departments,invitations,members]=[t,o,s,r,d,i,m];paint();window.TheoriaRegistrar?.mount(inst,user);window.TheoriaInstitutionSuite?.mount(inst,user);window.TheoriaCampus?.mount(inst,user);}
 const actionButton=(label,act)=>'<button type="button" class="secondary-btn small-btn" data-school-action="'+act+'">'+label+'</button>';
 const tabs=[["overview","Overview"],["terms","Academic years"],["departments","Departments"],["faculty","Faculty & roles"],["schedule","Schedules"],["registrar","Registrar"],["membership","Student membership"]];
 function paint(){
  const root=html("schoolManagementArea");if(!root)return;
+ if(!html("campusOperations")){const campus=document.createElement("div");campus.id="campusOperations";root.insertAdjacentElement("afterend",campus);}
  if(!html("theoriaExpansion")){const suite=document.createElement("div");suite.id="theoriaExpansion";root.insertAdjacentElement("afterend",suite);}
  if(!html("schoolRegistrarExpansion")){const extra=document.createElement("div");extra.id="schoolRegistrarExpansion";root.insertAdjacentElement("afterend",extra);}
  if(!canWrite(inst,user)){root.innerHTML='<div class="school-subtle">Institutional administration is restricted to authorized staff.</div>';return;}
