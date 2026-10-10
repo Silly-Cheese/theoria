@@ -1386,6 +1386,13 @@ service cloud.firestore {
           && request.resource.data.status == 'pending_verification';
         allow update: if (
           institutionAdmin(instId)
+          && resource.data.status == 'approved'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','reviewedBy','reviewedAt'])
+          && request.resource.data.status == 'revoked'
+          && request.resource.data.reviewedBy == uid()
+          && request.resource.data.reviewedAt == request.time
+        ) || (
+          institutionAdmin(instId)
           && resource.data.status == 'awaiting_school_approval'
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','reviewedBy','reviewedAt'])
           && request.resource.data.status in ['approved','declined']
