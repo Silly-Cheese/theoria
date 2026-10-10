@@ -1,0 +1,46 @@
+import {auth,db,doc,getDoc,getDocs,collection,query,where,addDoc,setDoc,serverTimestamp} from "./firebase.js";
+const E=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const $=s=>document.querySelector(s);
+let inst=null,user=null,memberRole="",tab="students",data={};
+const names=["members","requests","offerings","placements","studentRecords","attendance","graduationPolicies","interventions","academicPrograms","researchProjects","facultyPlans","familyMessages","familyAlerts","familyForms","conferences","auditEvents"];
+const admin=()=>!!user&&!!inst&&(inst.ownerUid===user.uid||["principal","assistant_principal","district_admin","registrar"].includes(memberRole));
+async function read(n){try{let s=await getDocs(collection(db,"institutions",inst.id,n));return s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){return {error:e.message}}}
+async function reload(){if(!admin())return;const id=inst.id;const sets=await Promise.all(names.map(read));if(inst.id!==id)return;data=Object.fromEntries(names.map((n,i)=>[n,sets[i]]));render();}
+const safe=n=>Array.isArray(data[n])?data[n]:[];
+const choose=(n,label,arr)=>'<label>'+label+'<select name="'+n+'" required>'+arr.map(([id,s])=>'<option value="'+E(id)+'">'+E(s)+'</option>').join("")+'</select></label>';
+const inp=(n,label,type="text")=>'<label>'+label+'<input type="'+type+'" name="'+n+'" required maxlength="180"></label>';
+const studentList=()=>safe("members").filter(m=>m.status==="active").map(m=>[m.studentUid,m.studentName||m.studentUid]);
+const offerList=()=>safe("offerings").map(o=>[o.id,(o.code||"")+" "+o.title]);
+const box=(title,detail)=>'<div class="school-entry"><strong>'+E(title)+'</strong><span>'+E(detail)+'</span></div>';
+function modal(title,fields,save){
+ const root=$("#modalRoot");root.innerHTML='<div class="modal-backdrop institution-modal-backdrop"><div class="modal institution-dialog" role="dialog" aria-modal="true"><div class="modal-header"><h2>'+E(title)+'</h2><button type="button" class="secondary-btn" id="suiteClose">Close</button></div><form id="suiteForm" class="institution-form">'+fields+'<p id="suiteError" role="alert"></p><button class="primary-btn">Save</button></form></div></div>';
+ $("#suiteClose").onclick=()=>root.innerHTML="";
+ $("#suiteForm").onsubmit=async event=>{event.preventDefault();const form=event.currentTarget,button=form.querySelector(".primary-btn");button.disabled=true;try{await save(new FormData(form));root.innerHTML="";await reload();}catch(err){$("#suiteError").textContent=err.message;button.disabled=false;}};
+}
+async function create(n,fields){await addDoc(collection(db,"institutions",inst.id,n),{...fields,createdBy:user.uid,createdAt:serverTimestamp()});}
+const sections=[["students","Students & admissions"],["intelligence","Academic success"],["programs","Programs & research"],["faculty","Faculty command"],["families","Family engagement"],["audit","Activity log"]];
+function render(){
+ const host=$("#theoriaExpansion");if(!host)return;
+ if(!admin()){host.innerHTML="";return;}
+ host.innerHTML='<div class="school-admin"><div class="eyebrow">Theoria Academic Operations</div><h2>Institution Command Center</h2><p class="school-subtle">Manage student services, academic support, programs, faculty work and family communication.</p><div class="school-admin-tabs">'+sections.map(([k,t])=>'<button data-suite-tab="'+k+'" class="'+(tab===k?"selected":"")+'">'+t+'</button>').join("")+'</div><div id="suiteBody">'+body()+'</div></div>';
+}
+function list(n,fn){const a=safe(n);return a.length?a.map(fn).join(""):'<p class="school-empty">No items yet.</p>';}
+function body(){
+ if(tab==="students")return '<div class="school-section-head"><h3>Institution enrollment & scheduling</h3></div><div class="school-metrics"><div><strong>'+safe("members").filter(m=>m.status==="active").length+'</strong><span>Active students</span></div><div><strong>'+safe("requests").filter(r=>r.status==="pending").length+'</strong><span>Pending course requests</span></div><div><strong>'+safe("placements").length+'</strong><span>Placements</span></div></div>'+list("members",m=>box(m.studentName||m.studentUid,"Membership: "+m.status))+'<p class="school-subtle">The registrar remains the authority for approval and section placement. A placement is not a live class enrollment.</p>';
+ if(tab==="intelligence")return '<div class="school-section-head"><h3>Academic interventions</h3><button data-suite-action="intervention" class="secondary-btn">New support plan</button></div>'+list("interventions",i=>box(i.studentName,i.concern+" · "+i.status+" · "+i.actionPlan))+'<h3>Performance overview</h3>'+list("studentRecords",r=>box(r.studentName||r.studentUid,r.courseTitle+" · "+r.finalGrade));
+ if(tab==="programs")return '<div class="school-section-head"><h3>Academic programs</h3><button class="secondary-btn" data-suite-action="program">Add program</button></div>'+list("academicPrograms",p=>box(p.name,p.credits+" credits · "+p.description))+'<div class="school-section-head"><h3>Supervised research</h3><button class="secondary-btn" data-suite-action="research">New project</button></div>'+list("researchProjects",r=>box(r.title,r.studentName+" · "+r.status));
+ if(tab==="faculty")return '<div class="school-section-head"><h3>Weekly teaching plans</h3><button class="secondary-btn" data-suite-action="plan">Add plan</button></div>'+list("facultyPlans",p=>box(p.title,p.week+" · "+p.notes))+'<h3>Course assignments</h3>'+list("offerings",o=>box(o.title,(o.instructorName||"Unassigned")+" · "+(o.period||"Unscheduled")));
+ if(tab==="families")return '<div class="school-section-head"><h3>Family engagement</h3><button class="secondary-btn" data-suite-action="alert">New parent alert</button><button class="secondary-btn" data-suite-action="form">New school form</button></div>'+list("familyAlerts",a=>box(a.title,a.studentName+" · "+a.message))+'<h3>Family messages</h3>'+list("familyMessages",m=>box(m.subject,m.message))+'<h3>Parent conferences</h3>'+list("conferences",a=>box(a.studentName,a.when+" · "+a.status))+'<h3>Forms</h3>'+list("familyForms",f=>box(f.title,f.description));
+ return '<h3>Institution audit events</h3>'+list("auditEvents",a=>box(a.action,a.target+" · "+a.createdBy));
+}
+async function run(action){
+ if(!admin())return;
+ if(action==="intervention"){const students=studentList();if(!students.length)return alert("No active students available.");modal("Create support plan",choose("studentUid","Student",students)+inp("concern","Academic concern")+inp("actionPlan","Intervention plan"),async f=>{const id=f.get("studentUid");await create("interventions",{studentUid:id,studentName:students.find(a=>a[0]===id)?.[1]||id,concern:f.get("concern"),actionPlan:f.get("actionPlan"),status:"open"});});}
+ if(action==="program")modal("Create academic program",inp("name","Program title")+inp("credits","Credits required","number")+inp("description","Program description"),async f=>{const credits=Number(f.get("credits"));if(credits<0||credits>500)throw Error("Invalid credit requirement.");await create("academicPrograms",{name:f.get("name"),credits,description:f.get("description"),status:"active"});});
+ if(action==="research"){const students=studentList();if(!students.length)return alert("No active students.");modal("Supervised research project",choose("studentUid","Student",students)+inp("title","Research title")+inp("supervisor","Supervisor name"),async f=>{const id=f.get("studentUid");await create("researchProjects",{studentUid:id,studentName:students.find(x=>x[0]===id)?.[1]||id,title:f.get("title"),supervisor:f.get("supervisor"),status:"proposed"});});}
+ if(action==="plan")modal("Create faculty plan",inp("title","Plan title")+inp("week","Week commencing","date")+inp("notes","Objectives and notes"),async f=>create("facultyPlans",{title:f.get("title"),week:f.get("week"),notes:f.get("notes")}));
+ if(action==="alert"){const students=studentList();if(!students.length)return alert("No active students.");modal("Family alert",choose("studentUid","Student",students)+inp("title","Alert title")+inp("message","Message"),async f=>{const id=f.get("studentUid");await create("familyAlerts",{studentUid:id,studentName:students.find(x=>x[0]===id)?.[1]||id,title:f.get("title"),message:f.get("message"),status:"published"});});}
+ if(action==="form")modal("Publish a family form",inp("title","Form title")+inp("description","Instructions"),async f=>create("familyForms",{title:f.get("title"),description:f.get("description"),status:"published"}));
+}
+document.addEventListener("click",event=>{const b=event.target.closest("[data-suite-tab]");if(b){tab=b.dataset.suiteTab;render();}const a=event.target.closest("[data-suite-action]");if(a)run(a.dataset.suiteAction);});
+window.TheoriaInstitutionSuite={mount:async function(next,userValue){inst=next;user=userValue;memberRole="";if(inst.ownerUid!==user.uid){try{const r=await getDoc(doc(db,"institutions",inst.id,"staff",user.uid));memberRole=r.exists()?r.data().role:"";}catch(e){console.warn(e);}}reload().catch(console.error);}};
