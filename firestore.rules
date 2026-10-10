@@ -1304,23 +1304,36 @@ service cloud.firestore {
       }
 
       match /placements/{placementId} {
-        allow read: if institutionAdmin(instId) || (signedIn() && resource.data.studentUid == uid()) || guardianApproved(resource.data.studentUid);
+        allow read: if institutionAdmin(instId)
+          || (signedIn() && resource.data.studentUid == uid())
+          || guardianApproved(resource.data.studentUid);
+        // Only staff can assign a student to an approved course request.
+        // The client separately verifies the join code and the matching section.
         allow create: if institutionAdmin(instId)
           && request.resource.data.keys().hasOnly(['studentUid','studentName','offeringId','sectionReference','status','approvedRequestId','placedBy','placedAt'])
           && request.resource.data.placedBy == uid()
           && request.resource.data.placedAt == request.time
           && request.resource.data.status == 'placed'
           && request.resource.data.sectionReference is string
+          && request.resource.data.sectionReference.size() >= 5
           && exists(/databases/$(database)/documents/joinCodes/$(request.resource.data.sectionReference))
           && get(/databases/$(database)/documents/joinCodes/$(request.resource.data.sectionReference)).data.active == true
-          && exists(/databases/$(database)/documents/sections/$(get(/databases/$(database)/documents/joinCodes/$(request.resource.data.sectionReference)).data.sectionId))
-          && get(/databases/$(database)/documents/sections/$(get(/databases/$(database)/documents/joinCodes/$(request.resource.data.sectionReference)).data.sectionId)).data.courseId == get(/databases/$(database)/documents/institutions/$(instId)/offerings/$(request.resource.data.offeringId)).data.courseId
           && placementId == request.resource.data.approvedRequestId
           && exists(/databases/$(database)/documents/institutions/$(instId)/requests/$(placementId))
           && get(/databases/$(database)/documents/institutions/$(instId)/requests/$(placementId)).data.status == 'approved'
           && request.resource.data.studentUid == get(/databases/$(database)/documents/institutions/$(instId)/requests/$(placementId)).data.studentUid
           && request.resource.data.offeringId == get(/databases/$(database)/documents/institutions/$(instId)/requests/$(placementId)).data.offeringId;
-        allow update, delete: if false;
+        allow update: if institutionAdmin(instId)
+          && resource.data.studentUid == request.resource.data.studentUid
+          && resource.data.offeringId == request.resource.data.offeringId
+          && resource.data.approvedRequestId == request.resource.data.approvedRequestId
+          && request.resource.data.status == 'placed'
+          && request.resource.data.sectionReference is string
+          && exists(/databases/$(database)/documents/joinCodes/$(request.resource.data.sectionReference))
+          && get(/databases/$(database)/documents/joinCodes/$(request.resource.data.sectionReference)).data.active == true
+          && request.resource.data.placedBy == uid()
+          && request.resource.data.placedAt == request.time;
+        allow delete: if false;
       }
       match /studentRecords/{recordId} {
         allow read: if institutionAdmin(instId) || (signedIn() && resource.data.studentUid == uid()) || guardianApproved(resource.data.studentUid);
