@@ -36,25 +36,25 @@ function modal(title,fields,save){
 }
 const input=(id,title,type="text")=>'<label>'+esc(title)+'<input name="'+id+'" type="'+type+'" required></label>';
 const options=(key,label,values)=>'<label>'+label+'<select name="'+key+'">'+values.map(([k,v])=>'<option value="'+esc(k)+'">'+esc(v)+'</option>').join("")+'</select></label>';
-function handle(action){
+async function handle(action){
  if(!roleAdmin())return;
  if(action==="refresh"){refresh();return;}
- if(action.startsWith("revoke-parent:")){const id=action.slice("revoke-parent:".length),link=guardianLinks.find(g=>g.id===id);if(!link||link.status!=="approved")return;if(!confirm("Revoke this guardian's access to the student's records?"))return;updateDoc(doc(db,"institutions",current.id,"guardianLinks",id),{status:"revoked",reviewedBy:me.uid,reviewedAt:serverTimestamp()}).then(refresh).catch(err=>alert("Revocation failed: "+err.message));return;}
- if(action.startsWith("approve-parent:")||action.startsWith("decline-parent:")){const approve=action.startsWith("approve-parent:"),id=action.slice(approve?15:15),link=guardianLinks.find(g=>g.id===id);if(!link||link.status!=="awaiting_school_approval")return;if(!confirm((approve?"Approve":"Decline")+" parent access for "+studentName(link.studentUid)+"?"))return;(async()=>{try{await updateDoc(doc(db,"institutions",current.id,"guardianLinks",id),{status:approve?"approved":"declined",reviewedBy:me.uid,reviewedAt:serverTimestamp()});if(approve){if(!link.guardianUid)throw Error("Parent has not claimed invitation.");await setDoc(doc(db,"institutions",current.id,"guardianAccess",link.guardianUid+"_"+link.studentUid),{guardianUid:link.guardianUid,studentUid:link.studentUid,studentName:link.studentName||"",inviteId:id,approvedBy:me.uid,approvedAt:serverTimestamp()});}await refresh();}catch(err){alert("Unable to finish guardian review: "+err.message);}})();return;}
- if(action.startsWith("copy-parent:")){const link=guardianLinks.find(g=>g.id===action.slice(12));if(!link)return;const url=new URL(location.href);url.search="";url.hash="";url.searchParams.set("parentInvite",current.id+"."+link.id);navigator.clipboard.writeText(url.toString()).then(()=>alert("Parent setup link copied. Send it only to the intended guardian.")).catch(()=>prompt("Copy parent setup link:",url.toString()));return;}
+ if(action.startsWith("revoke-parent:")){const id=action.slice("revoke-parent:".length),link=guardianLinks.find(g=>g.id===id);if(!link||link.status!=="approved")return;if(!await window.TheoriaDialog.confirm("Revoke this guardian's access to the student's records?"))return;updateDoc(doc(db,"institutions",current.id,"guardianLinks",id),{status:"revoked",reviewedBy:me.uid,reviewedAt:serverTimestamp()}).then(refresh).catch(err=>window.TheoriaDialog.alert("Revocation failed: "+err.message));return;}
+ if(action.startsWith("approve-parent:")||action.startsWith("decline-parent:")){const approve=action.startsWith("approve-parent:"),id=action.slice(approve?15:15),link=guardianLinks.find(g=>g.id===id);if(!link||link.status!=="awaiting_school_approval")return;if(!await window.TheoriaDialog.confirm((approve?"Approve":"Decline")+" parent access for "+studentName(link.studentUid)+"?"))return;(async()=>{try{await updateDoc(doc(db,"institutions",current.id,"guardianLinks",id),{status:approve?"approved":"declined",reviewedBy:me.uid,reviewedAt:serverTimestamp()});if(approve){if(!link.guardianUid)throw Error("Parent has not claimed invitation.");await setDoc(doc(db,"institutions",current.id,"guardianAccess",link.guardianUid+"_"+link.studentUid),{guardianUid:link.guardianUid,studentUid:link.studentUid,studentName:link.studentName||"",inviteId:id,approvedBy:me.uid,approvedAt:serverTimestamp()});}await refresh();}catch(err){window.TheoriaDialog.alert("Unable to finish guardian review: "+err.message);}})();return;}
+ if(action.startsWith("copy-parent:")){const link=guardianLinks.find(g=>g.id===action.slice(12));if(!link)return;const url=new URL(location.href);url.search="";url.hash="";url.searchParams.set("parentInvite",current.id+"."+link.id);navigator.clipboard.writeText(url.toString()).then(()=>window.TheoriaDialog.alert("Parent setup link copied. Send it only to the intended guardian.")).catch(()=>window.TheoriaDialog.alert("Copy this parent setup link: "+url.toString()));return;}
  if(action.startsWith("member:")){
   const parts=action.split(":"),status=parts[1],id=parts.slice(2).join(":");
   const membership=members.find(m=>m.id===id);
   if(!membership||membership.status!=="pending"||!["active","declined"].includes(status))return;
-  if(!confirm((status==="active"?"Approve":"Decline")+" membership for "+studentName(membership.studentUid)+"?"))return;
-  updateDoc(doc(db,"institutions",current.id,"members",id),{status,reviewedBy:me.uid,reviewedAt:serverTimestamp()}).then(refresh).catch(err=>alert("Unable to review school membership: "+err.message));
+  if(!await window.TheoriaDialog.confirm((status==="active"?"Approve":"Decline")+" membership for "+studentName(membership.studentUid)+"?"))return;
+  updateDoc(doc(db,"institutions",current.id,"members",id),{status,reviewedBy:me.uid,reviewedAt:serverTimestamp()}).then(refresh).catch(err=>window.TheoriaDialog.alert("Unable to review school membership: "+err.message));
   return;
  }
  if(action.startsWith("decision:")){
   const parts=action.split(":"),status=parts[1],id=parts.slice(2).join(":");const r=reqs.find(x=>x.id===id);
   if(!r||r.status!=="pending"||!["approved","declined"].includes(status))return;
-  if(!confirm((status==="approved"?"Approve":"Decline")+" "+studentName(r.studentUid)+"'s request?"))return;
-  updateDoc(doc(db,"institutions",current.id,"requests",id),{status,reviewedBy:me.uid,reviewedAt:serverTimestamp()}).then(refresh).catch(err=>alert("Unable to review request: "+err.message));
+  if(!await window.TheoriaDialog.confirm((status==="approved"?"Approve":"Decline")+" "+studentName(r.studentUid)+"'s request?"))return;
+  updateDoc(doc(db,"institutions",current.id,"requests",id),{status,reviewedBy:me.uid,reviewedAt:serverTimestamp()}).then(refresh).catch(err=>window.TheoriaDialog.alert("Unable to review request: "+err.message));
   return;
  }
  if(action.startsWith("finalize:")){
@@ -72,14 +72,14 @@ function handle(action){
   });return;
  }
  if(action==="record")modal("Create academic record",input("studentUid","Student's Theoria account UID")+input("studentName","Student name")+input("courseTitle","Course title")+input("credits","Credits","number")+input("finalGrade","Certified grade")+options("status","Record state",[["pending","Pending verification"],["certified","Certified by registrar"],["withdrawn","Withdrawn"]]),async f=>{
-  if(!confirm("Are you authorized to enter or certify this academic result?"))throw Error("Authorization required.");
+  if(!await window.TheoriaDialog.confirm("Are you authorized to enter or certify this academic result?"))throw Error("Authorization required.");
   await addDoc(collection(db,"institutions",current.id,"studentRecords"),{studentUid:f.get("studentUid").trim(),studentName:f.get("studentName").trim(),courseTitle:f.get("courseTitle").trim(),credits:Number(f.get("credits")),finalGrade:f.get("finalGrade").trim(),status:f.get("status"),recordedBy:me.uid,recordedAt:serverTimestamp()});
  });
  if(action==="attendance")modal("Record student attendance",input("studentUid","Student UID")+input("studentName","Student name")+input("offeringTitle","Course / section")+input("day","Class date","date")+options("status","Attendance status",[["present","Present"],["absent","Absent"],["late","Late"],["excused","Excused"]]),async f=>addDoc(collection(db,"institutions",current.id,"attendance"),{studentUid:f.get("studentUid").trim(),studentName:f.get("studentName").trim(),offeringTitle:f.get("offeringTitle").trim(),day:f.get("day"),status:f.get("status"),recordedBy:me.uid,recordedAt:serverTimestamp()}));
  if(action==="policy")modal("Add graduation requirement",input("name","Subject / requirement")+input("requiredCredits","Credits required","number")+input("description","Requirement notes"),async f=>addDoc(collection(db,"institutions",current.id,"graduationPolicies"),{name:f.get("name").trim(),requiredCredits:Number(f.get("requiredCredits")),description:f.get("description").trim(),createdBy:me.uid,createdAt:serverTimestamp()}));
  if(action==="guardian"){
   const available=studentOptions();
-  if(!available.length){alert("No students found in school membership or enrollment records. Students must request to join the institution first.");return;}
+  if(!available.length){window.TheoriaDialog.alert("No students found in school membership or enrollment records. Students must request to join the institution first.");return;}
   modal("Invite parent or guardian",options("studentUid","Select student",available)+input("guardianEmail","Parent or guardian email","email"),async f=>{
     const uid=String(f.get("studentUid")||"");if(!available.some(([id])=>id===uid))throw Error("Choose a student from the list.");
     await addDoc(collection(db,"institutions",current.id,"guardianLinks"),{studentUid:uid,studentName:studentName(uid),guardianEmail:f.get("guardianEmail").trim().toLowerCase(),status:"pending_verification",createdBy:me.uid,createdAt:serverTimestamp()});
