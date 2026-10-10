@@ -61,7 +61,7 @@ document.addEventListener("click",async evt=>{
  const member=evt.target.closest("[data-school-member]");
  if(member){if(!canWrite(inst,user))return;try{
  await updateDoc(doc(db,"institutions",inst.id,"members",member.dataset.schoolMember),{status:member.dataset.schoolDecision,reviewedBy:user.uid,reviewedAt:serverTimestamp()});await load();
- }catch(error){alert("Unable to review membership: "+error.message);}return;}
+ }catch(error){window.TheoriaDialog.alert("Unable to review membership: "+error.message);}return;}
  const tab=evt.target.closest("[data-school-tab]");if(tab){activeTab=tab.dataset.schoolTab;paint();return;}
  const act=evt.target.closest("[data-school-action]");if(act)begin(act.dataset.schoolAction);
 });
@@ -80,8 +80,8 @@ async function showInvitation(){
   bar.querySelector("button").onclick=async()=>{try{
    await setDoc(doc(db,"institutions",inst.id,"staff",auth.currentUser.uid),{uid:auth.currentUser.uid,email,displayName:auth.currentUser.displayName||email,role:invitation.role,assignedBy:invitation.invitedBy,assignedAt:serverTimestamp()});
    await updateDoc(ref,{status:"accepted",acceptedBy:auth.currentUser.uid,acceptedAt:serverTimestamp()});
-   bar.remove();alert("Staff role accepted. Your institution administrator can now confirm access.");await load();
-  }catch(error){alert("Unable to accept invitation: "+error.message);}};
+   bar.remove();window.TheoriaDialog.alert("Staff role accepted. Your institution administrator can now confirm access.");await load();
+  }catch(error){window.TheoriaDialog.alert("Unable to accept invitation: "+error.message);}};
   target.prepend(bar);
  }catch(error){console.warn("Invitation check failed",error);}
 }
