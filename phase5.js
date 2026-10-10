@@ -786,7 +786,7 @@ async function approveWithdrawalRequest(sectionId,requestId){
   });
 }
 async function denyWithdrawalRequest(sectionId,requestId){
-  const reason=await window.TheoriaDialog.prompt("Reason for denying this withdrawal request?")?.trim();if(!reason)return;
+  const reason=(await window.TheoriaDialog.prompt("Reason for denying this withdrawal request?"))?.trim();if(!reason)return;
   try{
     await updateDoc(doc(db,"sections",sectionId,"withdrawalRequests",requestId),{
       status:"Denied",denialReason:reason,resolvedAt:serverTimestamp(),resolvedBy:state().user.uid,updatedAt:serverTimestamp()
