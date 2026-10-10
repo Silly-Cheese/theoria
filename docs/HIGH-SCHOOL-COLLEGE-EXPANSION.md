@@ -32,3 +32,11 @@ The expansion **does not fully implement** the user's entire high-school/college
 No live browser or Firebase deployment was performed in this conversation. A direct validation checkout also could not run because the execution environment could not resolve github.com. JavaScript syntax was checked for the modified modules, but GitHub Actions and Firestore emulator tests are committed **without confirmed passing results**. Review CI output and troubleshoot before deployment. Deploy `firestore.rules` separately to the intended project, then test with distinct unrelated students, instructors, registrars, principals, parents, and institution owners. Test denial as well as permitted access, especially cross-institution and cross-student access.
 
 The existing color palette, independent instructor courses and academic records are intentionally preserved.
+
+## Stabilization update (October 9)
+- Registrar now offers approved-placement links into the existing section joining flow, and validates active join codes and matching course references.
+- Institutional credit panel calculates advisory credit-weighted GPA for standard A–F grades per stable student UID; it does not handle repeats, transfer credit, nonstandard scales, or official certification.
+- Guardian access revocation is available to school administrators and Firestore read authorization requires the underlying invitation to remain approved.
+- The CI workflow is present, but passing workflow results and deployed Firebase rules remain unverified. Direct repository checkout failed in this environment due to github.com DNS resolution.
+
+**Not represented as complete:** Automated multi-record roster enrollment, credit equivalency, degree audit, server-managed timetables and concurrency, official transcript certification, full parent calendar/form services, and production security/compliance verification.
