@@ -2824,3 +2824,8 @@ html{font-size:calc(16px * var(--user-font-scale,1))}
 #parentActions form{width:100%}
 #parentActions input{width:100%;padding:12px;border:1px solid var(--lineDark);border-radius:8px}
 #parentMessage{color:var(--burgundy);overflow-wrap:anywhere}
+
+/* Shared Theoria dialogs; never use browser-native confirm/prompt. */
+.theoria-native-dialog{position:fixed;inset:0;z-index:99999;display:flex;justify-content:center;align-items:center;padding:20px;background:rgba(14,10,12,.75);backdrop-filter:blur(5px)}
+.theoria-dialog-panel{width:min(490px,100%);max-height:90vh;overflow:auto;background:var(--paper,#fcfaf5);color:#252024;border:1px solid #cdbfba;border-radius:14px;padding:30px;box-shadow:0 30px 90px #0006}
+.theoria-dialog-panel h2{margin:10px 0 12px;color:var(--burgundy,#6b2332);font-family:Georgia,serif;font-size:25px}.theoria-dialog-panel p{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6}.theoria-dialog-label{display:grid;gap:8px;margin:16px 0;font-weight:600}.theoria-dialog-label input{width:100%;padding:12px;border:1px solid #b5a6a3;border-radius:8px;background:white;color:#251c20}.theoria-dialog-buttons{display:flex;gap:10px;justify-content:flex-end;margin-top:24px;flex-wrap:wrap}.theoria-native-dialog :focus-visible{outline:3px solid var(--gold,#a38649);outline-offset:3px}
