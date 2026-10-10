@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node --check campus.js && node --check institution-suite.js && node --check family.js && node --check school-admin.js && node --check registrar.js && node --check institutions.js && node --check parent-portal.js",
+    "check": "node --check app.js && node --check phase3.js && node --check phase4.js && node --check phase5.js && node --check phase6.js && node --check dialogs.js && node --check campus.js && node --check institution-suite.js && node --check family.js && node --check school-admin.js && node --check registrar.js && node --check institutions.js && node --test tests/dialogs.test.mjs",
     "test": "node --test tests/firestore-rules.test.mjs"
   },
   "devDependencies": {
