@@ -313,7 +313,7 @@ async function renderAcademicProfile(){
 async function archiveSection(sectionId){
   const s=state(),section=s.sections.find(x=>x.id===sectionId)||currentSection();if(!section)return;
   if(!canOwnSection(section))return toast("Only the section owner can archive this section.");
-  if(!confirm("Archive "+(section.sectionName||section.courseTitle)+"? It will become read-only for normal teaching and disappear from active-section counts."))return;
+  if(!await window.TheoriaDialog.confirm("Archive "+(section.sectionName||section.courseTitle)+"? It will become read-only for normal teaching and disappear from active-section counts."))return;
   try{
     const batch=writeBatch(db);
     batch.update(doc(db,"sections",section.id),{status:"Archived",joinOpen:false,archivedAt:serverTimestamp(),updatedAt:serverTimestamp()});
@@ -406,7 +406,7 @@ async function setEnrollmentLifecycle(studentId,status){
   const section=currentSection(),s=state();if(!section||!s?.sectionData)return;
   if(!canOwnSection(section))return toast("Only the section owner can change enrollment lifecycle status.");
   const student=s.sectionData.members.find(x=>x.id===studentId);if(!student)return;
-  const reason=prompt("Reason for "+status.toLowerCase()+"?")||"";
+  const reason=await window.TheoriaDialog.prompt("Reason for "+status.toLowerCase()+"?")||"";
   try{
     if(status==="Completed"){
       const batch=writeBatch(db);
@@ -530,7 +530,7 @@ async function staffManagementModal(sectionId){
 
 async function removeStaff(sectionId,userId){
   const section=currentSection();if(!section||!canOwnSection(section))return;
-  if(!confirm("Remove this staff member from the section?"))return;
+  if(!await window.TheoriaDialog.confirm("Remove this staff member from the section?"))return;
   try{
     const batch=writeBatch(db);
     batch.delete(doc(db,"sections",sectionId,"staff",userId));
@@ -786,7 +786,7 @@ async function approveWithdrawalRequest(sectionId,requestId){
   });
 }
 async function denyWithdrawalRequest(sectionId,requestId){
-  const reason=prompt("Reason for denying this withdrawal request?")?.trim();if(!reason)return;
+  const reason=await window.TheoriaDialog.prompt("Reason for denying this withdrawal request?")?.trim();if(!reason)return;
   try{
     await updateDoc(doc(db,"sections",sectionId,"withdrawalRequests",requestId),{
       status:"Denied",denialReason:reason,resolvedAt:serverTimestamp(),resolvedBy:state().user.uid,updatedAt:serverTimestamp()
@@ -957,7 +957,7 @@ async function courseStaffManagementModal(courseId){
 
 async function removeCourseStaff(courseId,userId){
   const course=courseById(courseId),s=state();if(!course||!(s.isSystemOwner||course.ownerId===s.user.uid))return;
-  if(!confirm("Remove this Course Coordinator?"))return;
+  if(!await window.TheoriaDialog.confirm("Remove this Course Coordinator?"))return;
   try{
     await deleteDoc(doc(db,"courses",courseId,"staff",userId));
     await logCourseEvent(courseId,"course_coordinator_removed","user",userId,{});
