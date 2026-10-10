@@ -43,8 +43,8 @@ async function show(){
     }};
    return;
   }
-  actionBox().innerHTML='<p>'+esc(data.status==="awaiting_school_approval"?"Your request is awaiting school approval.":data.status==="approved"?"Your guardian access was approved.":"The school declined this request.")+'</p><button class="secondary-btn" id="familyDashboard">View guardian dashboard</button>';
-  document.getElementById("familyDashboard").onclick=dashboard;
+  actionBox().innerHTML='<p>'+esc(data.status==="awaiting_school_approval"?"Your request is awaiting school approval.":data.status==="approved"?"Your guardian access was approved.":"The school declined this request.")+'</p><a class="primary-btn" href="./parents.html">Open Family Portal</a>';
+  
  }catch(e){error("Could not load invitation: "+e.message);}
 }
 async function dashboard(){
