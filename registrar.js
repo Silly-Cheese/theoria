@@ -7,7 +7,7 @@ async function read(name){try{const s=await getDocs(collection(db,"institutions"
 async function refresh(){if(!current||!me)return;const id=current.id;readFailures=[];const result=await Promise.all(["studentRecords","requests","offerings","graduationPolicies","attendance","guardianLinks","members"].map(read));if(id!==current?.id)return;[records,reqs,offerings,policies,attendance,guardianLinks,members]=result;
  const ids=[...new Set([...members.map(x=>x.studentUid),...reqs.map(x=>x.studentUid),...records.map(x=>x.studentUid)].filter(Boolean))];
  studentLabels=new Map();await Promise.all(ids.map(async uid=>{try{const snap=await getDoc(doc(db,"directory",uid));if(snap.exists())studentLabels.set(uid,snap.data().displayName||snap.data().name||snap.data().email||uid);}catch(error){console.warn("Directory label unavailable",error);}}));draw();}
-const studentName=uid=>studentLabels.get(uid)||members.find(m=>m.studentUid===uid)?.studentName||reqs.find(r=>r.studentUid===uid)?.studentName||uid;
+const studentName=uid=>studentLabels.get(uid)||members.find(m=>m.studentUid===uid)?.studentName||reqs.find(r=>r.studentUid===uid)?.studentName||records.find(r=>r.studentUid===uid)?.studentName||"Student name unavailable";
 const studentOptions=()=>[...new Set([...members.map(m=>m.studentUid),...reqs.map(r=>r.studentUid),...records.map(r=>r.studentUid)].filter(Boolean))].map(uid=>[uid,studentName(uid)]);
 const stat=(value,label)=>'<div><strong>'+esc(value)+'</strong><span>'+esc(label)+'</span></div>';
 function draw(){
@@ -59,16 +59,16 @@ async function handle(action){
  }
  if(action.startsWith("finalize:")){
   const r=reqs.find(x=>x.id===action.slice(9));if(!r)return;
-  modal("Finalize institutional placement",'<p class="school-subtle">This confirms institutional placement only, not access to the teaching section.</p>'+input("sectionReference","Theoria section join code (THR-XXXXX)")+input("studentName","Student name"),async f=>{
+  modal("Finalize institutional placement",'<p class="school-subtle">This confirms institutional placement only, not access to the teaching section.</p>'+input("sectionReference","Theoria section join code (THR-XXXXX)"),async f=>{
    if(r.status!=="approved")throw Error("Request must be approved.");
    const joinCode=String(f.get("sectionReference")||"").trim().toUpperCase();
    if(!/^THR-[A-Z0-9]+$/.test(joinCode))throw Error("Enter a valid Theoria join code (THR-XXXXX), not a section ID.");
    const match=await getDoc(doc(db,"joinCodes",joinCode));
-   if(!match.exists()||match.data().active===false)throw Error("This section join code is not active.");
+   if(!match.exists()||match.data().active!==true)throw Error("This section join code is not active.");
    const section=await getDoc(doc(db,"sections",match.data().sectionId));
    const offering=offerings.find(o=>o.id===r.offeringId);
    if(!section.exists()||!offering||!offering.courseId||section.data().courseId!==offering.courseId)throw Error("The selected section does not match the published Theoria course.");
-   await setDoc(doc(db,"institutions",current.id,"placements",r.id),{studentUid:r.studentUid,offeringId:r.offeringId,sectionReference:joinCode,studentName:f.get("studentName").trim(),status:"placed",approvedRequestId:r.id,placedBy:me.uid,placedAt:serverTimestamp()});
+   await setDoc(doc(db,"institutions",current.id,"placements",r.id),{studentUid:r.studentUid,offeringId:r.offeringId,sectionReference:joinCode,studentName:studentName(r.studentUid),status:"placed",approvedRequestId:r.id,placedBy:me.uid,placedAt:serverTimestamp()});
   });return;
  }
  if(action==="record"&&!studentOptions().length)return window.TheoriaDialog.alert("No students are available. Approve an institution membership first.");
