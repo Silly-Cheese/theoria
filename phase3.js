@@ -187,12 +187,12 @@ function basketHas(courseId,itemId){
 function basketCourseId(){
   return P3.itemBasket?.[0]?.courseId||"";
 }
-function toggleItemBasket(courseId,itemId){
+async function toggleItemBasket(courseId,itemId){
   const basket=P3.itemBasket||[],index=basket.findIndex(x=>x.courseId===courseId&&x.itemId===itemId);
   if(index>=0){basket.splice(index,1);saveItemBasket();return true;}
   const currentCourse=basketCourseId();
   if(currentCourse&&currentCourse!==courseId){
-    if(!confirm("The Question Basket can contain one course at a time. Clear the current basket and start a basket for this course?"))return false;
+    if(!await window.TheoriaDialog.confirm("The Question Basket can contain one course at a time. Clear the current basket and start a basket for this course?"))return false;
     P3.itemBasket=[];
   }
   P3.itemBasket.push({courseId,itemId});
@@ -835,7 +835,7 @@ async function itemModal(existing){
     };
     const normalizedPrompt=String(data.prompt||"").toLowerCase().replace(/\s+/g," ").trim();
     const duplicate=P3.items.find(x=>x.courseId===cid&&x.id!==existing?.id&&String(x.prompt||"").toLowerCase().replace(/\s+/g," ").trim()===normalizedPrompt);
-    if(duplicate&&!confirm("A Question Bank item with the same prompt already exists. Save this as a separate item/version anyway?"))return;
+    if(duplicate&&!await window.TheoriaDialog.confirm("A Question Bank item with the same prompt already exists. Save this as a separate item/version anyway?"))return;
     try{
       if(existing){
         const currentVersion=Math.max(1,Number(existing.version||1));
@@ -924,7 +924,7 @@ async function itemHistoryModal(courseId,itemId){
 
 async function setQuestionQuality(courseId,itemId,status){
   const item=P3.items.find(x=>x.courseId===courseId&&x.id===itemId);if(!item)return;
-  if(status==="Retired"&&!confirm("Retire this Question Bank item? Existing assessment snapshots are preserved, but it will not be available for new assessments."))return;
+  if(status==="Retired"&&!await window.TheoriaDialog.confirm("Retire this Question Bank item? Existing assessment snapshots are preserved, but it will not be available for new assessments."))return;
   try{
     await updateDoc(doc(db,"courses",courseId,"items",itemId),{qualityStatus:status,reviewFlag:false,qualityUpdatedAt:serverTimestamp(),updatedAt:serverTimestamp()});
     if(window.TheoriaPhase5?.logCourseEvent)await window.TheoriaPhase5.logCourseEvent(courseId,"question_quality_changed","question",itemId,{status});
@@ -2037,7 +2037,7 @@ async function revokeRetake(studentId){
   const d=P3.detail,a=d?.assessment,auth=d?.retakes?.find(x=>x.id===studentId||x.studentId===studentId);
   if(!a||!auth?.active)return toast("No pending retake authorization was found.");
   if(d.submissions.some(x=>x.studentId===studentId&&x.status==="in_progress"))return toast("The retake has already started and can no longer be revoked from this control.");
-  if(!confirm("Revoke this pending retake authorization and restore the student's most recent completed attempt?"))return;
+  if(!await window.TheoriaDialog.confirm("Revoke this pending retake authorization and restore the student's most recent completed attempt?"))return;
   try{
     const archived=safeArray(d.attemptHistory)
       .filter(x=>x.studentId===studentId)
@@ -2195,7 +2195,7 @@ async function refreshAssessmentQuestionFromBank(questionId){
     const item={id:snap.id,...snap.data()},currentVersion=Math.max(1,Number(q.itemVersion||1)),latestVersion=Math.max(1,Number(item.version||1));
     if(latestVersion<=currentVersion)return toast("This assessment question already uses Question Bank v"+latestVersion+".");
     if(item.type!==q.type)return toast("The latest Question Bank version changed question type. Remove and re-add the item so assessment structure can be recalculated safely.");
-    if(!confirm("Update this assessment snapshot from Question Bank v"+currentVersion+" to v"+latestVersion+"? The answer key and academic mappings will be refreshed from the master item."))return;
+    if(!await window.TheoriaDialog.confirm("Update this assessment snapshot from Question Bank v"+currentVersion+" to v"+latestVersion+"? The answer key and academic mappings will be refreshed from the master item."))return;
     const questionPatch={
       itemVersion:latestVersion,type:item.type,prompt:item.prompt||"",stimulus:item.stimulus||"",sourceTitle:item.sourceTitle||"",
       options:item.options||[],unitId:item.unitId||"",unitTitle:item.unitTitle||"",unitNumber:Number(item.unitNumber||0),
@@ -2446,7 +2446,7 @@ async function removeItem(id){
   if(a.randomDrawEnabled&&planRow&&Number(planRow.count||0)>remainingOfType){
     return toast("Reduce the "+q.type+" random draw count before removing this question.");
   }
-  if(!confirm("Remove this question from the assessment? The Question Bank copy remains."))return;
+  if(!await window.TheoriaDialog.confirm("Remove this question from the assessment? The Question Bank copy remains."))return;
 
   const questionIds=remaining.map(x=>x.id);
   const questionPool=(a.questionPool?.length?a.questionPool:P3.detail.questions.map(x=>({id:x.id,itemId:x.itemId||"",type:x.type,points:Number(x.points||0)}))).filter(x=>x.id!==id);
@@ -2605,7 +2605,7 @@ async function configureEntranceExam(sectionId){
     const fd=new FormData(form),templateId=String(fd.get("templateId")),passPercent=Math.max(1,Math.min(100,Math.round(Number(fd.get("passPercent")||70))));
     const template=templates.find(x=>x.id===templateId);
     if(!template)return toast("Choose an assessment template.");
-    if(hasExistingAttempts&&!confirm("Replace the entrance examination and permanently clear existing entrance attempts and results?"))return;
+    if(hasExistingAttempts&&!await window.TheoriaDialog.confirm("Replace the entrance examination and permanently clear existing entrance attempts and results?"))return;
 
     const button=form.querySelector('button[type="submit"]');button.disabled=true;button.textContent="Configuring…";
     try{
@@ -2793,7 +2793,7 @@ async function assignAssessmentModal(assessmentId,preferredSectionId=""){
     const countsTowardComposite=form.elements.countsTowardComposite.checked===true;
 
     const duplicate=P3.assessments.find(x=>x.sectionId===section.id&&x.templateSourceId===a.id);
-    if(duplicate&&!confirm("This template is already assigned to "+section.sectionName+". Assign another copy anyway?"))return;
+    if(duplicate&&!await window.TheoriaDialog.confirm("This template is already assigned to "+section.sectionName+". Assign another copy anyway?"))return;
 
     const ref=doc(collection(db,"assessments"));
     const clone={
@@ -3223,7 +3223,7 @@ async function chooseAssessmentForSection(sectionId){
 
     const selectedTemplates=templates.filter(a=>selected.has(a.id));
     const duplicates=selectedTemplates.filter(a=>existingTemplateIds.has(a.id));
-    if(duplicates.length&&!confirm(duplicates.length+" selected assessment"+(duplicates.length===1?" is":"s are")+" already assigned to this section. Create another independent cop"+(duplicates.length===1?"y":"ies")+" anyway?"))return;
+    if(duplicates.length&&!await window.TheoriaDialog.confirm(duplicates.length+" selected assessment"+(duplicates.length===1?" is":"s are")+" already assigned to this section. Create another independent cop"+(duplicates.length===1?"y":"ies")+" anyway?"))return;
 
     const submit=modal.querySelector("#batchAssignSubmit");
     submit.disabled=true;submit.textContent="Assigning 0 / "+selectedTemplates.length;
@@ -3391,9 +3391,9 @@ async function toggleGradingPeriodLock(period){
       }
     }
     const review="Finalize and lock "+period+"?\n\nFinalization review:\n• "+assignments.length+" coursework item"+(assignments.length===1?"":"s")+"\n• "+members.length+" student"+(members.length===1?"":"s")+"\n• "+ungraded+" ungraded cell"+(ungraded===1?"":"s")+"\n• "+markedMissing+" explicitly marked Missing\n\nGrade edits will be blocked until an instructor reopens the period.";
-    if(!confirm(review))return;
+    if(!await window.TheoriaDialog.confirm(review))return;
   }
-  if(!nextLocked&&!confirm("Reopen "+period+" for grade changes? The audit log will record this action."))return;
+  if(!nextLocked&&!await window.TheoriaDialog.confirm("Reopen "+period+" for grade changes? The audit log will record this action."))return;
   settings[period]={
     ...current,
     locked:nextLocked,
@@ -4005,7 +4005,7 @@ function reviewExam(){
 
 async function submitExam(auto=false){
   if(!P3.exam)return;
-  if(!auto&&!confirm("Submit this assessment? You will not be able to change your responses afterward."))return;
+  if(!auto&&!await window.TheoriaDialog.confirm("Submit this assessment? You will not be able to change your responses afterward."))return;
   await saveExam();
   try{
     await updateDoc(doc(db,"assessments",P3.exam.assessment.id,"submissions",state().user.uid),{answers:P3.exam.answers,marked:P3.exam.marked,currentIndex:P3.exam.index,status:"submitted",submittedAt:serverTimestamp(),updatedAt:serverTimestamp()});
@@ -4049,7 +4049,7 @@ async function resetEntranceAttempt(studentId){
   const a=P3.current;
   if(!a?.entranceExam||!a.sectionId)return;
   const candidate=P3.detail?.members?.find(x=>x.id===studentId);
-  if(!confirm("Reset the entrance examination attempt for "+(candidate?.displayName||"this candidate")+"? Their submitted responses and graded result for this entrance exam will be deleted."))return;
+  if(!await window.TheoriaDialog.confirm("Reset the entrance examination attempt for "+(candidate?.displayName||"this candidate")+"? Their submitted responses and graded result for this entrance exam will be deleted."))return;
   try{
     const events=await getDocs(collection(db,"assessments",a.id,"submissions",studentId,"events"));
     for(let offset=0;offset<events.docs.length;offset+=400){
@@ -4302,7 +4302,7 @@ document.addEventListener("click",async e=>{
   const a=b.dataset.phase3Action;
   if(a==="new-assessment")return assessmentModal();
   if(a==="basket-toggle"){
-    if(toggleItemBasket(b.dataset.course,b.dataset.id))return renderItemBank();
+    if(await toggleItemBasket(b.dataset.course,b.dataset.id))return renderItemBank();
     return;
   }
   if(a==="basket-clear"){P3.itemBasket=[];saveItemBasket();return renderItemBank();}
