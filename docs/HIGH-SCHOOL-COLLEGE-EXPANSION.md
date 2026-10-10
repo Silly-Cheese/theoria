@@ -22,7 +22,13 @@ The expansion **does not fully implement** the user's entire high-school/college
 - Automated risk analysis, cross-role case reviews and transcript-gradebook integrations remain incomplete.
 - School verification, student identity, FERPA procedures, privacy/retention, guardian authority, and institution-specific regulatory compliance require additional operational and technical safeguards.
 
+## Additional final integration updates
+- Registrar placement now verifies an active section join code and matching official course. Student-facing offerings display a **Join assigned section** link; students complete the normal join/entrance process themselves. This is a guided enrollment handoff, not automatic atomic roster synchronization.
+- A CI workflow and Firestore emulator privacy tests have been added. They still require a successful GitHub Actions run.
+- Family requests now support school messages, conference requests and record correction requests, with administrator review.
+- High-school and college academic models, per-student advisory credit summaries, reusable rubrics and offering rollover are included.
+
 ## Testing and release
-No live browser or Firebase deployment was performed in this conversation. JavaScript syntax was checked for the modified modules, but GitHub Actions and Firestore emulator tests are committed **without confirmed passing results**. Review CI output and troubleshoot before deployment. Deploy `firestore.rules` separately to the intended project, then test with distinct unrelated students, instructors, registrars, principals, parents, and institution owners. Test denial as well as permitted access, especially cross-institution and cross-student access.
+No live browser or Firebase deployment was performed in this conversation. A direct validation checkout also could not run because the execution environment could not resolve github.com. JavaScript syntax was checked for the modified modules, but GitHub Actions and Firestore emulator tests are committed **without confirmed passing results**. Review CI output and troubleshoot before deployment. Deploy `firestore.rules` separately to the intended project, then test with distinct unrelated students, instructors, registrars, principals, parents, and institution owners. Test denial as well as permitted access, especially cross-institution and cross-student access.
 
 The existing color palette, independent instructor courses and academic records are intentionally preserved.
