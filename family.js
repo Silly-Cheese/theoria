@@ -37,11 +37,10 @@ document.addEventListener("click",async event=>{
  const trigger=event.target.closest("[data-parent-request]");if(!trigger||!user)return;
  const a=access[selection];if(!a)return;
  const kind=trigger.dataset.parentRequest;
- const subject=await window.TheoriaDialog.prompt(kind==="conference"?"Conference subject":kind==="record_correction"?"Correction subject":"Message subject");
- if(!subject?.trim())return;
- const message=await window.TheoriaDialog.prompt("Describe your request to the school");
- if(!message?.trim())return;
- if(subject.length>120||message.length>1500){window.TheoriaDialog.alert("Please shorten your request.");return;}
+ const values=await window.TheoriaDialog.form(kind==="conference"?"Request a conference":kind==="record_correction"?"Request a record correction":"Message the school",[{name:"subject",label:"Subject",maxLength:120},{name:"message",label:"Details",maxLength:1500,multiline:true}]);
+ if(!values)return;
+ const subject=values.subject?.trim(),message=values.message?.trim();
+ if(!subject||!message)return;
  try{
   await addDoc(collection(db,"institutions",a.institutionId,"familyRequests"),{guardianUid:user.uid,studentUid:a.studentUid,type:kind,subject:subject.trim(),message:message.trim(),status:"pending",createdAt:serverTimestamp()});
   const key=a.institutionId+"_"+a.studentUid;
