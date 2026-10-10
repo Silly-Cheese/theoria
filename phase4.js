@@ -757,7 +757,7 @@ async function markIncompleteRecord(sectionId,studentId){
   const bundle=await loadSectionBundle(sectionId),member=bundle.members.find(x=>x.id===studentId);
   if(!member)return toast("Student not found.");
   const prior=recordFor(bundle,studentId);
-  const reason=await window.TheoriaDialog.prompt("Reason for the Incomplete status?")?.trim();
+  const reason=(await window.TheoriaDialog.prompt("Reason for the Incomplete status?"))?.trim();
   if(!reason)return;
   const version=Number(prior?.version||0)+1;
   const snapshot={
