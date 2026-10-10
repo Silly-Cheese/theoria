@@ -560,35 +560,6 @@ service cloud.firestore {
         allow update, delete: if false;
       }
 
-      match /familyRequests/{requestId} {
-        allow get, list: if institutionAdmin(instId)
-          || (signedIn() && resource.data.guardianUid == uid());
-        allow create: if signedIn()
-          && request.resource.data.keys().hasOnly(['guardianUid','studentUid','type','subject','message','status','createdAt'])
-          && request.resource.data.guardianUid == uid()
-          && guardianApproved(request.resource.data.studentUid)
-          && request.resource.data.type in ['message','conference','record_correction']
-          && request.resource.data.subject is string
-          && request.resource.data.subject.size() <= 120
-          && request.resource.data.message is string
-          && request.resource.data.message.size() <= 1500
-          && request.resource.data.status == 'pending'
-          && request.resource.data.createdAt == request.time;
-        allow update: if (
-          isSelf(studentUid)
-          && resource.data.studentUid == uid()
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['studentName'])
-          && request.resource.data.studentName is string
-          && request.resource.data.studentName.size() >= 2
-          && request.resource.data.studentName.size() <= 100
-        ) || (institutionAdmin(instId)
-          && resource.data.status == 'pending'
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','reviewedBy','reviewedAt'])
-          && request.resource.data.status in ['resolved','declined']
-          && request.resource.data.reviewedBy == uid()
-          && request.resource.data.reviewedAt == request.time;
-        allow delete: if false;
-      }
       match /rubrics/{rubricId} {
         allow read: if canUseCourseAsInstructor(courseId) || courseIsPublishedCatalog(courseId);
         allow create, update, delete: if canManageCourse(courseId);
@@ -1401,6 +1372,28 @@ service cloud.firestore {
           && get(/databases/$(database)/documents/institutions/$(instId)/guardianLinks/$(request.resource.data.inviteId)).data.studentUid == request.resource.data.studentUid;
         allow update: if false;
         allow delete: if institutionAdmin(instId);
+      }
+      match /familyRequests/{requestId} {
+        allow get, list: if institutionAdmin(instId)
+          || (signedIn() && resource.data.guardianUid == uid());
+        allow create: if signedIn()
+          && request.resource.data.keys().hasOnly(['guardianUid','studentUid','type','subject','message','status','createdAt'])
+          && request.resource.data.guardianUid == uid()
+          && guardianApproved(request.resource.data.studentUid)
+          && request.resource.data.type in ['message','conference','record_correction']
+          && request.resource.data.subject is string
+          && request.resource.data.subject.size() <= 120
+          && request.resource.data.message is string
+          && request.resource.data.message.size() <= 1500
+          && request.resource.data.status == 'pending'
+          && request.resource.data.createdAt == request.time;
+        allow update: if institutionAdmin(instId)
+          && resource.data.status == 'pending'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','reviewedBy','reviewedAt'])
+          && request.resource.data.status in ['resolved','declined']
+          && request.resource.data.reviewedBy == uid()
+          && request.resource.data.reviewedAt == request.time;
+        allow delete: if false;
       }
       match /guardianLinks/{linkId} {
         allow get: if institutionAdmin(instId)
