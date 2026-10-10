@@ -15,7 +15,7 @@ async function load(){
   await Promise.all(schools.docs.map(async school=>{try{const links=await getDocs(query(collection(db,"institutions",school.id,"guardianAccess"),where("guardianUid","==",user.uid)));links.forEach(d=>access.push({id:d.id,institutionId:school.id,institutionName:school.data().name,...d.data()}));}catch(error){console.warn("Family grants",error);}}));
   access.sort((a,b)=>String(a.studentName||"").localeCompare(String(b.studentName||"")));
   selection=0;
-  await Promise.all(access.map(async a=>{const key=a.institutionId+"_"+a.studentUid;reports[key]={studentRecords:[],attendance:[],issues:[]};await Promise.all(["studentRecords","attendance"].map(async name=>{try{const snap=await getDocs(query(collection(db,"institutions",a.institutionId,name),where("studentUid","==",a.studentUid)));reports[key][name]=snap.docs.map(d=>({id:d.id,...d.data()}));}catch(e){reports[key].issues.push(name+": "+e.message);}}));}));
+  await Promise.all(access.map(async a=>{const key=a.institutionId+"_"+a.studentUid;reports[key]={studentRecords:[],attendance:[],familyAlerts:[],issues:[]};await Promise.all(["studentRecords","attendance","familyAlerts"].map(async name=>{try{const snap=await getDocs(query(collection(db,"institutions",a.institutionId,name),where("studentUid","==",a.studentUid)));reports[key][name]=snap.docs.map(d=>({id:d.id,...d.data()}));}catch(e){reports[key].issues.push(name+": "+e.message);}}));}));
  }catch(e){errorText="Unable to load participating institutions: "+e.message;}
  draw();
 }
