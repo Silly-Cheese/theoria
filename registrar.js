@@ -4,7 +4,7 @@ const $=id=>document.getElementById(id);
 let current=null,me=null,records=[],reqs=[],offerings=[],policies=[],attendance=[],guardianLinks=[],members=[],studentLabels=new Map(),readFailures=[];
 const roleAdmin=()=>current && me && (current.ownerUid===me.uid||window.TheoriaSchoolAdmin?.canAdmin?.(current.id));
 async function read(name){try{const s=await getDocs(collection(db,"institutions",current.id,name));return s.docs.map(d=>({id:d.id,...d.data()}));}catch(error){console.error("Institution "+current.id+" / "+name,error);readFailures.push({name,message:error.message||String(error)});return [];}}
-async function refresh(){if(!current||!me)return;const id=current.id;readFailures=[];const result=await Promise.all(["studentRecords","requests","offerings","graduationPolicies","attendance","guardianLinks","members"].map(read));if(id!==current?.id)return;[records,reqs,offerings,policies,attendance,guardianLinks,members]=result;
+async function refresh(){if(!current||!me||!roleAdmin())return;const id=current.id;readFailures=[];const result=await Promise.all(["studentRecords","requests","offerings","graduationPolicies","attendance","guardianLinks","members"].map(read));if(id!==current?.id)return;[records,reqs,offerings,policies,attendance,guardianLinks,members]=result;
  const ids=[...new Set([...members.map(x=>x.studentUid),...reqs.map(x=>x.studentUid),...records.map(x=>x.studentUid)].filter(Boolean))];
  studentLabels=new Map();await Promise.all(ids.map(async uid=>{try{const snap=await getDoc(doc(db,"directory",uid));if(snap.exists())studentLabels.set(uid,snap.data().displayName||snap.data().name||snap.data().email||uid);}catch(error){console.warn("Directory label unavailable",error);}}));draw();}
 const studentName=uid=>studentLabels.get(uid)||members.find(m=>m.studentUid===uid)?.studentName||reqs.find(r=>r.studentUid===uid)?.studentName||records.find(r=>r.studentUid===uid)?.studentName||"Student name unavailable";
@@ -92,4 +92,4 @@ document.addEventListener("click",event=>{
  const t=event.target.closest("[data-reg-tab]");if(t){tab=Number(t.dataset.regTab);draw();return;}
  const a=event.target.closest("[data-reg-action]");if(a)handle(a.dataset.regAction);
 });
-window.TheoriaRegistrar={mount(institution,currentUser){current=institution;me=currentUser;tab=0;refresh().catch(console.error);}};
+window.TheoriaRegistrar={mount(institution,currentUser){current=institution;me=currentUser;tab=0;if(!roleAdmin())return;refresh().catch(console.error);}};
