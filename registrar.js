@@ -58,9 +58,16 @@ function handle(action){
  }
  if(action.startsWith("finalize:")){
   const r=reqs.find(x=>x.id===action.slice(9));if(!r)return;
-  modal("Finalize institutional placement",'<p class="school-subtle">This confirms institutional placement only, not access to the teaching section.</p>'+input("sectionReference","Section ID or code")+input("studentName","Student name"),async f=>{
+  modal("Finalize institutional placement",'<p class="school-subtle">This confirms institutional placement only, not access to the teaching section.</p>'+input("sectionReference","Theoria section join code (THR-XXXXX)")+input("studentName","Student name"),async f=>{
    if(r.status!=="approved")throw Error("Request must be approved.");
-   await setDoc(doc(db,"institutions",current.id,"placements",r.id),{studentUid:r.studentUid,offeringId:r.offeringId,sectionReference:f.get("sectionReference").trim(),studentName:f.get("studentName").trim(),status:"placed",approvedRequestId:r.id,placedBy:me.uid,placedAt:serverTimestamp()});
+   const joinCode=String(f.get("sectionReference")||"").trim().toUpperCase();
+   if(!/^THR-[A-Z0-9]+$/.test(joinCode))throw Error("Enter a valid Theoria join code (THR-XXXXX), not a section ID.");
+   const match=await getDoc(doc(db,"joinCodes",joinCode));
+   if(!match.exists()||match.data().active===false)throw Error("This section join code is not active.");
+   const section=await getDoc(doc(db,"sections",match.data().sectionId));
+   const offering=offerings.find(o=>o.id===r.offeringId);
+   if(!section.exists()||!offering||!offering.courseId||section.data().courseId!==offering.courseId)throw Error("The selected section does not match the published Theoria course.");
+   await setDoc(doc(db,"institutions",current.id,"placements",r.id),{studentUid:r.studentUid,offeringId:r.offeringId,sectionReference:joinCode,studentName:f.get("studentName").trim(),status:"placed",approvedRequestId:r.id,placedBy:me.uid,placedAt:serverTimestamp()});
   });return;
  }
  if(action==="record")modal("Create academic record",input("studentUid","Student's Theoria account UID")+input("studentName","Student name")+input("courseTitle","Course title")+input("credits","Credits","number")+input("finalGrade","Certified grade")+options("status","Record state",[["pending","Pending verification"],["certified","Certified by registrar"],["withdrawn","Withdrawn"]]),async f=>{
