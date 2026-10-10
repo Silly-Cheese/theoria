@@ -562,7 +562,7 @@ service cloud.firestore {
 
       match /familyRequests/{requestId} {
         allow get, list: if institutionAdmin(instId)
-          || (signedIn() && resource.data.guardianUid == uid() && guardianApproved(resource.data.studentUid));
+          || (signedIn() && resource.data.guardianUid == uid());
         allow create: if signedIn()
           && request.resource.data.keys().hasOnly(['guardianUid','studentUid','type','subject','message','status','createdAt'])
           && request.resource.data.guardianUid == uid()
@@ -1301,12 +1301,21 @@ service cloud.firestore {
           && request.resource.data.studentName.size() <= 100
           && request.resource.data.status == 'pending'
           && request.resource.data.requestedAt == request.time;
-        allow update: if institutionAdmin(instId)
+        allow update: if (
+          isSelf(studentUid)
+          && resource.data.studentUid == uid()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['studentName'])
+          && request.resource.data.studentName is string
+          && request.resource.data.studentName.size() >= 2
+          && request.resource.data.studentName.size() <= 100
+        ) || (
+          institutionAdmin(instId)
           && resource.data.status == 'pending'
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','reviewedBy','reviewedAt'])
           && request.resource.data.status in ['active','declined']
           && request.resource.data.reviewedBy == uid()
-          && request.resource.data.reviewedAt == request.time);
+          && request.resource.data.reviewedAt == request.time
+        );
         allow delete: if false;
       }
 
