@@ -1445,6 +1445,20 @@ service cloud.firestore {
           && request.resource.data.createdAt == request.time;
         allow update, delete: if false;
       }
+      match /configuration/{configId} {
+        allow read: if signedIn();
+        allow create, update: if institutionAdmin(instId)
+          && configId == 'general'
+          && request.resource.data.keys().hasOnly(['level','creditSystem','calendarSystem','gpaScale','updatedBy','updatedAt'])
+          && request.resource.data.level in ['high_school','college','mixed']
+          && request.resource.data.creditSystem in ['carnegie','semester','quarter']
+          && request.resource.data.calendarSystem in ['semester','trimester','quarter']
+          && request.resource.data.gpaScale in ['4','5']
+          && request.resource.data.updatedBy == uid()
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if false;
+      }
+
       match /terms/{termId} {
         allow read: if signedIn() && (institutionAdmin(instId) || get(/databases/$(database)/documents/institutions/$(instId)).data.status == 'active');
         allow create: if institutionAdmin(instId)
