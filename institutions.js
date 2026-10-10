@@ -70,7 +70,7 @@ async function render(){
 
 async function finishDistrictOnboarding(profile,name,title){
  const districtName=validName(name),position=String(title||"district_administrator");
- if(districtName.length<3){alert("Please enter a district name.");return;}
+ if(districtName.length<3){window.TheoriaDialog.alert("Please enter a district name.");return;}
  const own=await getDocs(query(collection(db,"institutions"),where("ownerUid","==",currentUser.uid)));
  let district=own.docs.find(d=>d.data().kind==="district"&&d.data().name.toLowerCase()===districtName.toLowerCase());
  if(!district){
@@ -100,7 +100,7 @@ async function maybeOnboard(){
   try{
    if(choice.value==="yes")await finishDistrictOnboarding(profile,name.value,$("#districtSetupTitle").value);
    else{await updateDoc(doc(db,"users",currentUser.uid),{districtAdminOnboarding:"declined",updatedAt:serverTimestamp()});$("#modalRoot").innerHTML="";}
-  }catch(error){alert("Unable to save account setup: "+error.message);console.error(error);}
+  }catch(error){window.TheoriaDialog.alert("Unable to save account setup: "+error.message);console.error(error);}
   finally{busy=false;}
  };
 }
@@ -149,7 +149,7 @@ async function requestMembership(instId){
 }
 async function requestOffering(offeringId){
  const inst=institutions.find(i=>i.id===activeId);if(!inst||!currentUser||profileRole!=="student"||memberships.get(inst.id)?.status!=="active")return notice("Join the school before requesting courses.");
- if(!confirm("Submit an enrollment request to "+inst.name+"? This is not confirmed enrollment."))return;
+ if(!await window.TheoriaDialog.confirm("Submit an enrollment request to "+inst.name+"? This is not confirmed enrollment."))return;
  const reqRef=doc(db,"institutions",inst.id,"requests",offeringId+"_"+currentUser.uid);
  try{await setDoc(reqRef,{offeringId,studentUid:currentUser.uid,studentName:profileName,status:"pending",createdAt:serverTimestamp()});await refresh();notice("Enrollment request submitted. An administrator must review it.");}
  catch(error){notice("Request could not be submitted: "+error.message);}
