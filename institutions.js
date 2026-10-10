@@ -158,7 +158,7 @@ async function reviewRequests(offeringId){
  const inst=institutions.find(i=>i.id===activeId);if(!isManager(inst))return;
  const snap=await getDocs(query(collection(db,"institutions",inst.id,"requests"),where("offeringId","==",offeringId)));
  const arr=snap.docs.map(d=>({id:d.id,...d.data()}));
- openModal("Enrollment requests",'<div class="institution-request-list">'+(arr.length?arr.map(r=>'<div class="institution-request"><span>Student: '+escapeHTML(r.studentUid)+'</span><span>'+escapeHTML(r.status)+'</span>'+(r.status==="pending"?'<button class="secondary-btn small-btn" data-inst-decision="'+escapeHTML(r.id)+'" data-status="approved">Approve request</button><button class="secondary-btn small-btn" data-inst-decision="'+escapeHTML(r.id)+'" data-status="declined">Decline</button>':'')+'</div>').join(""):'<p>No requests for this offering.</p>')+'</div>');
+ openModal("Enrollment requests",'<div class="institution-request-list">'+(arr.length?arr.map(r=>'<div class="institution-request"><span>Student: '+escapeHTML(r.studentName||'Student name unavailable')+'</span><span>'+escapeHTML(r.status)+'</span>'+(r.status==="pending"?'<button class="secondary-btn small-btn" data-inst-decision="'+escapeHTML(r.id)+'" data-status="approved">Approve request</button><button class="secondary-btn small-btn" data-inst-decision="'+escapeHTML(r.id)+'" data-status="declined">Decline</button>':'')+'</div>').join(""):'<p>No requests for this offering.</p>')+'</div>');
 }
 document.addEventListener("click",async e=>{
  const join=e.target.closest("[data-inst-join]");if(join){await requestMembership(join.dataset.instJoin);return;}
