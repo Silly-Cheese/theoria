@@ -5,7 +5,7 @@ const $=s=>document.querySelector(s);
 const escapeHTML=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const safeDate=v=>v?new Date(v+"T00:00:00").getTime():NaN;
 const today=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");};
-let currentUser=null, institutions=[], activeId="", busy=false, onboardingShownFor="", managedInstitutionIds=new Set(),profileRole="student",memberships=new Map(),enrollmentRequests=new Map(),profileName="";
+let currentUser=null, institutions=[], activeId="", busy=false, onboardingShownFor="", managedInstitutionIds=new Set(),profileRole="student",memberships=new Map(),enrollmentRequests=new Map(),profileName="",placements=new Map();
 function notice(msg){const el=$("#institutionNotice");if(el){el.textContent=msg;el.hidden=false;} }
 function validName(s){return String(s||"").trim().slice(0,100);}
 function isManager(inst){return !!inst&&(inst.ownerUid===currentUser?.uid||managedInstitutionIds.has(inst.id));}
@@ -19,9 +19,10 @@ async function refresh(){
  const map=new Map();
  [...mine.docs,...all.docs].forEach(d=>map.set(d.id,{id:d.id,...d.data()}));
  institutions=[...map.values()].sort((a,b)=>a.name.localeCompare(b.name));
- managedInstitutionIds=new Set();memberships=new Map();enrollmentRequests=new Map();
+ managedInstitutionIds=new Set();memberships=new Map();enrollmentRequests=new Map();placements=new Map();
  await Promise.all(institutions.map(async i=>{try{const m=await getDoc(doc(db,"institutions",i.id,"members",currentUser.uid));if(m.exists())memberships.set(i.id,m.data());}catch(err){console.warn(err);}}));
  if(profileRole==="student")await Promise.all(institutions.map(async i=>{try{const s=await getDocs(query(collection(db,"institutions",i.id,"requests"),where("studentUid","==",currentUser.uid)));s.docs.forEach(d=>enrollmentRequests.set(i.id+"_"+d.data().offeringId,d.data()));}catch(error){console.warn("Unable to retrieve registration requests",error);}}));
+ if(profileRole==="student")await Promise.all(institutions.map(async i=>{try{const s=await getDocs(query(collection(db,"institutions",i.id,"placements"),where("studentUid","==",currentUser.uid)));s.docs.forEach(d=>placements.set(i.id+"_"+d.data().offeringId,d.data()));}catch(error){console.warn("Unable to retrieve placements",error);}}));
  await Promise.all(institutions.filter(i=>i.ownerUid!==currentUser.uid).map(async i=>{try{const m=await getDoc(doc(db,"institutions",i.id,"staff",currentUser.uid));if(m.exists()&&["principal","assistant_principal","district_admin","registrar"].includes(m.data().role))managedInstitutionIds.add(i.id);}catch(e){/* No membership */}}));
  if(!institutions.find(i=>i.id===activeId))activeId=institutions.find(i=>isManager(i))?.id||institutions.find(i=>i.kind==="school")?.id||institutions[0]?.id||"";
  await render();
@@ -61,7 +62,7 @@ async function render(){
   $("#institutionOfferings").innerHTML=own.length?own.map(o=>{
    const now=today(),open=o.published&&o.openDate<=now&&now<=o.closeDate;
    return '<article class="institution-offering"><div class="institution-offering-top"><div><div class="eyebrow">'+escapeHTML(o.code||"COURSE")+'</div><h3>'+escapeHTML(o.title)+'</h3></div><span class="badge '+(open?'live':'')+'">'+(open?"Registration open":o.published?"Registration closed":"Draft")+'</span></div><p>'+escapeHTML(o.description||"Institutional course offering")+'</p><p class="fineprint">Term: '+escapeHTML(o.term||"To be arranged")+' · '+escapeHTML(o.openDate||"—")+' to '+escapeHTML(o.closeDate||"—")+'</p>'+
-   (profileRole==="student"&&membership?.status==="active"&&!isManager(inst)?(enrollmentRequests.get(inst.id+"_"+o.id)?'<span class="badge">'+escapeHTML("Request "+enrollmentRequests.get(inst.id+"_"+o.id).status)+'</span>':open?'<button class="primary-btn small-btn" data-inst-request="'+escapeHTML(o.id)+'">Request enrollment</button>':'<span class="fineprint">Enrollment unavailable</span>'):isManager(inst)?'<button class="secondary-btn small-btn" data-inst-requests="'+escapeHTML(o.id)+'">Review requests</button>':'')+'</article>';
+   (profileRole==="student"&&membership?.status==="active"&&!isManager(inst)?(placements.get(inst.id+"_"+o.id)?.sectionReference?'<a class="primary-btn small-btn" href="./index.html?join='+encodeURIComponent(placements.get(inst.id+"_"+o.id).sectionReference)+'">Join assigned section</a>':enrollmentRequests.get(inst.id+"_"+o.id)?'<span class="badge">'+escapeHTML("Request "+enrollmentRequests.get(inst.id+"_"+o.id).status)+'</span>':open?'<button class="primary-btn small-btn" data-inst-request="'+escapeHTML(o.id)+'">Request enrollment</button>':'<span class="fineprint">Enrollment unavailable</span>'):isManager(inst)?'<button class="secondary-btn small-btn" data-inst-requests="'+escapeHTML(o.id)+'">Review requests</button>':'')+'</article>';
   }).join(""):'<p class="page-subtitle">No published offerings yet. Administrators can create the school catalog here.</p>';
  }catch(e){console.error(e);$("#institutionOfferings").textContent="Unable to load offerings. Check access and Firestore rules.";}
  window.TheoriaSchoolAdmin?.mount(inst,currentUser);
