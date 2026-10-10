@@ -574,7 +574,14 @@ service cloud.firestore {
           && request.resource.data.message.size() <= 1500
           && request.resource.data.status == 'pending'
           && request.resource.data.createdAt == request.time;
-        allow update: if institutionAdmin(instId)
+        allow update: if (
+          isSelf(studentUid)
+          && resource.data.studentUid == uid()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['studentName'])
+          && request.resource.data.studentName is string
+          && request.resource.data.studentName.size() >= 2
+          && request.resource.data.studentName.size() <= 100
+        ) || (institutionAdmin(instId)
           && resource.data.status == 'pending'
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','reviewedBy','reviewedAt'])
           && request.resource.data.status in ['resolved','declined']
@@ -1299,7 +1306,7 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','reviewedBy','reviewedAt'])
           && request.resource.data.status in ['active','declined']
           && request.resource.data.reviewedBy == uid()
-          && request.resource.data.reviewedAt == request.time;
+          && request.resource.data.reviewedAt == request.time);
         allow delete: if false;
       }
 
