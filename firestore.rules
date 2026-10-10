@@ -1355,7 +1355,9 @@ service cloud.firestore {
         return signedIn()
           && exists(/databases/$(database)/documents/institutions/$(instId)/guardianAccess/$(uid() + '_' + studentId))
           && get(/databases/$(database)/documents/institutions/$(instId)/guardianAccess/$(uid() + '_' + studentId)).data.guardianUid == uid()
-          && get(/databases/$(database)/documents/institutions/$(instId)/guardianAccess/$(uid() + '_' + studentId)).data.studentUid == studentId;
+          && get(/databases/$(database)/documents/institutions/$(instId)/guardianAccess/$(uid() + '_' + studentId)).data.studentUid == studentId
+          && exists(/databases/$(database)/documents/institutions/$(instId)/guardianLinks/$(get(/databases/$(database)/documents/institutions/$(instId)/guardianAccess/$(uid() + '_' + studentId)).data.inviteId))
+          && get(/databases/$(database)/documents/institutions/$(instId)/guardianLinks/$(get(/databases/$(database)/documents/institutions/$(instId)/guardianAccess/$(uid() + '_' + studentId)).data.inviteId)).data.status == 'approved';
       }
       match /guardianAccess/{accessId} {
         allow read: if institutionAdmin(instId) || (signedIn() && resource.data.guardianUid == uid());
