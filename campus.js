@@ -13,12 +13,12 @@ function body(){if(tab==="setup")return '<div class="school-section-head"><h3>In
 if(tab==="credits"){
  const certified=records.filter(r=>r.status==="certified");
  const grouped=new Map();
- for(const record of certified){const key=record.studentUid||"unknown";const prev=grouped.get(key)||{name:record.studentName||key,total:0,count:0};prev.total+=Number(record.credits)||0;prev.count++;grouped.set(key,prev);}
+ for(const record of certified){const key=record.studentUid||"unknown";const prev=grouped.get(key)||{uid:key,name:record.studentName||key,total:0,count:0};prev.total+=Number(record.credits)||0;prev.count++;grouped.set(key,prev);}
  const students=[...grouped.values()].sort((a,b)=>a.name.localeCompare(b.name));
  const gradePoints={"A+":4,"A":4,"A-":3.7,"B+":3.3,"B":3,"B-":2.7,"C+":2.3,"C":2,"C-":1.7,"D+":1.3,"D":1,"D-":0.7,"F":0};
  const gpas=new Map();
  for(const record of certified){const uid=record.studentUid||"unknown";const grade=String(record.finalGrade||"").trim().toUpperCase();if(!(grade in gradePoints))continue;const credits=Number(record.credits);if(!Number.isFinite(credits)||credits<=0)continue;const prev=gpas.get(uid)||{points:0,credits:0};prev.points+=credits*gradePoints[grade];prev.credits+=credits;gpas.set(uid,prev);}
- for(const student of students){const uid=certified.find(r=>(r.studentName||r.studentUid)===student.name)?.studentUid;const gpa=gpas.get(uid);student.gpa=gpa?.credits?(gpa.points/gpa.credits).toFixed(2):"N/A";}
+ for(const student of students){const gpa=gpas.get(student.uid);student.gpa=gpa?.credits?(gpa.points/gpa.credits).toFixed(2):"N/A";}
  const total=certified.reduce((n,r)=>n+(Number(r.credits)||0),0);
  return '<h3>Certified credits by student</h3><p class="school-subtle">Advisory totals reflect institution-entered certified records only. Validate transfer credits, repeated courses, degree applicability, course equivalency, and transcript accuracy before certifying graduation.</p><div class="school-metrics"><div><strong>'+certified.length+'</strong><span>Certified records</span></div><div><strong>'+students.length+'</strong><span>Students represented</span></div><div><strong>'+total.toFixed(1)+'</strong><span>Credits across all students</span></div></div>'+
  (students.length?'<div class="school-list">'+students.map(s=>'<div class="school-entry"><strong>'+esc(s.name)+'</strong><span>'+s.total.toFixed(1)+' recorded credits · '+s.count+' certified course attempts</span></div>').join("")+'</div>':'<p class="school-empty">No certified student records are available yet.</p>')+
