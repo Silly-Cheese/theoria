@@ -1411,7 +1411,7 @@ service cloud.firestore {
         allow update, delete: if false;
       }
       match /familyAlerts/{recordId} {
-        allow read: if institutionAdmin(instId) || (signedIn() && resource.data.studentUid == uid());
+        allow read: if institutionAdmin(instId) || (signedIn() && resource.data.studentUid == uid()) || guardianApproved(resource.data.studentUid);
         allow create: if institutionAdmin(instId)
           && request.resource.data.keys().hasOnly(['studentUid','studentName','title','message','status','createdBy','createdAt'])
           && request.resource.data.createdBy == uid()
