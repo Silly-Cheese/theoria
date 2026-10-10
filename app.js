@@ -3001,7 +3001,7 @@ async function openStudentAssignmentModal(assignmentId){
       if(showLink&&!responseUrl&&mode==="Link / Document")return showToast("Add the document or research link before submitting.");
       if(mode==="Text + Link"&&!responseText&&!responseUrl)return showToast("Enter a response or provide a document link before submitting.");
       if(completion&&!form.querySelector('[name="completionAck"]')?.checked)return showToast("Confirm that you completed the assignment.");
-      if(!confirm("Submit this assignment?"+(assignment.allowResubmission?" You may revise it later.":" You will not be able to revise it afterward.")))return;
+      if(!await window.TheoriaDialog.confirm("Submit this assignment?"+(assignment.allowResubmission?" You may revise it later.":" You will not be able to revise it afterward.")))return;
     }
     const ref=doc(db,"sections",state.currentSection.id,"assignments",assignmentId,"submissions",state.user.uid);
     const existingSnap=await getDoc(ref);
@@ -3568,7 +3568,7 @@ function gradebookPasteGradesModal(preferredAssignmentId=""){
     if(!rows.length)return showToast("No valid score rows were found.");
     const invalid=rows.find(x=>x.score<0||x.score>Number(assignment.points||0));
     if(invalid)return showToast("A pasted score is outside the 0–"+Number(assignment.points||0)+" point range.");
-    if(!confirm("Save "+rows.length+" pasted grade"+(rows.length===1?"":"s")+" for "+assignment.title+"?"))return;
+    if(!await window.TheoriaDialog.confirm("Save "+rows.length+" pasted grade"+(rows.length===1?"":"s")+" for "+assignment.title+"?"))return;
     try{
       for(let offset=0;offset<rows.length;offset+=350){
         const batch=writeBatch(db);
@@ -4362,7 +4362,7 @@ document.addEventListener("click",async event=>{
   }
   if(action==="show-code") return showJoinDisplay();
   if(action==="regenerate-code"){
-    if(confirm("Regenerate this join code? The previous code will immediately stop working.")) return regenerateJoinCode();
+    if(await window.TheoriaDialog.confirm("Regenerate this join code? The previous code will immediately stop working.")) return regenerateJoinCode();
     return;
   }
   if(action==="toggle-enrollment") return toggleEnrollment();
