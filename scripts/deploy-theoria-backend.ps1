@@ -44,7 +44,7 @@ foreach ($cmd in @("git.exe", "node.exe", "npm.cmd", "java.exe")) {
 }
 
 $nodeVersion = (& node.exe --version).Trim()
-if ($LASTEXITCODE -ne 0 -or $nodeVersion -notmatch "^v(22|24)\\.") {
+if ($LASTEXITCODE -ne 0 -or $nodeVersion -notmatch "^v(22|24)\.") {
     throw "Use Node.js 22.x or 24.x locally. The deployed Firebase Functions runtime remains Node.js 22. Found: $nodeVersion"
 }
 Write-Host "Local Node.js version: $nodeVersion (Functions deployment runtime: Node.js 22)" -ForegroundColor DarkCyan
