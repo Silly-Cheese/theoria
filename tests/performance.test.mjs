@@ -52,3 +52,12 @@ test("Question Bank, assessments, planner and progression use bounded parallel r
   assert.ok(phase5.includes("mapConcurrent((s.courses||[]).filter"));
   assert.ok(productivity.includes("mapConcurrent((s.sections||[]).filter"));
 });
+
+test("notification synthesis no longer competes with sign-in",()=>{
+  const source=readFileSync(new URL("../modules/productivity.js",import.meta.url),"utf8");
+  assert.ok(source.includes("mapConcurrent(seeds,4"));
+  assert.ok(source.includes("mapConcurrent(sections,3"));
+  assert.ok(source.includes("mapConcurrent((s.sections||[]).filter"));
+  assert.ok(source.includes('if(e.detail.page==="communications"){'));
+  assert.ok(source.includes("},25000);"));
+});

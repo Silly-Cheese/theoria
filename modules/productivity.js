@@ -161,18 +161,19 @@ async function exportPlannerICS(){
 /* -------------------- ANNOUNCEMENTS + NOTIFICATIONS -------------------- */
 
 async function announcementsForUser(){
-  const rows=[];
-  for(const section of (state()?.sections||[]).filter(x=>x.status!=="Archived")){
+  const sections=(state()?.sections||[]).filter(x=>x.status!=="Archived");
+  const grouped=await mapConcurrent(sections,3,async section=>{
     const list=await getCollection(["sections",section.id,"announcements"]);
-    for(const a of list){
-      const publish=a.publishAt?parseLocalDate(a.publishAt):null,expire=a.expiresAt?parseLocalDate(a.expiresAt,true):null,now=new Date();
-      if(a.status==="Draft"&&state()?.role!=="instructor")continue;
-      if(publish&&publish>now&&state()?.role!=="instructor")continue;
-      if(expire&&expire<now&&state()?.role!=="instructor")continue;
-      rows.push({...a,sectionId:section.id,sectionName:section.sectionName||section.courseTitle,courseCode:section.courseCode});
-    }
-  }
-  return rows.sort((a,b)=>(b.pinned===true)-(a.pinned===true)||(parseLocalDate(b.publishAt||b.createdAt)?.getTime()||0)-(parseLocalDate(a.publishAt||a.createdAt)?.getTime()||0));
+    return list.flatMap(a=>{
+      const publish=a.publishAt?parseLocalDate(a.publishAt):null,
+        expire=a.expiresAt?parseLocalDate(a.expiresAt,true):null,now=new Date();
+      if(a.status==="Draft"&&state()?.role!=="instructor")return [];
+      if(publish&&publish>now&&state()?.role!=="instructor")return [];
+      if(expire&&expire<now&&state()?.role!=="instructor")return [];
+      return [{...a,sectionId:section.id,sectionName:section.sectionName||section.courseTitle,courseCode:section.courseCode}];
+    });
+  });
+  return grouped.flat().sort((a,b)=>(b.pinned===true)-(a.pinned===true)||(parseLocalDate(b.publishAt||b.createdAt)?.getTime()||0)-(parseLocalDate(a.publishAt||a.createdAt)?.getTime()||0));
 }
 
 async function createAnnouncementModal(){
@@ -236,41 +237,44 @@ async function synthesizeNotifications(){
   });
 
   if(s.role==="student"&&prefs.grades!==false){
-    for(const section of (s.sections||[]).filter(x=>x.status!=="Archived")){
-      try{
-        const gradeSnap=await getDocs(query(collection(db,"sections",section.id,"grades"),where("studentId","==",uid)));
-        gradeSnap.docs.forEach(d=>{
-          const g=d.data(),stamp=g.updatedAt?.toMillis?.()||g.updatedAt?.seconds||0;
-          seeds.push({
-            key:"grade|"+section.id+"|"+d.id+"|"+stamp,type:"grade",
-            title:(g.assignmentTitle||"Coursework")+" graded",
-            body:(section.courseCode?section.courseCode+" • ":"")+String(g.gradeStatus&&g.gradeStatus!=="Normal"?g.gradeStatus+" • ":"")+(g.score!==undefined?g.score+" / "+(g.maxPoints||"—"):"Grade updated"),
-            sectionId:section.id,targetPage:"reports"
-          });
+    const sectionGrades=await mapConcurrent((s.sections||[]).filter(x=>x.status!=="Archived"),3,async section=>{
+      const [gradeSnap,resultSnap]=await Promise.all([
+        getDocs(query(collection(db,"sections",section.id,"grades"),where("studentId","==",uid))).catch(()=>null),
+        getDocs(query(collection(db,"sections",section.id,"assessmentGrades"),where("studentId","==",uid))).catch(()=>null)
+      ]);
+      const grades=[];
+      gradeSnap?.docs.forEach(d=>{
+        const g=d.data(),stamp=g.updatedAt?.toMillis?.()||g.updatedAt?.seconds||0;
+        grades.push({
+          key:"grade|"+section.id+"|"+d.id+"|"+stamp,type:"grade",
+          title:(g.assignmentTitle||"Coursework")+" graded",
+          body:(section.courseCode?section.courseCode+" • ":"")+String(g.gradeStatus&&g.gradeStatus!=="Normal"?g.gradeStatus+" • ":"")+(g.score!==undefined?g.score+" / "+(g.maxPoints||"—"):"Grade updated"),
+          sectionId:section.id,targetPage:"reports"
         });
-      }catch(_){}
-      try{
-        const resultSnap=await getDocs(query(collection(db,"sections",section.id,"assessmentGrades"),where("studentId","==",uid)));
-        resultSnap.docs.forEach(d=>{
-          const g=d.data(),stamp=g.updatedAt?.toMillis?.()||g.updatedAt?.seconds||0;
-          seeds.push({
-            key:"assessment-grade|"+section.id+"|"+d.id+"|"+stamp,type:"grade",
-            title:(g.assessmentTitle||"Assessment")+" result available",
-            body:(section.courseCode?section.courseCode+" • ":"")+(g.percent!==undefined?g.percent+"%":"Result updated"),
-            sectionId:section.id,targetPage:"reports"
-          });
+      });
+      resultSnap?.docs.forEach(d=>{
+        const g=d.data(),stamp=g.updatedAt?.toMillis?.()||g.updatedAt?.seconds||0;
+        grades.push({
+          key:"assessment-grade|"+section.id+"|"+d.id+"|"+stamp,type:"grade",
+          title:(g.assessmentTitle||"Assessment")+" result available",
+          body:(section.courseCode?section.courseCode+" • ":"")+(g.percent!==undefined?g.percent+"%":"Result updated"),
+          sectionId:section.id,targetPage:"reports"
         });
-      }catch(_){}
-    }
+      });
+      return grades;
+    });
+    seeds.push(...sectionGrades.flat());
   }
 
-  for(const n of seeds){
+  await mapConcurrent(seeds,4,async n=>{
     const ref=doc(db,"users",uid,"notifications",stableId(n.key));
     try{
-      const exists=await getDoc(ref);
-      if(!exists.exists())await setDoc(ref,{...n,read:false,createdAt:serverTimestamp()});
+      const existing=await getDoc(ref);
+      if(!existing.exists()&&state()?.user?.uid===uid){
+        await setDoc(ref,{...n,read:false,createdAt:serverTimestamp()});
+      }
     }catch(_){}
-  }
+  });
   await updateNotificationBadge();
 }
 async function updateNotificationBadge(){
@@ -560,15 +564,34 @@ function bind(){
   });
 }
 
+let notificationRefresh=null;
+let notificationRefreshedAt=0;
+function refreshNotificationsInBackground(){
+  const uid=state()?.user?.uid;
+  if(!uid||notificationRefresh||Date.now()-notificationRefreshedAt<3*60*1000)return;
+  notificationRefresh=synthesizeNotifications().then(()=>{
+    notificationRefreshedAt=Date.now();
+    if(state()?.user?.uid===uid&&$("#page-communications")?.classList.contains("active"))renderCommunications();
+  }).catch(error=>console.warn("Notification refresh failed:",error))
+    .finally(()=>{notificationRefresh=null;});
+}
+
 export function initProductivity(){
   applyAccessibility();bind();
   window.addEventListener("theoria:ready",()=>{
-    // Notifications are helpful, but should not compete with the initial course dashboard.
-    setTimeout(()=>{synthesizeNotifications().catch(error=>console.warn("Notification refresh failed:",error));},1000);
+    notificationRefreshedAt=0;
+    // Show previously saved unread count now; extensive notification synthesis is deferred.
+    setTimeout(()=>{updateNotificationBadge().catch(()=>{});},250);
+    setTimeout(()=>{
+      if($("#page-home")?.classList.contains("active"))refreshNotificationsInBackground();
+    },25000);
   });
   window.addEventListener("theoria:page",e=>{
     if(e.detail.page==="planner")renderPlanner();
-    if(e.detail.page==="communications")renderCommunications();
+    if(e.detail.page==="communications"){
+      renderCommunications();
+      refreshNotificationsInBackground();
+    }
   });
   return {
     renderPlanner,renderCommunications,openCommandPalette,accessibilityModal,notificationPreferencesModal,recoveryCenterModal,
