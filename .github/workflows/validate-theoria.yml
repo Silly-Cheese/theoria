@@ -40,6 +40,26 @@ jobs:
               exit 1
             }
           }
+      - name: Smoke-test guarded CLI workaround against a mock local installation
+        shell: powershell
+        run: |
+          $fixture = Join-Path $env:RUNNER_TEMP 'theoria-cli-fixture'
+          $cliFolder = Join-Path $fixture 'node_modules/firebase-tools/lib/deploy/functions'
+          New-Item -ItemType Directory -Force -Path $cliFolder | Out-Null
+          New-Item -ItemType Directory -Force -Path (Join-Path $fixture 'functions') | Out-Null
+          Set-Content -Path (Join-Path $fixture 'firebase.json') -Value '{"functions":{"source":"functions"}}' -Encoding UTF8
+          $prepare = Join-Path $cliFolder 'prepare.js'
+          Set-Content -Path $prepare -Value 'const hasExtensions = (wantBuilds) => Object.values(wantBuilds).some((b) => b.extensions);' -Encoding UTF8
+          $backup = Join-Path $fixture 'backups'
+          & '.\\scripts\\skip-unused-extensions-check.ps1' -Root $fixture -BackupFolder $backup
+          $source = Get-Content -Path $prepare -Raw
+          if (-not $source.Contains('b.extensions && Object.keys(b.extensions).length > 0')) {
+            throw 'The guarded CLI source patch was not applied to the mock fixture.'
+          }
+          if (-not (Test-Path (Join-Path $backup 'firebase-tools-functions-prepare.original.js'))) {
+            throw 'The original CLI source backup is missing.'
+          }
+          & '.\\scripts\\skip-unused-extensions-check.ps1' -Root $fixture -BackupFolder $backup
   node24-compatibility:
     runs-on: ubuntu-latest
     steps:
