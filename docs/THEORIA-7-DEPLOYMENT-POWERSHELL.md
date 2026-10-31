@@ -60,6 +60,25 @@ If they pass, and you have saved your **currently deployed** Firestore rules fro
 
 The script verifies source branch, Node runtime, source file paths, project configuration, installs dependencies, checks JavaScript and Functions, tests Firestore security rules with the emulator, creates a local candidate-rules snapshot, asks for production rules backup confirmation, shows accessible Firebase projects, and then deploys just the new callable Function followed by Firestore rules. It never deploys Firebase Hosting, never runs database migrations, and never automatically deletes functions.
 
+## If Firebase Extensions API returns HTTP 403 even though enabled
+
+Firebase CLI [issue #9987](https://github.com/firebase/firebase-tools/issues/9987) describes an unnecessary Extensions API call during Functions deployment, even when a project does not use Extensions. Theoria does **not** use Firebase Extensions.
+
+The reviewed PowerShell deployment supports an **opt-in, temporary, guarded local workaround**. It verifies there are no Extensions in firebase.json, no extensions directory, and no Functions imports of the Extensions SDK. Then it makes exactly one change in the *locally installed Firebase CLI*, changing the buggy 'extensions object exists' condition into 'extensions object has entries'. It backs up the original CLI file and runs `node --check`. It fails closed if the installed CLI source is different. It does **not** bypass Google Cloud permissions, Firebase Authentication, or security rules.
+
+Run, with your existing CURRENT production rules backup saved:
+
+```powershell
+Set-Location "C:\\Users\\Owner\\theoria-7-deploy"
+git.exe pull --ff-only origin feature/theoria-7-academic-overhaul
+Set-ExecutionPolicy -Scope Process Bypass
+.\\scripts\\deploy-theoria-backend.ps1 -Deploy -SkipUnusedExtensionsCheck
+```
+
+This workaround is not necessary when the Firebase CLI already has the fix. It must not be used on a project that actually uses Firebase Extensions. It avoids only the unnecessary Extensions listing check; Cloud Functions still needs required Cloud Build and Artifact Registry APIs.
+
+If you want to deploy **only Firestore Security Rules**, without any Functions, you can run the rules-only deploy command; but do **not** merge the Theoria 7 frontend while the `setAssessmentResultVisibility` function is missing, since instructor result-release actions depend on it.
+
 ## Alternative: exact manual commands
 
 In repository root and on the reviewed feature branch:

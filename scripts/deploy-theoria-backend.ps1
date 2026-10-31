@@ -11,9 +11,11 @@
   .\scripts\deploy-theoria-backend.ps1
 .EXAMPLE
   .\scripts\deploy-theoria-backend.ps1 -Deploy
+.EXAMPLE
+  .\scripts\deploy-theoria-backend.ps1 -Deploy -SkipUnusedExtensionsCheck
 #>
 [CmdletBinding()]
-param([switch] $Deploy)
+param([switch] $Deploy, [switch] $SkipUnusedExtensionsCheck)
 
 $ErrorActionPreference = "Stop"
 $ProjectId = "theoria-79433"
@@ -123,7 +125,7 @@ Write-Host "\nAll local checks passed." -ForegroundColor Green
 Write-Host "Local source snapshot: $backupFolder" -ForegroundColor Green
 
 if (-not $Deploy) {
-    Write-Host "No Firebase production changes made. When ready: .\scripts\deploy-theoria-backend.ps1 -Deploy" -ForegroundColor Yellow
+    Write-Host "No Firebase production changes made. When ready: .\scripts\deploy-theoria-backend.ps1 -Deploy [-SkipUnusedExtensionsCheck]" -ForegroundColor Yellow
     exit 0
 }
 
@@ -138,6 +140,11 @@ Write-Host "If authorization fails, run: firebase.cmd login --reauth  (global CL
 Invoke-Checked $FirebaseCli @("projects:list")
 $projectConfirmation = Read-Host "Type the EXACT destination Firebase project ID ($ProjectId)"
 if ($projectConfirmation -cne $ProjectId) { throw "Stopped: project confirmation did not match." }
+
+if ($SkipUnusedExtensionsCheck) {
+    Write-Host "\nApplying the narrowly-scoped workaround for Firebase CLI unused-extensions bug..." -ForegroundColor Yellow
+    & (Join-Path $PSScriptRoot "skip-unused-extensions-check.ps1") -Root $Root -BackupFolder $backupFolder
+}
 
 Write-Host "\n1/3 Deploying ONLY the new callable Firebase Function." -ForegroundColor Cyan
 Write-Host "Does not delete or re-deploy other functions." -ForegroundColor DarkCyan
