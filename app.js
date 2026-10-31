@@ -4231,7 +4231,11 @@ registerForm.addEventListener("submit",async event=>{
   finally{button.disabled=false;button.textContent="Create Theoria account";}
 });
 
-$("#signOutBtn").addEventListener("click",async()=>{await signOut(auth);showToast("Signed out of Theoria.");});
+$("#signOutBtn").addEventListener("click",async()=>{
+  mobileNavigation.close({restoreFocus:false});
+  await signOut(auth);
+  showToast("Signed out of Theoria.");
+});
 $$(".nav-item").forEach(btn=>btn.addEventListener("click",()=>setPage(btn.dataset.page)));
 $("#quickJoinBtn").addEventListener("click",()=>{setPage("sections");setTimeout(()=>$("#joinCodeInput")?.focus(),50);});
 $("#quickCreateBtn").addEventListener("click",()=>openSectionModal());
