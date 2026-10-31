@@ -40,3 +40,15 @@ test("costly academic notification sweep is only scheduled on Communications",()
   assert.ok(code.includes('if(e.detail?.page==="communications")scheduleAcademicWorkflowChecks();'));
   assert.equal(code.includes("await runAcademicWorkflowChecks();"),false);
 });
+
+test("Question Bank, assessments, planner and progression use bounded parallel reads",()=>{
+  const phase3=readFileSync(new URL("../phase3.js",import.meta.url),"utf8");
+  const phase5=readFileSync(new URL("../phase5.js",import.meta.url),"utf8");
+  const productivity=readFileSync(new URL("../modules/productivity.js",import.meta.url),"utf8");
+  assert.ok(phase3.includes("mapConcurrent(s.courses,6"));
+  assert.ok(phase3.includes("mapConcurrent(s.courses,3"));
+  assert.ok(phase3.includes("mapConcurrent(P3.assessments,5"));
+  assert.ok(phase5.includes("mapConcurrent([...sectionsById.values()],6"));
+  assert.ok(phase5.includes("mapConcurrent((s.courses||[]).filter"));
+  assert.ok(productivity.includes("mapConcurrent((s.sections||[]).filter"));
+});

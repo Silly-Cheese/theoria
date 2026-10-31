@@ -3,6 +3,7 @@ import {
   collection, getDocs, query, where, writeBatch, Timestamp, serverTimestamp,
   functions, httpsCallable
 } from "./firebase.js";
+import {mapConcurrent} from "./modules/performance.js";
 
 const P3 = {
   ready:false,
@@ -162,10 +163,10 @@ async function framework(courseId){
     getDocs(collection(db,"courses",courseId,"competencies"))
   ]);
   const units=unitsSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>Number(a.order||99)-Number(b.order||99));
-  for(const u of units){
+  await mapConcurrent(units,6,async u=>{
     const t=await getDocs(collection(db,"courses",courseId,"units",u.id,"topics"));
     u.topics=t.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>Number(a.order||99)-Number(b.order||99));
-  }
+  });
   return {units,competencies:compSnap.docs.map(d=>({id:d.id,...d.data()}))};
 }
 
@@ -204,16 +205,16 @@ async function toggleItemBasket(courseId,itemId){
 async function loadItems(){
   const s=state();
   if(!s||s.role!=="instructor")return [];
-  const all=[];
-  for(const c of s.courses){
+  const grouped=await mapConcurrent(s.courses,6,async c=>{
     try{
       const snap=await getDocs(collection(db,"courses",c.id,"items"));
-      snap.docs.forEach(d=>all.push({id:d.id,courseId:c.id,courseCode:c.code,courseTitle:c.title,...d.data()}));
+      return snap.docs.map(d=>({id:d.id,courseId:c.id,courseCode:c.code,courseTitle:c.title,...d.data()}));
     }catch(error){
       console.warn("Question Bank unavailable for course:",c.code||c.id,error);
+      return [];
     }
-  }
-  P3.items=all.sort((a,b)=>String(a.courseCode||"").localeCompare(String(b.courseCode||""))||String(a.prompt||"").localeCompare(String(b.prompt||"")));
+  });
+  P3.items=grouped.flat().sort((a,b)=>String(a.courseCode||"").localeCompare(String(b.courseCode||""))||String(a.prompt||"").localeCompare(String(b.prompt||"")));
   return P3.items;
 }
 
@@ -233,8 +234,7 @@ async function renderItemBank(){
   const el=$("#itemBankContent");
   if(!el||state()?.role!=="instructor")return;
   loadItemBasket();
-  await loadItems();
-  await loadAssessments();
+  await Promise.all([loadItems(),loadAssessments()]);
   const s=state();
   const usedItemIds=new Set();
   for(const assessment of P3.assessments||[]){
@@ -246,10 +246,13 @@ async function renderItemBank(){
   }
 
   const frameworks=new Map();
-  for(const course of s.courses){
+  await mapConcurrent(s.courses,3,async course=>{
     try{frameworks.set(course.id,await framework(course.id));}
-    catch(_){frameworks.set(course.id,{units:[],competencies:[]});}
-  }
+    catch(error){
+      console.warn("Unable to load Question Bank course framework:",course.id,error);
+      frameworks.set(course.id,{units:[],competencies:[]});
+    }
+  });
 
   const allUnits=[...new Map(P3.items.filter(x=>x.unitId||x.unitNumber||x.unitTitle).map(x=>[(x.courseId||"")+"|"+(x.unitId||x.unitNumber||x.unitTitle),{id:x.unitId||"",number:Number(x.unitNumber||0),title:x.unitTitle||"Unit",courseId:x.courseId}])).values()].sort((a,b)=>a.courseId.localeCompare(b.courseId)||a.number-b.number);
   const allTopics=[...new Map(P3.items.filter(x=>x.topicId||x.topicNumber||x.topicTitle).map(x=>[(x.courseId||"")+"|"+(x.topicId||x.topicNumber||x.topicTitle),{id:x.topicId||"",number:x.topicNumber||"",title:x.topicTitle||"Topic",courseId:x.courseId}])).values()].sort((a,b)=>a.courseId.localeCompare(b.courseId)||String(a.number).localeCompare(String(b.number),undefined,{numeric:true}));
@@ -1104,20 +1107,30 @@ async function loadAssessments(){
     const byId=new Map();
     const owned=await getDocs(query(collection(db,"assessments"),where("ownerId","==",s.user.uid)));
     owned.docs.forEach(d=>byId.set(d.id,{id:d.id,...d.data()}));
-    for(const section of (s.sections||[]).filter(sec=>sec.staffRole&&sec.staffRole!=="owner")){
+    const delegatedRows=await mapConcurrent((s.sections||[]).filter(sec=>sec.staffRole&&sec.staffRole!=="owner"),6,async section=>{
       try{
         const delegated=await getDocs(query(collection(db,"assessments"),where("sectionId","==",section.id)));
-        delegated.docs.forEach(d=>byId.set(d.id,{id:d.id,...d.data(),delegatedRole:section.staffRole}));
-      }catch(error){console.warn("Unable to load delegated section assessments:",section.id,error);}
-    }
+        return delegated.docs.map(d=>({id:d.id,...d.data(),delegatedRole:section.staffRole}));
+      }catch(error){
+        console.warn("Unable to load delegated section assessments:",section.id,error);
+        return [];
+      }
+    });
+    for(const row of delegatedRows.flat())byId.set(row.id,row);
     list.push(...byId.values());
   }else{
-    for(const section of s.sections){
+    const refsBySection=await mapConcurrent(s.sections,6,async section=>{
       const refs=await getDocs(collection(db,"sections",section.id,"assessmentRefs"));
-      for(const r of refs.docs){
-        try{const a=await getDoc(doc(db,"assessments",r.id));if(a.exists())list.push({id:a.id,...a.data()});}catch(_){}
-      }
-    }
+      return refs.docs.map(ref=>ref.id);
+    });
+    const ids=[...new Set(refsBySection.flat())];
+    const assessments=await mapConcurrent(ids,6,async id=>{
+      try{
+        const a=await getDoc(doc(db,"assessments",id));
+        return a.exists()?{id:a.id,...a.data()}:null;
+      }catch(_){return null;}
+    });
+    list.push(...assessments.filter(Boolean));
   }
   P3.assessments=list.sort((a,b)=>(b.opensAt?.toMillis?.()||0)-(a.opensAt?.toMillis?.()||0));
   return P3.assessments;
@@ -1158,11 +1171,22 @@ async function renderAssessments(){
     return;
   }
   const cards=[];
-  for(const a of P3.assessments){
-    let sub=null,result=null,retake=null;
-    try{const x=await getDoc(doc(db,"assessments",a.id,"submissions",s.user.uid));if(x.exists())sub=x.data();}catch(_){}
-    try{const x=await getDoc(doc(db,"assessments",a.id,"results",s.user.uid));if(x.exists())result=x.data();}catch(_){}
-    try{const x=await getDoc(doc(db,"assessments",a.id,"retakes",s.user.uid));if(x.exists()&&x.data().active===true)retake=x.data();}catch(_){}
+  // Candidate state is independent per assessment. Keep a small concurrency cap.
+  const candidateRows=await mapConcurrent(P3.assessments,5,async a=>{
+    const refs=["submissions","results","retakes"];
+    const snapshots=await Promise.all(refs.map(kind=>
+      getDoc(doc(db,"assessments",a.id,kind,s.user.uid)).catch(()=>null)
+    ));
+    const [subSnap,resultSnap,retakeSnap]=snapshots;
+    return {
+      sub:subSnap?.exists()?subSnap.data():null,
+      result:resultSnap?.exists()?resultSnap.data():null,
+      retake:retakeSnap?.exists()&&retakeSnap.data().active===true?retakeSnap.data():null
+    };
+  });
+  for(let i=0;i<P3.assessments.length;i++){
+    const a=P3.assessments[i];
+    const {sub,result,retake}=candidateRows[i];
     const normalStatus=availability(a),status=retake?"Retake Authorized":normalStatus,graded=result?.complete===true;
     let actions='<button class="secondary-btn small-btn" data-phase3-action="student-assessment-details" data-id="'+a.id+'">View Details</button>';
     if(retake&&sub?.status==="in_progress"){

@@ -1,5 +1,5 @@
 import {db,doc,getDoc,setDoc,collection,getDocs,query,where,serverTimestamp} from "./firebase.js";
-import {initProductivity} from "./modules/productivity.js?v=20260930-securityenforced2";
+import {initProductivity} from "./modules/productivity.js?v=20261031-theoria7-fast-workspace";
 import {initTeaching} from "./modules/teaching.js?v=20260930-securityenforced2";
 import {initAdmin} from "./modules/admin.js?v=20260930-securityenforced2";
 import {initResilience} from "./modules/resilience.js?v=20260930-securityenforced2";

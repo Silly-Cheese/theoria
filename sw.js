@@ -1,4 +1,4 @@
-const CACHE="theoria-shell-v20261031-fast-workspace";
+const CACHE="theoria-shell-v20261031-fast-workspace2";
 const SHELL=[
   "./",
   "./index.html",

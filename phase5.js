@@ -2,6 +2,7 @@ import {
   db, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc,
   collection, getDocs, query, where, writeBatch, serverTimestamp
 } from "./firebase.js";
+import {mapConcurrent} from "./modules/performance.js";
 
 const $=s=>document.querySelector(s);
 const core=()=>window.TheoriaCore;
@@ -55,24 +56,29 @@ async function logCourseEvent(courseId,action,targetType="",targetId="",details=
 async function loadOwnAcademicEvidence(){
   const s=state(),records=[],mastery=[];
   if(!s?.user)return {records,mastery};
+  const uid=s.user.uid;
   const sectionsById=new Map((s.sections||[]).map(section=>[section.id,section]));
   try{
-    const enrollmentSnap=await getDocs(collection(db,"users",s.user.uid,"enrollments"));
+    const enrollmentSnap=await getDocs(collection(db,"users",uid,"enrollments"));
     for(const enrollment of enrollmentSnap.docs){
       if(!sectionsById.has(enrollment.id)){
         sectionsById.set(enrollment.id,{id:enrollment.id,...enrollment.data()});
       }
     }
   }catch(_){}
-  for(const section of sectionsById.values()){
-    try{
-      const rec=await getDoc(doc(db,"sections",section.id,"academicRecords",s.user.uid));
-      if(rec.exists())records.push({sectionId:section.id,...rec.data()});
-    }catch(_){}
-    try{
-      const m=await getDoc(doc(db,"sections",section.id,"mastery",s.user.uid));
-      if(m.exists())mastery.push({sectionId:section.id,courseId:section.courseId,...m.data()});
-    }catch(_){}
+  const evidenceRows=await mapConcurrent([...sectionsById.values()],6,async section=>{
+    const [recordSnap,masterySnap]=await Promise.all([
+      getDoc(doc(db,"sections",section.id,"academicRecords",uid)).catch(()=>null),
+      getDoc(doc(db,"sections",section.id,"mastery",uid)).catch(()=>null)
+    ]);
+    return {
+      record:recordSnap?.exists()?{sectionId:section.id,...recordSnap.data()}:null,
+      mastery:masterySnap?.exists()?{sectionId:section.id,courseId:section.courseId,...masterySnap.data()}:null
+    };
+  });
+  for(const row of evidenceRows){
+    if(row.record)records.push(row.record);
+    if(row.mastery)mastery.push(row.mastery);
   }
   return {records,mastery};
 }
@@ -260,10 +266,9 @@ async function renderProgression(){
   }
 
   const evidence=await loadOwnAcademicEvidence();
-  const rows=[];
-  for(const course of (s.courses||[]).filter(c=>c.catalogPublished!==false)){
-    rows.push({course,eval:await evaluateCourseReadiness(course,evidence,s.user.uid)});
-  }
+  const rows=await mapConcurrent((s.courses||[]).filter(c=>c.catalogPublished!==false),6,async course=>({
+    course,eval:await evaluateCourseReadiness(course,evidence,s.user.uid)
+  }));
   el.innerHTML='<div class="academic-banner"><div class="kicker">Academic Progression</div><h3>Your readiness map.</h3><p>Theoria compares your certified course records and competency evidence with each course’s configured prerequisites. Entrance examinations and instructor review remain separate gates where required.</p></div>'+
     '<div class="progression-grid student-progression">'+rows.map(({course,eval:e})=>'<article class="progression-course-card '+(e.ready?'ready':'locked')+'"><div class="progression-sequence">'+(e.ready?'✓':'◇')+'</div><div><span>'+esc(course.discipline||"Course")+'</span><h3>'+esc(course.code+" — "+course.title)+'</h3><p>'+esc(prerequisiteSummary(course))+'</p>'+(e.checks.length?'<div class="readiness-checks">'+e.checks.map(x=>'<div class="'+(x.ok===true?'ok':x.ok===false?'missing':'pending')+'"><span>'+(x.ok===true?'✓':x.ok===false?'!':'•')+'</span><div><strong>'+esc(x.label)+'</strong><small>'+esc(x.detail)+' • '+esc(x.value)+'</small></div></div>').join("")+'</div>':'<div class="notice">No prerequisite evidence is required for this course.</div>')+'</div><span class="badge '+(e.ready?'live':'gold')+'">'+(e.ready?'Ready / Open':'Requirements Pending')+'</span></article>').join("")+'</div>';
 }

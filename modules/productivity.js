@@ -2,6 +2,7 @@ import {
   db, doc, getDoc, setDoc, addDoc, updateDoc,
   collection, getDocs, query, where, serverTimestamp, Timestamp
 } from "../firebase.js";
+import {mapConcurrent} from "./performance.js";
 
 const $=s=>document.querySelector(s);
 const esc=v=>window.TheoriaCore?.esc?.(v)??String(v??"");
@@ -64,8 +65,9 @@ async function loadSectionProductivity(section){
 async function plannerItems(){
   const s=state();if(!s?.user)return [];
   const rows=[];
-  for(const section of (s.sections||[]).filter(x=>x.status!=="Archived")){
-    const data=await loadSectionProductivity(section);
+  const sectionData=await mapConcurrent((s.sections||[]).filter(x=>x.status!=="Archived"),3,loadSectionProductivity);
+  for(const data of sectionData){
+    const section=data.section;
     const userExtension=new Map(data.extensions.filter(x=>x.studentId===s.user.uid).map(x=>[x.assignmentId,x]));
     for(const a of data.assignments){
       if(s.role==="student"&&a.status==="Draft")continue;
