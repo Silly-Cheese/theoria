@@ -95,7 +95,7 @@ test("prerequisite submission saves and audits even after event.currentTarget be
   const {document,host}=setup();
   const source=readFileSync(new URL("../phase5.js",import.meta.url),"utf8");
   const start=source.indexOf("async function prerequisiteModal(");
-  const end=source.indexOf("\\nasync function evaluateEnrollmentEligibility",start);
+  const end=source.indexOf("\nasync function evaluateEnrollmentEligibility",start);
   assert.ok(start>=0&&end>start);
   const {runInNewContext}=await import("node:vm");
   const course={id:"course-a",code:"BIBL 01",title:"Hermeneutics",prerequisitePolicy:{}};
