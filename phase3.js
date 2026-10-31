@@ -1304,17 +1304,17 @@ async function renderAssessments(){
   for(let i=0;i<P3.assessments.length;i++){
     const assessment=P3.assessments[i],html=cards[i];
     const key=assessment.courseId||assessment.courseCode||assessment.courseTitle||"uncategorized";
-    if(!studentGroups.has(key))studentGroups.set(key,{courseCode:assessment.courseCode||"Course",courseTitle:assessment.courseTitle||"",cards:[]});
+    if(!studentGroups.has(key))studentGroups.set(key,{key,courseCode:assessment.courseCode||"Course",courseTitle:assessment.courseTitle||"",cards:[]});
     studentGroups.get(key).cards.push({assessment,html});
   }
   const orderedGroups=[...studentGroups.values()].sort((a,b)=>String(a.courseCode||"").localeCompare(String(b.courseCode||""),undefined,{numeric:true,sensitivity:"base"}));
   el.innerHTML=courseNavigationToolbar(orderedGroups.length,previousSearch,esc)+orderedGroups.map((group,index)=>
     courseAccordionMarkup({
-      key:group.courseCode||group.courseTitle||"uncategorized",
+      key:group.key,
       title:group.courseCode+(group.courseTitle?' — '+group.courseTitle:''),
       description:"Scheduled and completed assessments for this course.",
       count:group.cards.length,
-      expanded:courseExpanded(preferences,group.courseCode||group.courseTitle||"uncategorized",index),
+      expanded:courseExpanded(preferences,group.key,index),
       escapeHTML:esc,
       body:'<div class="assessment-grid">'+group.cards.sort((a,b)=>(a.assessment.opensAt?.toMillis?.()||0)-(b.assessment.opensAt?.toMillis?.()||0)||String(a.assessment.title||"").localeCompare(String(b.assessment.title||""),undefined,{numeric:true,sensitivity:"base"})).map(x=>x.html).join("")+'</div>'
     })
