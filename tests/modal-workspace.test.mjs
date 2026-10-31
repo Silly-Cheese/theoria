@@ -90,3 +90,58 @@ test("the real Manage Prerequisites action mounts and wires its editable form",a
   add.onclick();
   assert.equal(host.querySelectorAll(".progression-competency-row").length,2);
 });
+
+test("prerequisite submission saves and audits even after event.currentTarget becomes null",async()=>{
+  const {document,host}=setup();
+  const source=readFileSync(new URL("../phase5.js",import.meta.url),"utf8");
+  const start=source.indexOf("async function prerequisiteModal(");
+  const end=source.indexOf("\\nasync function evaluateEnrollmentEligibility",start);
+  assert.ok(start>=0&&end>start);
+  const {runInNewContext}=await import("node:vm");
+  const course={id:"course-a",code:"BIBL 01",title:"Hermeneutics",prerequisitePolicy:{}};
+  const next={id:"course-b",code:"BIBL 02",title:"Old Testament Survey"};
+  let submitted=null,saved=null,audit=null,rendered=false,success=false;
+  class MockFormData{
+    constructor(form){this.form=form;}
+    get(name){
+      const el=this.form.querySelector('[name="'+name+'"]');
+      return !el?null:el.type==="checkbox"?(el.checked?(el.value||"on"):null):el.value;
+    }
+    getAll(name){
+      return [...this.form.querySelectorAll('[name="'+name+'"]')]
+        .filter(el=>!["checkbox","radio"].includes(el.type)||el.checked).map(el=>el.value);
+    }
+  }
+  const env={
+    state:()=>({isSystemOwner:true,courses:[course,next]}),
+    courseById:id=>id==="course-a"?course:null,
+    core:()=>({canManageCourse:()=>true}),
+    safeArray:v=>Array.isArray(v)?v:[],
+    esc:v=>String(v??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;"),
+    modal:args=>createAcademicModal(host,args), document,
+    closeModal:()=>clearAcademicModal(host),
+    toast:message=>{if(message!=="Course progression policy saved.")throw new Error(message);success=true;},
+    FormData:MockFormData,
+    doc:(...args)=>args.join("/"),db:{},serverTimestamp:()=>({serverTime:true}),
+    updateDoc:async(path,body)=>{saved=body;submitted.currentTarget=null;},
+    logCourseEvent:async(...args)=>{audit=args;},
+    renderProgression:()=>{rendered=true;}
+  };
+  const open=runInNewContext("("+source.slice(start,end)+")",env);
+  await open("course-a");
+  const form=host.querySelector("#prerequisiteForm");
+  assert.ok(form);
+  form.querySelector('[name="requiredCourse"]').checked=true;
+  form.querySelector('[name="instructorApproval"]').checked=true;
+  form.querySelector('[name="entranceExamRequired"]').checked=true;
+  submitted={currentTarget:form,preventDefault(){}};
+  await form.onsubmit(submitted);
+  assert.equal(saved?.prerequisitePolicy?.requiredCourseIds[0],"course-b");
+  assert.equal(saved?.prerequisitePolicy?.instructorApproval,true);
+  assert.equal(saved?.entranceExamRequired,true);
+  assert.equal(course.entranceExamRequired,true,"Local course state must update after the await");
+  assert.ok(audit,"The course change must be audited after the await");
+  assert.equal(audit[1],"progression_policy_updated");
+  assert.equal(success,true);
+  assert.equal(rendered,true);
+});

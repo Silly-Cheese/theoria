@@ -217,7 +217,11 @@ async function rolloverModal(){
   const sections=state().sections.filter(s=>s.ownerId===state().user.uid);
   const m=modal({eyebrow:"Term Rollover",title:"Create Next-Term Section",body:'<form id="rolloverForm"><div class="field"><label>Source Section</label><select name="sectionId">'+sections.map(s=>'<option value="'+s.id+'">'+esc((s.courseCode||"Course")+" — "+(s.sectionName||s.courseTitle)+" • "+(s.term||""))+'</option>').join("")+'</select></div><div class="field"><label>New Term</label><input name="term" required placeholder="Spring 2027"></div><div class="field"><label>New Section Name</label><input name="sectionName" required placeholder="Section 01"></div><label class="policy-card"><input type="checkbox" name="copyAssignments" checked><div><strong>Copy assignments</strong><span>Coursework copies without submissions or grades.</span></div></label><label class="policy-card"><input type="checkbox" name="copyResources" checked><div><strong>Copy resources</strong><span>Carry readings and research links forward.</span></div></label><div class="modal-foot" style="margin:24px -24px -24px"><button class="secondary-btn" type="button" data-close-modal>Cancel</button><button class="primary-btn">Create Rollover</button></div></form>'});
   m.querySelector("#rolloverForm").onsubmit=async e=>{
-    e.preventDefault();const fd=new FormData(e.currentTarget),source=sections.find(s=>s.id===String(fd.get("sectionId")));if(!source)return;
+    e.preventDefault();
+    const submittedForm=e.currentTarget;
+    const fd=new FormData(submittedForm),source=sections.find(s=>s.id===String(fd.get("sectionId")));if(!source)return;
+    const copyAssignments=submittedForm.elements.copyAssignments.checked;
+    const copyResources=submittedForm.elements.copyResources.checked;
     try{
       const code=await generateJoinCode(),ref=doc(collection(db,"sections"));
       const sourceDoc=await getDoc(doc(db,"sections",source.id)),data=sourceDoc.data();
@@ -231,8 +235,8 @@ async function rolloverModal(){
         const snap=await getDocs(collection(db,"sections",source.id,name));
         for(const d of snap.docs){const x={...d.data()};delete x.createdAt;delete x.updatedAt;await setDoc(doc(db,"sections",ref.id,name,d.id),{...x,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});}
       };
-      if(e.currentTarget.elements.copyAssignments.checked)await copyCollection("assignments");
-      if(e.currentTarget.elements.copyResources.checked)await copyCollection("resources");
+      if(copyAssignments)await copyCollection("assignments");
+      if(copyResources)await copyCollection("resources");
       closeModal();toast("New-term section created with code "+code+".");await core().loadWorkspace();renderAdminCenter();
     }catch(error){toast(error.message||"Unable to roll over the section.");}
   };
