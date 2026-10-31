@@ -2863,3 +2863,10 @@ html{font-size:calc(16px * var(--user-font-scale,1))}
 @media(max-width:1050px){.academic-launch-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:610px){.academic-launch-grid{grid-template-columns:1fr}.academic-launch-card{min-height:90px}.academic-launch-header{align-items:start;flex-direction:column}.academic-launch-header>p{display:none}#page-home .theoria-intro::after{right:-20px;font-size:160px;bottom:-48px}#page-home .stat{padding:18px 16px}}
 @media(prefers-reduced-motion:reduce){.academic-launch-card{transition:none}.academic-launch-card:hover{transform:none}}
+
+/* Theoria 7 — large Question Bank progressive rendering */
+.itembank-result-summary{font-size:11px;color:var(--slate);margin:12px 0 17px;line-height:1.55}
+.itembank-load-more{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0 0;padding:14px 15px;border:1px solid var(--line);border-radius:9px;background:#faf8f4}
+.itembank-load-more>span{font-size:11px;color:var(--slate)}
+.itembank-load-more>button{flex-shrink:0}
+@media(max-width:600px){.itembank-load-more{flex-direction:column;align-items:stretch}.itembank-load-more>button{width:100%}}

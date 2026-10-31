@@ -1,4 +1,4 @@
-const CACHE="theoria-shell-v20261031-fast-workspace3";
+const CACHE="theoria-shell-v20261031-question-bank-page1";
 const SHELL=[
   "./",
   "./index.html",
@@ -12,6 +12,7 @@ const SHELL=[
   "./firebase.js",
   "./modules/ui-modal.js",
   "./modules/performance.js",
+  "./modules/question-bank-paging.js",
   "./modules/productivity.js",
   "./modules/teaching.js",
   "./modules/admin.js",

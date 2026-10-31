@@ -4,6 +4,7 @@ import {
   functions, httpsCallable
 } from "./firebase.js";
 import {mapConcurrent} from "./modules/performance.js";
+import {BANK_INITIAL_COUNT, BANK_INCREMENT, limitQuestionItems} from "./modules/question-bank-paging.js";
 
 const P3 = {
   ready:false,
@@ -233,8 +234,11 @@ function itemCard(item){
 async function renderItemBank(){
   const el=$("#itemBankContent");
   if(!el||state()?.role!=="instructor")return;
+  const perfStart=performance.now();
+  const visibleLimits=new Map();
   loadItemBasket();
   await Promise.all([loadItems(),loadAssessments()]);
+  const perfDataEnd=performance.now();
   const s=state();
   const usedItemIds=new Set();
   for(const assessment of P3.assessments||[]){
@@ -254,6 +258,7 @@ async function renderItemBank(){
     }
   });
 
+  const perfFrameworkEnd=performance.now();
   const allUnits=[...new Map(P3.items.filter(x=>x.unitId||x.unitNumber||x.unitTitle).map(x=>[(x.courseId||"")+"|"+(x.unitId||x.unitNumber||x.unitTitle),{id:x.unitId||"",number:Number(x.unitNumber||0),title:x.unitTitle||"Unit",courseId:x.courseId}])).values()].sort((a,b)=>a.courseId.localeCompare(b.courseId)||a.number-b.number);
   const allTopics=[...new Map(P3.items.filter(x=>x.topicId||x.topicNumber||x.topicTitle).map(x=>[(x.courseId||"")+"|"+(x.topicId||x.topicNumber||x.topicTitle),{id:x.topicId||"",number:x.topicNumber||"",title:x.topicTitle||"Topic",courseId:x.courseId}])).values()].sort((a,b)=>a.courseId.localeCompare(b.courseId)||String(a.number).localeCompare(String(b.number),undefined,{numeric:true}));
   el.innerHTML='<div class="academic-banner question-bank-catalog-banner"><div class="kicker">Theoria Master Question Bank</div><h3>Official course questions, ready for assessment design.</h3><p>'+(s.isSystemOwner?'You are viewing the system-authoring bank. Create, import, organize, edit, and maintain official questions here.':'Questions are provided by the Theoria course catalog. You can use them in your own assessment templates without changing the master bank.')+'</p></div><div class="assessment-toolbar advanced-question-bank-toolbar"><div class="filter-row">'+
@@ -266,21 +271,28 @@ async function renderItemBank(){
     '<select id="itemQualityFilter"><option value="">All statuses</option><option>Published</option><option>Draft</option><option>Retired</option></select>'+
     '<select id="itemUsageFilter"><option value="">All usage</option><option value="used">Used in assessments</option><option value="unused">Never used</option></select>'+
     '<input id="itemSearch" placeholder="Prompt, competency, tag, source, topic…"></div><div class="toolbar-stat"><strong id="itemFilteredCount">'+P3.items.length+'</strong><span> of '+P3.items.length+' reusable questions</span></div></div>'+
+    '<div class="itembank-result-summary" id="itemBankDisplaySummary" role="status" aria-live="polite"></div>'+
     '<div class="question-bank-workspace"><main id="itemBankList"></main><aside id="itemBasketPanel" class="question-basket-panel"></aside></div>';
 
+  let currentMatchesByCourse=new Map();
   const renderCourseGroup=(course,list)=>{
     const fw=frameworks.get(course.id)||{units:[]};
-    const groups=core().unitFolderGroups(list,fw);
+    const limit=visibleLimits.get(course.id)||BANK_INITIAL_COUNT;
+    const page=limitQuestionItems(list,limit);
+    // Only build item cards for the displayed subset. All matching questions
+    // remain in memory and searchable; no item, unit, or competency is deleted.
+    const groups=core().unitFolderGroups(page.visible,fw);
     const unsortedCount=list.filter(item=>!item.unitId||!fw.units.some(u=>u.id===item.unitId)).length;
-    return '<section class="question-course-group"><div class="page-head compact-head question-course-head"><div><div class="panel-title">'+esc(course.code+" — "+course.title)+'</div><p class="page-subtitle">'+list.length+' question'+(list.length===1?"":"s")+' organized by course unit.</p></div>'+
+    return '<section class="question-course-group" data-itembank-course="'+esc(course.id)+'"><div class="page-head compact-head question-course-head"><div><div class="panel-title">'+esc(course.code+" — "+course.title)+'</div><p class="page-subtitle">'+list.length+' question'+(list.length===1?"":"s")+' match this course.</p></div>'+
       (list.length&&core().canManageCourse(course)?'<button class="secondary-btn small-btn" data-phase3-action="auto-sort-question-bank" data-course="'+course.id+'">Auto-Sort'+(unsortedCount?' ('+unsortedCount+')':'')+'</button>':'')+
       '</div>'+
       (groups.length?'<div class="unit-folder-stack">'+groups.map((group,index)=>
-        '<details class="unit-folder '+(group.id==="unsorted"?'unsorted-folder':'')+'" '+(index===0||group.id==="unsorted"?'open':'')+'>'+
-          '<summary><div class="unit-folder-icon">'+(group.id==="unsorted"?'?':esc(group.unit?.order||"U"))+'</div><div><strong>'+esc(group.label)+'</strong><span>'+group.items.length+' question'+(group.items.length===1?"":"s")+'</span></div><div class="unit-folder-chevron">⌄</div></summary>'+
+        '<details class="unit-folder '+(group.id==="unsorted"?'unsorted-folder':'')+'" data-itembank-unit="'+esc(group.id)+'" '+(index===0||group.id==="unsorted"?'open':'')+'>'+
+          '<summary><div class="unit-folder-icon">'+(group.id==="unsorted"?'?':esc(group.unit?.order||"U"))+'</div><div><strong>'+esc(group.label)+'</strong><span>'+group.items.length+' visible question'+(group.items.length===1?"":"s")+'</span></div><div class="unit-folder-chevron">⌄</div></summary>'+
           '<div class="unit-folder-body"><div class="assessment-item-grid">'+group.items.map(itemCard).join("")+'</div></div>'+
         '</details>'
       ).join("")+'</div>':'<div class="empty-mini">No matching questions in this course.</div>')+
+      (page.remaining?'<div class="itembank-load-more"><span>Showing '+page.shown+' of '+page.total+' matching questions</span><button type="button" class="secondary-btn small-btn" data-itembank-more="'+esc(course.id)+'">Show '+Math.min(BANK_INCREMENT,page.remaining)+' more</button></div>':'')+
     '</section>';
   };
 
@@ -294,7 +306,17 @@ async function renderItemBank(){
   };
   renderBasket();
 
-  const filter=()=>{
+  const updateDisplaySummary=()=>{
+    const groups=[...currentMatchesByCourse.entries()];
+    const matched=groups.reduce((n,[,list])=>n+list.length,0);
+    const shown=groups.reduce((n,[id,list])=>n+limitQuestionItems(list,visibleLimits.get(id)||BANK_INITIAL_COUNT).shown,0);
+    const summary=$("#itemBankDisplaySummary");
+    if(summary)summary.textContent="Displaying "+shown+" of "+matched+" matching questions across "+groups.length+" courses. Refine filters or show more to browse the rest.";
+    return shown;
+  };
+  const filter=(reset=false)=>{
+    if(reset)visibleLimits.clear();
+    const filterStart=performance.now();
     const cid=$("#itemCourseFilter").value,unit=$("#itemUnitFilter").value,topic=$("#itemTopicFilter").value,type=$("#itemTypeFilter").value,
       difficulty=$("#itemDifficultyFilter").value,cognitive=$("#itemCognitiveFilter").value,quality=$("#itemQualityFilter").value,usage=$("#itemUsageFilter").value,q=$("#itemSearch").value.trim().toLowerCase();
     const list=P3.items.filter(x=>{
@@ -317,16 +339,62 @@ async function renderItemBank(){
 
     if(!list.length){
       $("#itemBankList").innerHTML='<div class="empty-state"><div class="empty-symbol">Q</div><h3>No matching questions.</h3><p>Create a new question or adjust the filters.</p></div>';
+      $("#itemBankDisplaySummary").textContent="No questions match your filters. All "+P3.items.length+" questions remain searchable.";
       return;
     }
 
-    const courses=s.courses.filter(course=>list.some(item=>item.courseId===course.id));
-    $("#itemBankList").innerHTML=courses.map(course=>renderCourseGroup(course,list.filter(item=>item.courseId===course.id))).join("");
+    const perCourse=new Map();
+    for(const item of list){
+      if(!perCourse.has(item.courseId))perCourse.set(item.courseId,[]);
+      perCourse.get(item.courseId).push(item);
+    }
+    currentMatchesByCourse=perCourse;
+    const courses=s.courses.filter(course=>perCourse.has(course.id));
+    const renderStart=performance.now();
+    $("#itemBankList").innerHTML=courses.map(course=>renderCourseGroup(course,perCourse.get(course.id))).join("");
+    const shown=updateDisplaySummary();
+    if(new URLSearchParams(location.search).has("debugPerf"))
+      console.info("[Theoria perf] Question Bank filtering",Math.round(performance.now()-filterStart)+"ms",{
+        matching:list.length,rendered:shown,domRenderMs:Math.round(performance.now()-renderStart)
+      });
   };
 
-  ["itemCourseFilter","itemUnitFilter","itemTopicFilter","itemTypeFilter","itemDifficultyFilter","itemCognitiveFilter","itemQualityFilter","itemUsageFilter"].forEach(id=>$("#"+id)?.addEventListener("change",filter));
-  $("#itemSearch").addEventListener("input",filter);
+  ["itemCourseFilter","itemUnitFilter","itemTopicFilter","itemTypeFilter","itemDifficultyFilter","itemCognitiveFilter","itemQualityFilter","itemUsageFilter"].forEach(id=>$("#"+id)?.addEventListener("change",()=>filter(true)));
+  const searchEl=$("#itemSearch");
+  let searchTimer=null;
+  searchEl?.addEventListener("input",()=>{
+    clearTimeout(searchTimer);
+    searchTimer=setTimeout(()=>filter(true),140);
+  });
+  $("#itemBankList")?.addEventListener("click",e=>{
+    const more=e.target.closest("[data-itembank-more]");
+    if(!more)return;
+    const id=more.dataset.itembankMore;
+    const course=s.courses.find(c=>c.id===id);
+    const list=currentMatchesByCourse.get(id);
+    const prior=more.closest(".question-course-group");
+    if(!course||!list||!prior)return;
+    // Only refresh this course; preserve every other folder and its scroll state.
+    const openState=new Map([...prior.querySelectorAll("details[data-itembank-unit]")].map(folder=>
+      [folder.dataset.itembankUnit,folder.open]
+    ));
+    visibleLimits.set(id,(visibleLimits.get(id)||BANK_INITIAL_COUNT)+BANK_INCREMENT);
+    const holder=document.createElement("div");
+    holder.innerHTML=renderCourseGroup(course,list);
+    const nextGroup=holder.firstElementChild;
+    nextGroup.querySelectorAll("details[data-itembank-unit]").forEach(folder=>{
+      if(openState.has(folder.dataset.itembankUnit))folder.open=openState.get(folder.dataset.itembankUnit);
+    });
+    prior.replaceWith(nextGroup);
+    updateDisplaySummary();
+  });
   filter();
+  if(new URLSearchParams(location.search).has("debugPerf"))
+    console.info("[Theoria perf] Question Bank loaded",Math.round(performance.now()-perfStart)+"ms",{
+      items:P3.items.length,
+      fetchMs:Math.round(perfDataEnd-perfStart),
+      frameworkMs:Math.round(perfFrameworkEnd-perfDataEnd)
+    });
 }
 
 async function autoSortQuestionBankModal(courseId){
