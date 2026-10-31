@@ -53,7 +53,7 @@ if (-not (Test-Path $BackupFolder)) { New-Item -ItemType Directory -Force $Backu
 $backupPath = Join-Path $BackupFolder "firebase-tools-functions-prepare.original.js"
 Copy-Item -LiteralPath $prepareFile -Destination $backupPath -ErrorAction Stop
 $updated = $source.Replace($buggy, $fixed)
-$utf8 = New-Object System.Text.UTF8Encoding($false)
+$utf8 = [System.Text.UTF8Encoding]::new($false)
 [System.IO.File]::WriteAllText($prepareFile, $updated, $utf8)
 & node.exe --check $prepareFile
 if ($LASTEXITCODE -ne 0) {
