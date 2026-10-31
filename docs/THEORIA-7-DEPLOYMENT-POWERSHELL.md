@@ -9,7 +9,7 @@
 
 ## Prerequisites (Windows PowerShell)
 
-- Node.js **22.x** and npm. Use **`npm.cmd`** on PowerShell, not `npm.ps1`.
+- Node.js **22.x or 24.x locally** and npm. Both versions are checked in CI. The published Firebase Functions runtime is pinned separately to **Node.js 22** in `functions/package.json`. Use **`npm.cmd`** on PowerShell, not `npm.ps1`.
 - Java **21 or later** required for the current Firebase Firestore emulator.
 - Git for Windows.
 - A Firebase account with appropriate deployment permissions to `theoria-79433`.

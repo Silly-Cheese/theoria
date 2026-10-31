@@ -44,9 +44,10 @@ foreach ($cmd in @("git.exe", "node.exe", "npm.cmd", "java.exe")) {
 }
 
 $nodeVersion = (& node.exe --version).Trim()
-if ($LASTEXITCODE -ne 0 -or $nodeVersion -notmatch "^v22\.") {
-    throw "Use Node.js 22.x for this release (functions/package.json targets Node 22). Found: $nodeVersion"
+if ($LASTEXITCODE -ne 0 -or $nodeVersion -notmatch "^v(22|24)\\.") {
+    throw "Use Node.js 22.x or 24.x locally. The deployed Firebase Functions runtime remains Node.js 22. Found: $nodeVersion"
 }
+Write-Host "Local Node.js version: $nodeVersion (Functions deployment runtime: Node.js 22)" -ForegroundColor DarkCyan
 # Java 21+ is required by the current Firebase Firestore emulator.
 $javaText = (& cmd.exe /c "java.exe -version 2>&1") -join "`n"
 if ($LASTEXITCODE -ne 0) {
