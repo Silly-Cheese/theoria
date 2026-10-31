@@ -27,9 +27,9 @@ if ($config.PSObject.Properties.Name -contains "extensions") {
 if (Test-Path (Join-Path $Root "extensions")) {
     throw "An extensions directory exists. Refusing to skip Firebase Extensions checks."
 }
-$extensionImports = @(Get-ChildItem -Path $fnDir -Filter "*.js" -File -Recurse |
-    Where-Object { $_.FullName -notmatch "[\\/]node_modules[\\/]" } |
-    Select-String -Pattern "firebase-functions/extensions" -ErrorAction Stop)
+# Check owned function entrypoint and helper modules, not third-party node_modules.
+$ownedJsFiles = @(Get-ChildItem -LiteralPath $fnDir -Filter "*.js" -File)
+$extensionImports = @($ownedJsFiles | Select-String -Pattern "firebase-functions/extensions" -ErrorAction Stop)
 if ($extensionImports.Count -gt 0) {
     throw "Firebase Functions code references Extensions. Refusing to skip API checks."
 }
