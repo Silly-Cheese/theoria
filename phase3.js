@@ -274,6 +274,7 @@ async function renderItemBank(){
     '<div class="itembank-result-summary" id="itemBankDisplaySummary" role="status" aria-live="polite"></div>'+
     '<div class="question-bank-workspace"><main id="itemBankList"></main><aside id="itemBasketPanel" class="question-basket-panel"></aside></div>';
 
+  let currentMatchesByCourse=new Map();
   const renderCourseGroup=(course,list)=>{
     const fw=frameworks.get(course.id)||{units:[]};
     const limit=visibleLimits.get(course.id)||BANK_INITIAL_COUNT;
@@ -286,7 +287,7 @@ async function renderItemBank(){
       (list.length&&core().canManageCourse(course)?'<button class="secondary-btn small-btn" data-phase3-action="auto-sort-question-bank" data-course="'+course.id+'">Auto-Sort'+(unsortedCount?' ('+unsortedCount+')':'')+'</button>':'')+
       '</div>'+
       (groups.length?'<div class="unit-folder-stack">'+groups.map((group,index)=>
-        '<details class="unit-folder '+(group.id==="unsorted"?'unsorted-folder':'')+'" '+(index===0||group.id==="unsorted"?'open':'')+'>'+
+        '<details class="unit-folder '+(group.id==="unsorted"?'unsorted-folder':'')+'" data-itembank-unit="'+esc(group.id)+'" '+(index===0||group.id==="unsorted"?'open':'')+'>'+
           '<summary><div class="unit-folder-icon">'+(group.id==="unsorted"?'?':esc(group.unit?.order||"U"))+'</div><div><strong>'+esc(group.label)+'</strong><span>'+group.items.length+' visible question'+(group.items.length===1?"":"s")+'</span></div><div class="unit-folder-chevron">⌄</div></summary>'+
           '<div class="unit-folder-body"><div class="assessment-item-grid">'+group.items.map(itemCard).join("")+'</div></div>'+
         '</details>'
@@ -305,6 +306,14 @@ async function renderItemBank(){
   };
   renderBasket();
 
+  const updateDisplaySummary=()=>{
+    const groups=[...currentMatchesByCourse.entries()];
+    const matched=groups.reduce((n,[,list])=>n+list.length,0);
+    const shown=groups.reduce((n,[id,list])=>n+limitQuestionItems(list,visibleLimits.get(id)||BANK_INITIAL_COUNT).shown,0);
+    const summary=$("#itemBankDisplaySummary");
+    if(summary)summary.textContent="Displaying "+shown+" of "+matched+" matching questions across "+groups.length+" courses. Refine filters or show more to browse the rest.";
+    return shown;
+  };
   const filter=(reset=false)=>{
     if(reset)visibleLimits.clear();
     const filterStart=performance.now();
@@ -339,11 +348,11 @@ async function renderItemBank(){
       if(!perCourse.has(item.courseId))perCourse.set(item.courseId,[]);
       perCourse.get(item.courseId).push(item);
     }
+    currentMatchesByCourse=perCourse;
     const courses=s.courses.filter(course=>perCourse.has(course.id));
     const renderStart=performance.now();
     $("#itemBankList").innerHTML=courses.map(course=>renderCourseGroup(course,perCourse.get(course.id))).join("");
-    const shown=courses.reduce((n,course)=>n+limitQuestionItems(perCourse.get(course.id),visibleLimits.get(course.id)||BANK_INITIAL_COUNT).shown,0);
-    $("#itemBankDisplaySummary").textContent="Displaying "+shown+" of "+list.length+" matching questions across "+courses.length+" courses. Refine filters or show more to browse the rest.";
+    const shown=updateDisplaySummary();
     if(new URLSearchParams(location.search).has("debugPerf"))
       console.info("[Theoria perf] Question Bank filtering",Math.round(performance.now()-filterStart)+"ms",{
         matching:list.length,rendered:shown,domRenderMs:Math.round(performance.now()-renderStart)
@@ -361,8 +370,23 @@ async function renderItemBank(){
     const more=e.target.closest("[data-itembank-more]");
     if(!more)return;
     const id=more.dataset.itembankMore;
+    const course=s.courses.find(c=>c.id===id);
+    const list=currentMatchesByCourse.get(id);
+    const prior=more.closest(".question-course-group");
+    if(!course||!list||!prior)return;
+    // Only refresh this course; preserve every other folder and its scroll state.
+    const openState=new Map([...prior.querySelectorAll("details[data-itembank-unit]")].map(folder=>
+      [folder.dataset.itembankUnit,folder.open]
+    ));
     visibleLimits.set(id,(visibleLimits.get(id)||BANK_INITIAL_COUNT)+BANK_INCREMENT);
-    filter(false);
+    const holder=document.createElement("div");
+    holder.innerHTML=renderCourseGroup(course,list);
+    const nextGroup=holder.firstElementChild;
+    nextGroup.querySelectorAll("details[data-itembank-unit]").forEach(folder=>{
+      if(openState.has(folder.dataset.itembankUnit))folder.open=openState.get(folder.dataset.itembankUnit);
+    });
+    prior.replaceWith(nextGroup);
+    updateDisplaySummary();
   });
   filter();
   if(new URLSearchParams(location.search).has("debugPerf"))
