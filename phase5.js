@@ -204,7 +204,13 @@ async function prerequisiteModal(courseId){
   comps.forEach(addRow);
   addButton.onclick=()=>addRow();
   prerequisiteForm.onsubmit=async e=>{
-    e.preventDefault();const fd=new FormData(e.currentTarget);
+    e.preventDefault();
+    // Event.currentTarget becomes null once the synchronous submit event
+    // dispatch finishes. Never read it again after awaiting a Firestore write.
+    const submittedForm=e.currentTarget;
+    const fd=new FormData(submittedForm);
+    const entranceExamRequired=submittedForm.querySelector('[name="entranceExamRequired"]')?.checked===true;
+    const instructorApproval=submittedForm.querySelector('[name="instructorApproval"]')?.checked===true;
     const competencyRequirements=[...box.querySelectorAll(".progression-competency-row")].map(row=>({
       courseId:row.querySelector(".req-course").value,
       code:row.querySelector(".req-code").value.trim().toUpperCase(),
@@ -214,16 +220,16 @@ async function prerequisiteModal(courseId){
       requiredCourseIds:fd.getAll("requiredCourse"),
       minFinalPercent:Number(fd.get("minFinalPercent")||0),
       competencyRequirements,
-      instructorApproval:e.currentTarget.querySelector('[name="instructorApproval"]')?.checked===true,
+      instructorApproval,
       updatedAt:serverTimestamp()
     };
     try{
       await updateDoc(doc(db,"courses",course.id),{
         prerequisitePolicy,
-        entranceExamRequired:e.currentTarget.querySelector('[name="entranceExamRequired"]')?.checked===true,
+        entranceExamRequired,
         updatedAt:serverTimestamp()
       });
-      Object.assign(course,{prerequisitePolicy,entranceExamRequired:e.currentTarget.querySelector('[name="entranceExamRequired"]')?.checked===true});
+      Object.assign(course,{prerequisitePolicy,entranceExamRequired});
       await logCourseEvent(course.id,"progression_policy_updated","course",course.id,{
         requiredCourseIds:prerequisitePolicy.requiredCourseIds,
         competencyRequirements:competencyRequirements.map(x=>({courseId:x.courseId,code:x.code,minPercent:x.minPercent})),

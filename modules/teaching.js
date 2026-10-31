@@ -345,10 +345,13 @@ async function studentProfileModal(studentId){
     footer:'<button class="primary-btn" data-close-modal>Done</button>'
   });
   m.querySelector("#narrativeForm").onsubmit=async e=>{
-    e.preventDefault();const fd=new FormData(e.currentTarget);
+    e.preventDefault();
+    const submittedForm=e.currentTarget;
+    const fd=new FormData(submittedForm);
+    const includeOnRecord=submittedForm.elements.includeOnRecord.checked;
     try{
-      await setDoc(doc(db,"sections",sec.id,"narratives",studentId),{studentId,studentName:student.displayName||"Student",strengths:String(fd.get("strengths")||"").trim(),recommendations:String(fd.get("recommendations")||"").trim(),includeOnRecord:e.currentTarget.elements.includeOnRecord.checked,updatedBy:state().user.uid,updatedAt:serverTimestamp()},{merge:true});
-      await p5()?.logSectionEvent?.(sec.id,"narrative_evaluation_updated","student",studentId,{includeOnRecord:e.currentTarget.elements.includeOnRecord.checked});
+      await setDoc(doc(db,"sections",sec.id,"narratives",studentId),{studentId,studentName:student.displayName||"Student",strengths:String(fd.get("strengths")||"").trim(),recommendations:String(fd.get("recommendations")||"").trim(),includeOnRecord,updatedBy:state().user.uid,updatedAt:serverTimestamp()},{merge:true});
+      await p5()?.logSectionEvent?.(sec.id,"narrative_evaluation_updated","student",studentId,{includeOnRecord});
       toast("Narrative evaluation saved.");
     }catch(error){toast(error.message||"Unable to save narrative evaluation.");}
   };

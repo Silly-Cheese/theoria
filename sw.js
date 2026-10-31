@@ -1,4 +1,4 @@
-const CACHE="theoria-shell-v20261031-modal-repair";
+const CACHE="theoria-shell-v20261031-submit-fix";
 const SHELL=[
   "./",
   "./index.html",
