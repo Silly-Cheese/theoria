@@ -8,10 +8,11 @@
   <link rel="icon" type="image/svg+xml" href="./favicon.svg">
   <link rel="shortcut icon" href="./favicon.svg">
   <title>Theoria — Advanced Theological Studies</title>
-  <link rel="stylesheet" href="./styles.css?v=20261009-dialogs-release3">
-<script src="./dialogs.js?v=20261009-dialogs-release3" defer></script>
+  <link rel="stylesheet" href="./styles.css?v=20261030-theoria7-foundation">
+<script src="./dialogs.js?v=20261030-theoria7-foundation" defer></script>
 </head>
 <body>
+  <a class="theoria-skip-link" href="#theoriaMain">Skip to academic workspace</a>
   <section id="authShell" class="auth-shell">
     <aside class="auth-brand-panel">
       <div class="brand-lockup">
@@ -119,7 +120,7 @@
       </div>
     </header>
 
-    <main class="main">
+    <main class="main" id="theoriaMain" tabindex="-1">
       <section id="page-home" class="page active">
         <div class="page-head">
           <div>
@@ -132,15 +133,16 @@
             <button class="primary-btn instructor-only" id="homeCreateSection">Create Section</button>
           </div>
         </div>
-        <div class="theoria-intro"><div class="eyebrow">Your Academic Home</div><h2>Scholarship, learning, and opportunity in one place.</h2><p>Theoria connects courses, assessments, academic progress, and school communities. Find your next course, continue learning, or explore an institution’s open registration period.</p><div class="theoria-intro-actions"><button class="primary-btn" data-go="institutions">Explore schools & enrollment</button><button class="secondary-btn" data-go="courses">Browse course catalog</button></div></div>
+        <div class="theoria-intro" id="theoriaHomeHero"><div class="eyebrow">Theoria Academic Desk</div><h2 id="theoriaHomeHeroTitle">Scholarship, learning, and opportunity in one place.</h2><p id="theoriaHomeHeroCopy">Your connected academic workspace.</p><div id="theoriaHomeHeroActions" class="theoria-intro-actions"></div></div>
         <div id="homeStats" class="stat-row"></div>
+        <section class="academic-launch-section" aria-labelledby="academicLaunchHeading"><div class="academic-launch-header"><div><div class="eyebrow">Quick Navigation</div><h2 id="academicLaunchHeading">Academic launchpad</h2></div><p>Move directly into your work.</p></div><div id="homeActions" class="academic-launch-grid"></div></section>
         <div class="grid-2">
           <div class="panel">
             <div class="panel-head"><div class="panel-title">Your Sections</div><button class="panel-link" data-go="sections">View all</button></div>
             <div id="homeSections" class="panel-body"></div>
           </div>
           <aside class="panel">
-            <div class="panel-head"><div class="panel-title">Academic Attention</div></div>
+            <div class="panel-head"><div class="panel-title">Academic Priorities</div></div>
             <div id="homeAttention" class="panel-body"></div>
           </aside>
         </div>
@@ -295,10 +297,10 @@
 
   <div id="modalRoot"></div>
   <div id="toast" class="toast"></div>
-  <script type="module" src="./app.js?v=20261009-dialogs-release3"></script>
-  <script type="module" src="./phase3.js?v=20261009-dialogs-release3"></script>
-  <script type="module" src="./phase4.js?v=20261009-dialogs-release3"></script>
-  <script type="module" src="./phase5.js?v=20261009-dialogs-release3"></script>
+  <script type="module" src="./app.js?v=20261030-theoria7-foundation"></script>
+  <script type="module" src="./phase3.js?v=20261030-theoria7-foundation"></script>
+  <script type="module" src="./phase4.js?v=20261030-theoria7-foundation"></script>
+  <script type="module" src="./phase5.js?v=20261030-theoria7-foundation"></script>
   <script type="module" src="./phase6.js?v=20261002-classroom7"></script>
   <script type="module" src="./institutions.js?v=20261010-student-name-repair4"></script>
   <script type="module" src="./school-admin.js?v=20261010-permissions-names3"></script>

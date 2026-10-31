@@ -295,6 +295,34 @@ function renderHome(){
   const openEnrollmentCount=activeSections.filter(s=>s.joinOpen!==false).length;
   const academicTerms=[...new Set(state.sections.map(s=>String(s.term||"").trim()).filter(Boolean))];
   const disciplines=[...new Set(state.courses.map(c=>String(c.discipline||"").trim()).filter(Boolean))];
+  const instructor=state.role==="instructor";
+  const heroTitle=$("#theoriaHomeHeroTitle"),heroCopy=$("#theoriaHomeHeroCopy"),heroActions=$("#theoriaHomeHeroActions");
+  if(heroTitle)heroTitle.textContent=instructor?"Teaching with purpose. Scholarship with depth.":"Your studies, thoughtfully organized.";
+  if(heroCopy)heroCopy.textContent=instructor
+    ?"Guide your sections, refine your curriculum, evaluate student work, and preserve sound academic records from one place."
+    :"Continue your coursework, prepare for assessments, and see how your learning connects across the curriculum.";
+  if(heroActions)heroActions.innerHTML=instructor
+    ?'<button class="primary-btn" data-go="sections">Manage teaching sections</button><button class="secondary-btn" data-go="assessments">Assessment workspace</button>'
+    :'<button class="primary-btn" data-go="sections">Continue learning</button><button class="secondary-btn" data-go="planner">View academic planner</button>';
+  const launchItems=instructor?[
+    ["courses","Curriculum Studio","Maintain units, topics and official frameworks.","▤"],
+    ["assessments","Assessment Lab","Construct, schedule and grade examinations.","✓"],
+    ["teaching-tools","Faculty Desk","Rubrics, attendance and student support.","⌁"],
+    ["reports","Academic Records","Review results, appeals and certification.","▥"],
+    ["planner","Academic Planner","Organize teaching deadlines and events.","◷"],
+    ["institutions","Institution Hub","Manage school and registration workflows.","▥"]
+  ]:[
+    ["sections","My Sections","Find your enrolled teaching spaces.","◫"],
+    ["assessments","Assessment Desk","See exam schedules and available work.","✓"],
+    ["planner","Study Planner","Review assignments and upcoming events.","◷"],
+    ["mastery","Competency Mastery","Understand strengths and growth areas.","◇"],
+    ["transcript","Academic Transcript","Review your documented course history.","T"],
+    ["library","Research Library","Explore academic resources and readings.","≡"]
+  ];
+  const actionsEl=$("#homeActions");
+  if(actionsEl)actionsEl.innerHTML=launchItems.map(([page,title,copy,mark])=>
+    '<button type="button" class="academic-launch-card" data-go="'+page+'"><span class="academic-launch-mark" aria-hidden="true">'+mark+'</span><span class="academic-launch-copy"><strong>'+esc(title)+'</strong><span>'+esc(copy)+'</span></span><span class="academic-launch-chevron" aria-hidden="true">→</span></button>'
+  ).join("");
 
   $("#homeStats").innerHTML = state.role === "instructor"
     ? '<div class="stat"><div class="stat-label">Teaching Sections</div><div class="stat-value">'+sectionCount+'</div><div class="stat-note">Owned sections</div></div>'+
@@ -310,17 +338,18 @@ function renderHome(){
     ? '<div class="card-grid">'+activeSections.slice(0,3).map(sectionCard).join("")+'</div>'
     : '<div class="empty-state"><div class="empty-symbol">Θ</div><h3>No active sections yet.</h3><p>'+(state.role==="instructor"?"Create a course framework, then create a teaching section from it.":"Join a section with the code provided by your instructor.")+'</p>'+(state.role==="student"?'<button class="primary-btn" data-go="sections">Join a Section</button>':'<button class="primary-btn" data-action="create-section">Create Section</button>')+'</div>';
 
-  const thirdNumber=state.role==="instructor"?openEnrollmentCount:academicTerms.length;
-  const thirdTitle=state.role==="instructor"?"Sections accepting enrollment":"Academic terms";
-  const thirdCopy=state.role==="instructor"
-    ? (openEnrollmentCount?"These sections currently accept student join codes.":"No sections currently accept new enrollment.")
-    : (academicTerms.length?"Your current sections span "+academicTerms.length+" academic term"+(academicTerms.length===1?"":"s")+".":"No academic term data is available yet.");
-
-  $("#homeAttention").innerHTML = '<div class="attention-list">'+
-    '<div class="attention-item"><div class="attention-number">'+sectionCount+'</div><div class="attention-copy"><strong>'+(state.role==="instructor"?"Teaching sections":"Current sections")+'</strong><span>'+(sectionCount?"Open a section to review its framework, work, assessments, and records.":"No sections are currently connected to this account.")+'</span></div></div>'+
-    '<div class="attention-item"><div class="attention-number">'+courseCount+'</div><div class="attention-copy"><strong>Course frameworks</strong><span>Units, topics, objectives, essential knowledge, and competencies currently available to this account.</span></div></div>'+
-    '<div class="attention-item"><div class="attention-number">'+thirdNumber+'</div><div class="attention-copy"><strong>'+thirdTitle+'</strong><span>'+thirdCopy+'</span></div></div>'+
-  '</div>';
+  const priorities=instructor?[
+    {count:sectionCount,title:sectionCount?"Review active sections":"Establish a teaching section",copy:sectionCount?"Open a section to review its roster, assignments and teaching plan.":"Start with an official course and create a section for your students.",page:"sections"},
+    {count:openEnrollmentCount,title:"Enrollment readiness",copy:openEnrollmentCount?"Review join codes and the sections currently accepting students.":"Review section enrollment settings before welcoming new students.",page:"sections"},
+    {count:courseCount,title:"Curriculum stewardship",copy:"Keep course frameworks, assessments and competencies aligned.",page:"courses"}
+  ]:[
+    {count:sectionCount,title:sectionCount?"Continue coursework":"Join your first section",copy:sectionCount?"Your enrolled sections connect assignments and assessments.":"Enter the enrollment code provided by an instructor.",page:"sections"},
+    {count:academicTerms.length,title:"Plan your studies",copy:"Review your academic calendar and prepare for upcoming work.",page:"planner"},
+    {count:courseCount,title:"Review academic progress",copy:"Use competency evidence to guide your next study session.",page:"mastery"}
+  ];
+  $("#homeAttention").innerHTML='<div class="attention-list academic-priority-list">'+priorities.map(p=>
+    '<button class="academic-priority-item" type="button" data-go="'+p.page+'"><span class="attention-number">'+p.count+'</span><span class="attention-copy"><strong>'+esc(p.title)+'</strong><span>'+esc(p.copy)+'</span></span><span class="academic-priority-arrow" aria-hidden="true">→</span></button>'
+  ).join("")+'</div>';
 }
 
 function renderCourses(){

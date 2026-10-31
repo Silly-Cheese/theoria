@@ -9,6 +9,7 @@ import {
   sendEmailVerification,
   reload
 } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-functions.js";
 import {
   getFirestore,
   doc,
@@ -38,9 +39,10 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const functions = getFunctions(app, "us-central1");
 
 export {
-  app, auth, db,
+  app, auth, db, functions, httpsCallable,
   onAuthStateChanged,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
