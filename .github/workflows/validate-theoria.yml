@@ -16,4 +16,5 @@ jobs:
           java-version: '21'
       - run: npm install --no-audit --no-fund
       - run: npm run check
+      - run: npm install --prefix functions --no-audit --no-fund
       - run: npx firebase-tools emulators:exec --only firestore --project demo-theoria "npm test"
