@@ -1,0 +1,141 @@
+/* Theoria 7: mobile-first academic workspace. Desktop remains unchanged. */
+.mobile-nav-backdrop,.mobile-drawer-tools,.mobile-drawer-close{display:none}
+.mobile-table-scroll{max-width:100%;overflow-x:auto;overscroll-behavior-inline:contain;-webkit-overflow-scrolling:touch}
+.mobile-table-scroll>table{min-width:100%;width:max-content}
+.mobile-table-scroll:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+@media(max-width:1024px){
+  .page,.page>*,.panel,.panel-body,.detail-hero,.assessment-card,.academic-card{min-width:0}
+  .page :is(h1,h2,h3),.panel-title{overflow-wrap:anywhere}
+  :where(.page,.modal-body) :is(img,svg,canvas,video){max-width:100%}
+}
+@media(max-width:760px){
+  :root{--topbar:62px;--mobile-bottom:calc(72px + env(safe-area-inset-bottom,0px))}
+  html{scroll-padding-top:108px}
+  body{padding-bottom:0;overflow-x:clip}
+  body.mobile-nav-open{overflow:hidden;touch-action:none}
+  .topbar{height:var(--topbar);padding:0 12px;gap:8px;z-index:150}
+  .topbar-left{flex:1;gap:10px;min-width:0}
+  .mobile-menu{flex:none;display:grid;place-items:center;width:44px;height:44px;border:1px solid var(--line);border-radius:11px;background:#fff;color:var(--burgundy);font-size:20px}
+  .mobile-menu[aria-expanded="true"]{background:var(--paper2)}
+  .breadcrumb{display:block;flex:1;min-width:0;font-size:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .breadcrumb strong{display:block;overflow:hidden;text-overflow:ellipsis;font-size:14px;color:var(--burgundyDeep);font-weight:700}
+  .top-actions{flex:none;gap:6px;min-width:0}
+  .top-actions .icon-action-btn,.top-actions .notification-btn,.top-actions .icon-btn{min-width:40px!important;width:40px!important;height:40px!important;border-radius:11px!important}
+  .sidebar{width:min(340px,88vw)!important;z-index:211;top:0;bottom:0;padding-top:env(safe-area-inset-top,0px);box-shadow:18px 0 52px #100c0a42;transform:translateX(-104%);visibility:hidden;transition:transform .2s ease,visibility .2s ease}
+  .sidebar.open{transform:translateX(0);visibility:visible}
+  .side-brand{min-height:72px;height:auto;padding:13px 18px;gap:13px}
+  .side-brand-name{font-size:18px}.side-brand-sub{font-size:9px}
+  .side-scroll{padding:15px 12px;overscroll-behavior-y:contain}
+  .nav-group{margin-bottom:14px}.nav-label{padding:8px 12px;font-size:10px}
+  .nav-item{min-height:46px;border-radius:10px;font-size:13px;padding:12px 13px;gap:13px}
+  .nav-icon{font-size:17px;width:22px}
+  .sidebar-profile{padding:14px 16px calc(14px + env(safe-area-inset-bottom,0px))}
+  .profile-copy strong{font-size:12px}.profile-copy span{font-size:10px}
+  .mobile-drawer-close{display:grid;place-items:center;margin-left:auto;flex:none;width:42px;height:42px;border:1px solid #474039;border-radius:10px;background:#292522;color:#f9f3ea;font-size:22px}
+  .mobile-drawer-tools{display:flex;flex-wrap:wrap;gap:7px;padding:13px 14px;border-top:1px solid #332e2b;background:#201d1b}
+  .mobile-drawer-tools button{flex:1 1 auto;min-width:74px;min-height:42px;padding:9px 10px;border-radius:8px;border:1px solid #4b403d;background:#302925;color:#f3ece4;font-size:11px;font-weight:600}
+  .mobile-nav-backdrop{display:block;position:fixed;inset:0;z-index:210;border:0;border-radius:0;padding:0;background:#120e0ea3;opacity:0;visibility:hidden;pointer-events:none;transition:opacity .2s ease,visibility .2s ease}
+  body.mobile-nav-open .mobile-nav-backdrop{opacity:1;visibility:visible;pointer-events:auto}
+  body.mobile-nav-open #mobileDock{display:none!important}
+  .main{margin-left:0;padding:calc(var(--topbar) + 21px) 14px calc(var(--mobile-bottom) + 28px);max-width:100%;overflow:clip}
+  .page{max-width:100%;min-width:0}
+  .page-head{gap:11px;margin-bottom:20px;align-items:stretch}
+  .page-title{font-size:clamp(24px,6vw,30px);line-height:1.24}
+  .page-subtitle{font-size:12px;line-height:1.65}
+  .eyebrow{font-size:10px}
+  .page-actions{width:100%;display:flex;gap:9px;flex-wrap:wrap}
+  .page-actions>button{flex:1 1 auto;min-height:44px}
+  .stat-row{grid-template-columns:repeat(2,minmax(0,1fr));border-radius:12px;overflow:hidden}
+  .stat{padding:17px 13px!important;min-width:0;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .stat:nth-child(2n){border-right:0}
+  .stat-value{font-size:26px}.stat-label{font-size:10px}.stat-note{font-size:11px;line-height:1.5}
+  .grid-2,.card-grid,.academic-launch-grid,.assessment-grid,.library-grid,.student-home-course-grid,.my-classes-grid,.planner-bottom-grid,.institution-grid,.content-skills-grid,.student-content-skills,.student-home-priority-grid,.operations-grid,.admin-tool-grid{grid-template-columns:minmax(0,1fr)!important}
+  .panel,.academic-card,.assessment-card,.section-card,.question-course-group{min-width:0;max-width:100%}
+  .panel-body{padding:15px}.panel-head{padding:13px 15px;gap:8px;flex-wrap:wrap}
+  .detail-hero{padding:17px 15px;border-radius:12px}
+  .detail-title{font-size:clamp(21px,5.4vw,27px);line-height:1.35}
+  .detail-meta{gap:8px 12px;line-height:1.65}
+  .detail-top{align-items:stretch}
+  .academic-banner{border-radius:0 10px 10px 0;padding:16px 15px}
+  .academic-banner h3{font-size:19px;line-height:1.35}.academic-banner p{font-size:12px}
+  .academic-card,.assessment-card,.join-card{padding:17px;border-radius:11px}
+  .academic-card h3{font-size:18px}
+  .academic-card p,.assessment-card p{font-size:12px;line-height:1.6}
+  .card-actions,.inline-actions{gap:8px;flex-wrap:wrap}
+  .card-actions :is(.primary-btn,.secondary-btn,.danger-btn),.inline-actions :is(.primary-btn,.secondary-btn,.danger-btn){min-height:42px;flex:1 1 auto;white-space:normal;overflow-wrap:anywhere}
+  .primary-btn,.secondary-btn,.danger-btn{min-height:44px}
+  .small-btn{font-size:11px;padding:10px 12px}
+  .empty-state{padding:34px 18px}.empty-state p{font-size:12px}
+  .tabs{top:var(--topbar);z-index:18;max-width:calc(100vw - 2px);padding:0 14px;gap:8px;margin-left:-14px;margin-right:-14px;overscroll-behavior-inline:contain;-webkit-overflow-scrolling:touch}
+  .tab-btn{min-height:46px;font-size:12px;padding:12px 13px}
+  .form-grid,.compact-field-grid,.institution-date-pair{grid-template-columns:minmax(0,1fr)!important}
+  .form-grid>*,.compact-field-grid>*,.institution-form>*,.modal-body>*{min-width:0}
+  :where(.page,.modal-body,.institution-dialog,.school-admin) :is(input,select,textarea){max-width:100%;min-width:0;font-size:16px;line-height:1.45}
+  :where(.page,.modal-body,.institution-dialog,.school-admin) :is(input:not([type=checkbox]):not([type=radio]),select){min-height:44px}
+  textarea{max-width:100%}
+  .modal-backdrop,.institution-modal-backdrop,.parent-setup-overlay{padding:0;align-items:end;place-items:end center}
+  .modal,.modal.wide,.institution-dialog,.parent-setup-card{width:100%!important;max-width:100%!important;max-height:calc(100dvh - 18px)!important;border-radius:20px 20px 0 0!important;overflow-y:auto;overscroll-behavior:contain}
+  .modal-head,.institution-dialog .modal-header{padding:17px;gap:12px}
+  .modal-head h2,.institution-dialog .modal-header h2{font-size:19px}
+  .modal-close{min-width:42px;min-height:42px;border-radius:9px;font-size:25px}
+  .modal-body,.institution-form{padding:17px}
+  .modal-foot{display:flex;gap:9px;padding:12px 17px calc(12px + env(safe-area-inset-bottom,0px));flex-wrap:wrap}
+  .modal-foot>:is(button,.primary-btn,.secondary-btn,.danger-btn){flex:1 1 auto;min-height:44px}
+  .theoria-dialog-panel{width:100%;max-height:calc(100dvh - 16px);border-radius:18px 18px 0 0;padding:22px 18px calc(20px + env(safe-area-inset-bottom,0px))}
+  .theoria-native-dialog{align-items:end;padding:0}
+  .toast{left:14px;right:14px;bottom:calc(var(--mobile-bottom) + 10px);max-width:none;font-size:12px;line-height:1.5;text-align:center}
+  .mobile-dock{grid-template-columns:repeat(5,minmax(0,1fr));z-index:160;min-height:var(--mobile-bottom);padding:6px 8px calc(6px + env(safe-area-inset-bottom,0px));border-top:1px solid #d9cfc5;box-shadow:0 -7px 30px #1e17131f}
+  .mobile-dock-item{min-height:54px;border-radius:12px;gap:4px;touch-action:manipulation;transition:background .14s}
+  .mobile-dock-item span{font-size:20px;line-height:1.1}.mobile-dock-item small{font-size:10px;font-weight:700;line-height:1.2}
+  .mobile-dock-item.active{background:#f1e5e1;color:var(--burgundyDeep);box-shadow:inset 0 2px 0 var(--burgundy)}
+  .question-bank-workspace{grid-template-columns:minmax(0,1fr)!important;gap:12px}
+  .question-bank-workspace>main{min-width:0}
+  .question-basket-panel{order:-1;position:static;max-height:230px;overflow:auto;padding:13px}
+  .question-basket-items{max-height:110px;overflow:auto}
+  .advanced-question-bank-toolbar .filter-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:9px}
+  .advanced-question-bank-toolbar :is(input,select){width:100%!important;min-width:0}
+  .assessment-toolbar{padding:14px;gap:11px}.itembank-result-summary,.itembank-load-more>span{font-size:12px}
+  .assessment-item-grid{grid-template-columns:minmax(0,1fr)}
+  .unit-folder>summary{gap:9px;min-height:52px;padding:12px}
+  .unit-folder summary strong{font-size:12px;line-height:1.45}.unit-folder summary span{font-size:10px}
+  .unit-folder-body{padding:10px}
+  .mobile-table-scroll{display:block;max-width:100%;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:10px;margin:11px 0 18px;background:linear-gradient(90deg,#fff,#fbf8f2)}
+  .mobile-table-scroll>table{min-width:620px;width:max-content}
+  .gradebook-wrap{max-width:100%;overscroll-behavior-inline:contain;-webkit-overflow-scrolling:touch}
+  .gradebook-table{min-width:760px}
+  .gradebook-jumps{scroll-snap-type:x proximity;overscroll-behavior-inline:contain}.gradebook-jump{scroll-snap-align:start}
+  .exam-shell,.dedicated-exam-mode{min-height:100dvh}.exam-question{min-height:0;overflow:auto}
+  .exam-controls{padding-bottom:calc(10px + env(safe-area-inset-bottom,0px))}
+  body:has(.exam-shell) #mobileDock,body:has(.dedicated-exam-mode) #mobileDock,body:has(.modal-backdrop) #mobileDock,body:has(.institution-modal-backdrop) #mobileDock{display:none!important}
+  body:has(.exam-shell) .toast{bottom:calc(80px + env(safe-area-inset-bottom,0px))}
+  .school-admin-tabs{flex-wrap:nowrap;max-width:100%;overflow-x:auto;scroll-snap-type:x proximity}
+  .school-admin-tabs button{white-space:nowrap;scroll-snap-align:start;min-height:44px}
+  .institution-workspace,.school-admin,.progression-course-card{max-width:100%;min-width:0}
+  .progression-course-card h3{overflow-wrap:anywhere}
+  .unit-at-glance{grid-template-columns:repeat(2,minmax(0,1fr))}
+  :where(button,a,input,textarea,select,[tabindex]):focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+}
+@media(max-width:600px){
+  .top-actions #accessibilityBtn,.top-actions #contextHelpBtn,.top-actions #commandPaletteBtn,.top-actions #quickCreateBtn,.top-actions #quickJoinBtn{display:none!important}
+  .top-actions #notificationBtn{display:grid!important}
+  #page-home .theoria-intro{padding:22px 17px}
+  #page-home .theoria-intro h2{font-size:25px;line-height:1.33}
+  #page-home .academic-launch-card{padding:15px;min-height:89px}
+}
+@media(max-width:420px){
+  .topbar{padding:0 10px}.main{padding-left:12px;padding-right:12px}
+  .page-title{font-size:25px}.stat-value{font-size:23px}.stat{padding:15px 12px!important}
+  .academic-banner{padding:14px 12px}
+  .tabs{margin-left:-12px;margin-right:-12px}
+  .advanced-question-bank-toolbar .filter-row{gap:7px}
+  .mobile-dock{padding-left:4px;padding-right:4px}
+  .mobile-dock-item small{font-size:9px}
+  .detail-top .inline-actions{grid-template-columns:minmax(0,1fr)}
+  .toast{left:10px;right:10px}
+}
+@media(prefers-reduced-motion:reduce){.sidebar,.mobile-nav-backdrop,.mobile-dock-item{transition:none!important}}
+@media print{
+  .mobile-nav-backdrop,.mobile-drawer-tools,.mobile-drawer-close,#mobileDock{display:none!important}
+  .mobile-table-scroll{display:block;overflow:visible;border:0}
+  .mobile-table-scroll>table{min-width:0;width:100%}
+}

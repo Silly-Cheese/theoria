@@ -55,7 +55,7 @@ export function createMobileNavigation({doc,win,sidebar,trigger}){
     if(!isOpen())return;
     if(e.key==="Escape"){e.preventDefault();close();return;}
     if(e.key!=="Tab")return;
-    const focusables=[...sidebar.querySelectorAll("button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]")].filter(el=>
+    const focusables=[...sidebar.querySelectorAll("button:not([disabled]),a[href],input:not([disabled]),select:not([disabled])")].filter(el=>
       !el.classList.contains("hidden")&&!el.closest(".hidden")&&el.getAttribute("aria-hidden")!=="true"
     );
     if(!focusables.length)return;
