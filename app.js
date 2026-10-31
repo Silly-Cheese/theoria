@@ -4,6 +4,7 @@ import {
   doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc,
   collection, getDocs, query, where, writeBatch, serverTimestamp
 } from "./firebase.js";
+import {createAcademicModal, clearAcademicModal} from "./modules/ui-modal.js";
 
 const state = {
   role: "student",
@@ -82,13 +83,25 @@ function sortByOrder(items){
   });
 }
 
+function modalHost(){
+  let host=document.getElementById("modalRoot");
+  if(!host){
+    host=document.createElement("div");
+    host.id="modalRoot";
+    document.body.appendChild(host);
+    console.warn("Theoria repaired a missing modal host.");
+  }
+  return host;
+}
+
 function openModal({title, eyebrow="Theoria", body="", wide=false, footer=""}){
-  modalRoot.innerHTML = '<div class="modal-backdrop"><div class="modal'+(wide?' wide':'')+'"><div class="modal-head"><div><div class="eyebrow">'+esc(eyebrow)+'</div><h2>'+esc(title)+'</h2></div><button class="modal-close" data-close-modal aria-label="Close">×</button></div><div class="modal-body">'+body+'</div>'+(footer?'<div class="modal-foot">'+footer+'</div>':'')+'</div></div>';
-  return modalRoot.querySelector(".modal");
+  // Construct the dialog itself with DOM nodes: invalid HTML in a course-specific
+  // form can no longer consume the outer .modal wrapper or make querySelector null.
+  return createAcademicModal(modalHost(),{title,eyebrow,body,wide,footer});
 }
 
 function closeModal(){
-  modalRoot.innerHTML = "";
+  clearAcademicModal(modalHost());
 }
 
 function switchAuthTab(tab){
@@ -4397,7 +4410,7 @@ document.addEventListener("click",async event=>{
   if(action==="toggle-enrollment") return toggleEnrollment();
 });
 
-modalRoot.addEventListener("click",e=>{if(e.target.classList.contains("modal-backdrop"))closeModal();});
+document.addEventListener("click",e=>{if(e.target.classList?.contains("modal-backdrop")&&e.target.closest("#modalRoot"))closeModal();});
 
 onAuthStateChanged(auth,async user=>{
   state.user=user;

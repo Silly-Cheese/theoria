@@ -34,3 +34,10 @@
 3. Split large JavaScript modules into dedicated state, data, UI, and domain services.
 4. Fully integrate official transcripts, grading scales, program credits, faculty rubric tools, and guardian communication.
 5. Add visual and end-to-end browser tests, accessibility checks, and privileged audit tools.
+
+## UI reliability patch — modal recovery
+- All modal shells now use DOM construction and return a real panel instead of querying for a panel after HTML insertion.
+- Progression prerequisite editor validates required form controls before attaching listeners.
+- Click failures on the progression editor log contextual errors and display a readable message.
+- Browser-DOM regression tests cover progression form controls, malformed dialog markup, replacing dialogs, text escaping, and missing hosts.
+- These changes are frontend-only; existing Firebase deployment remains valid.
