@@ -17,9 +17,10 @@ Theoria intentionally uses only:
 
 - **Firebase Authentication**
 - **Cloud Firestore**
+- **Firebase Functions (Theoria 7 academic service)**
 - GitHub Pages for the current static-site deployment
 
-There is **no Firebase Storage dependency** and no Cloud Functions dependency.
+There is **no Firebase Storage dependency**. Theoria 7 introduces optional Firebase callable Functions for privileged academic workflows; see [Theoria 7 foundation release notes](docs/THEORIA-7-FOUNDATION.md).
 
 Project ID: `theoria-79433`
 

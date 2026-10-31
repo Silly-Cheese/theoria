@@ -184,7 +184,16 @@ async function prerequisiteModal(courseId){
       '<div class="modal-foot form-sticky-foot"><button type="button" class="secondary-btn" data-close-modal>Cancel</button><button class="primary-btn" type="submit">Save Progression Policy</button></div></form>'
   });
 
-  const box=m.querySelector("#competencyReqRows");
+  const box=m?.querySelector("#competencyReqRows");
+  const addButton=m?.querySelector("#addCompetencyReq");
+  const prerequisiteForm=m?.querySelector("#prerequisiteForm");
+  if(!box||!addButton||!prerequisiteForm){
+    console.error("Progression editor missing required controls",{
+      hasDialog:!!m,hasRows:!!box,hasAddButton:!!addButton,hasForm:!!prerequisiteForm
+    });
+    closeModal();
+    return toast("The progression editor could not open correctly. Refresh Theoria and try again.");
+  }
   const addRow=(row={})=>{
     const el=document.createElement("div");el.className="structured-row progression-competency-row";
     el.innerHTML='<div class="structured-index">◇</div><select class="structured-input req-course"><option value="">Any prior course</option>'+others.map(c=>'<option value="'+c.id+'">'+esc(c.code)+'</option>').join("")+'</select><input class="structured-input req-code" placeholder="Competency code" value="'+esc(row.code||"")+'"><div class="input-with-suffix mini"><input class="req-min" type="number" min="0" max="100" value="'+esc(row.minPercent??70)+'"><span>%</span></div><button type="button" class="row-remove">×</button>';
@@ -192,10 +201,8 @@ async function prerequisiteModal(courseId){
     el.querySelector(".row-remove").onclick=()=>el.remove();
     box.appendChild(el);
   };
-  comps.forEach(addRow);m.querySelector("#addCompetencyReq").onclick=()=>addRow();
-
-  const prerequisiteForm=m?.querySelector("#prerequisiteForm");
-  if(!prerequisiteForm){closeModal();return toast("The progression editor could not be initialized. Refresh Theoria and try again.");}
+  comps.forEach(addRow);
+  addButton.onclick=()=>addRow();
   prerequisiteForm.onsubmit=async e=>{
     e.preventDefault();const fd=new FormData(e.currentTarget);
     const competencyRequirements=[...box.querySelectorAll(".progression-competency-row")].map(row=>({
@@ -1017,7 +1024,13 @@ document.addEventListener("click",e=>{
 document.addEventListener("click",async e=>{
   const b=e.target.closest("[data-phase5-action]");if(!b)return;
   const a=b.dataset.phase5Action;
-  if(a==="manage-prerequisites")return prerequisiteModal(b.dataset.course);
+  if(a==="manage-prerequisites"){
+    try{return await prerequisiteModal(b.dataset.course);}
+    catch(error){
+      console.error("Unable to open course progression editor:",error);
+      return toast("The progression editor encountered a problem. Check the browser console for details.");
+    }
+  }
   if(a==="course-staff")return courseStaffManagementModal(b.dataset.course);
   if(a==="remove-course-staff")return removeCourseStaff(b.dataset.course,b.dataset.user);
   if(a==="section-operations")return sectionOperationsModal(b.dataset.section);

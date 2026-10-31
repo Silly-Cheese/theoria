@@ -16,4 +16,63 @@ jobs:
           java-version: '21'
       - run: npm install --no-audit --no-fund
       - run: npm run check
+      - run: npm install --prefix functions --no-audit --no-fund
+      - run: npx firebase-tools emulators:exec --only firestore --project demo-theoria "npm test"
+  windows-powershell:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Windows PowerShell deployment script syntax
+        shell: powershell
+        run: |
+          $tokens = $null
+          $parseErrors = $null
+          foreach ($script in @('scripts/deploy-theoria-backend.ps1', 'scripts/skip-unused-extensions-check.ps1')) {
+            $tokens = $null
+            $parseErrors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Join-Path $PWD $script),
+              [ref]$tokens,
+              [ref]$parseErrors
+            ) | Out-Null
+            if ($parseErrors.Count -gt 0) {
+              $parseErrors | ForEach-Object { Write-Error $_ }
+              exit 1
+            }
+          }
+      - name: Smoke-test guarded CLI workaround against a mock local installation
+        shell: powershell
+        run: |
+          $fixture = Join-Path $env:RUNNER_TEMP 'theoria-cli-fixture'
+          $cliFolder = Join-Path $fixture 'node_modules/firebase-tools/lib/deploy/functions'
+          New-Item -ItemType Directory -Force -Path $cliFolder | Out-Null
+          New-Item -ItemType Directory -Force -Path (Join-Path $fixture 'functions') | Out-Null
+          Set-Content -Path (Join-Path $fixture 'firebase.json') -Value '{"functions":{"source":"functions"}}' -Encoding UTF8
+          $prepare = Join-Path $cliFolder 'prepare.js'
+          Set-Content -Path $prepare -Value 'const hasExtensions = (wantBuilds) => Object.values(wantBuilds).some((b) => b.extensions);' -Encoding UTF8
+          $backup = Join-Path $fixture 'backups'
+          & '.\\scripts\\skip-unused-extensions-check.ps1' -Root $fixture -BackupFolder $backup
+          $source = Get-Content -Path $prepare -Raw
+          if (-not $source.Contains('b.extensions && Object.keys(b.extensions).length > 0')) {
+            throw 'The guarded CLI source patch was not applied to the mock fixture.'
+          }
+          if (-not (Test-Path (Join-Path $backup 'firebase-tools-functions-prepare.original.js'))) {
+            throw 'The original CLI source backup is missing.'
+          }
+          & '.\\scripts\\skip-unused-extensions-check.ps1' -Root $fixture -BackupFolder $backup
+  node24-compatibility:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm install --no-audit --no-fund
+      - run: npm run check
+      - run: npm install --prefix functions --no-audit --no-fund
+      - run: npm --prefix functions run check
       - run: npx firebase-tools emulators:exec --only firestore --project demo-theoria "npm test"

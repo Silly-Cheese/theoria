@@ -1,6 +1,7 @@
 import {
   db, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc,
-  collection, getDocs, query, where, writeBatch, Timestamp, serverTimestamp
+  collection, getDocs, query, where, writeBatch, Timestamp, serverTimestamp,
+  functions, httpsCallable
 } from "./firebase.js";
 
 const P3 = {
@@ -1174,9 +1175,12 @@ async function renderAssessments(){
       const visible=a.releasePolicy?.releaseMode!=="manual"||result?.released===true;
       actions=(visible?'<button class="primary-btn small-btn" data-phase3-action="student-assessment-results" data-id="'+a.id+'">View Results</button>':'<span class="badge gold">Graded • awaiting release</span>')+
         '<button class="secondary-btn small-btn" data-phase3-action="student-assessment-details" data-id="'+a.id+'">Details</button>';
+    }else if(sub?.status==="graded"){
+      actions='<span class="badge gold">Graded • awaiting release</span>'+
+        '<button class="secondary-btn small-btn" data-phase3-action="student-assessment-details" data-id="'+a.id+'">Details</button>';
     }else if(a.mode==="oral"){
       actions+='<span class="badge gold">Instructor administered</span>';
-    }else if(sub?.status==="submitted"||sub?.status==="graded"){
+    }else if(sub?.status==="submitted"){
       actions='<button class="secondary-btn small-btn" data-phase3-action="receipt" data-id="'+a.id+'">Submission Receipt</button>'+
         '<button class="secondary-btn small-btn" data-phase3-action="student-assessment-details" data-id="'+a.id+'">Details</button>';
     }else if(normalStatus==="Open"){
@@ -3354,9 +3358,11 @@ async function renderSectionAssessments(){
       let actions='<button class="secondary-btn small-btn" data-phase3-action="student-assessment-details" data-id="'+a.id+'">View Details</button>';
       if(graded){
         actions='<button class="primary-btn small-btn" data-phase3-action="student-assessment-results" data-id="'+a.id+'">View Results</button><button class="secondary-btn small-btn" data-phase3-action="student-assessment-details" data-id="'+a.id+'">Details</button>';
+      }else if(sub?.status==="graded"){
+        actions='<span class="badge gold">Graded • awaiting release</span><button class="secondary-btn small-btn" data-phase3-action="student-assessment-details" data-id="'+a.id+'">Details</button>';
       }else if(a.mode==="oral"){
         actions+='<span class="badge gold">Instructor administered</span>';
-      }else if(sub?.status==="submitted"||sub?.status==="graded"){
+      }else if(sub?.status==="submitted"){
         actions='<button class="secondary-btn small-btn" data-phase3-action="receipt" data-id="'+a.id+'">Submission Receipt</button><button class="secondary-btn small-btn" data-phase3-action="student-assessment-details" data-id="'+a.id+'">Details</button>';
       }else if(status==="Open"){
         actions='<button class="primary-btn small-btn" data-phase3-action="start-exam" data-id="'+a.id+'">'+(sub?"Resume":"Begin")+'</button><button class="secondary-btn small-btn" data-phase3-action="student-assessment-details" data-id="'+a.id+'">Details</button>';
@@ -4263,12 +4269,23 @@ function horizontalGrade(questionId){
 }
 
 async function toggleRelease(studentId){
-  const d=P3.detail,a=d.assessment,r=d.results.find(x=>x.studentId===studentId);if(!r)return;
-  if(r.complete===false)return toast("Complete grading before releasing this result.");
-  const released=!r.released,batch=writeBatch(db);
-  batch.update(doc(db,"assessments",a.id,"results",studentId),{released,updatedAt:serverTimestamp()});
-  batch.set(doc(db,"sections",a.sectionId,"assessmentGrades",a.id+"_"+studentId),{released,updatedAt:serverTimestamp()},{merge:true});
-  try{await batch.commit();await openAssessment(a.id,"candidates");toast(released?"Result released.":"Result returned to private status.");}catch(err){toast(err.message||"Unable to update release.");}
+  const d=P3.detail,a=d?.assessment,r=d?.results?.find(x=>x.studentId===studentId);
+  if(!a||!r)return;
+  if(r.complete!==true)return toast("Complete grading before releasing this result.");
+  const released=!r.released;
+  try{
+    // The server verifies section grading authority and records the change atomically.
+    await httpsCallable(functions,"setAssessmentResultVisibility")({
+      assessmentId:a.id,studentId,released
+    });
+    await openAssessment(a.id,"candidates");
+    toast(released?"Result released.":"Result returned to private status.");
+  }catch(err){
+    console.error("Assessment result visibility update failed:",err);
+    toast(err.code==="functions/not-found"
+      ?"Result release service is not deployed. Ask the administrator to deploy Firebase Functions."
+      :(err.message||"Unable to update result visibility."));
+  }
 }
 
 /* -------------------- ROUTING -------------------- */

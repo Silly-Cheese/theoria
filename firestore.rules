@@ -727,6 +727,7 @@ service cloud.firestore {
           || (
             sectionMember(sectionId)
             && resource.data.studentId == uid()
+            && resource.data.released == true
           );
         allow create, update, delete: if sectionGrader(sectionId);
       }
@@ -738,7 +739,9 @@ service cloud.firestore {
 
       match /academicRecords/{userId} {
         allow read: if sectionGrader(sectionId) || isSelf(userId);
-        allow create, update, delete: if sectionAcademicManager(sectionId);
+        allow create, update: if sectionAcademicManager(sectionId);
+        // Certified academic records must be amended, never deleted in place.
+        allow delete: if false;
       }
 
       match /portfolios/{userId} {
@@ -765,8 +768,7 @@ service cloud.firestore {
             && resource.data.studentId == uid()
           );
         allow create: if sectionAcademicManager(sectionId);
-        allow update: if false;
-        allow delete: if sectionAcademicManager(sectionId);
+        allow update, delete: if false;
       }
 
       match /events/{eventId} {
@@ -1009,6 +1011,8 @@ service cloud.firestore {
           || (
             signedIn()
             && resource.data.studentId == uid()
+            && exists(/databases/$(database)/documents/assessments/$(assessmentId)/results/$(uid()))
+            && get(/databases/$(database)/documents/assessments/$(assessmentId)/results/$(uid())).data.released == true
           );
         allow create, update, delete: if assessmentOwner(assessmentId)
           || (
@@ -1132,7 +1136,8 @@ service cloud.firestore {
           && assessmentMember(assessmentId)
           && request.resource.data.studentId == uid()
           && exists(/databases/$(database)/documents/assessments/$(assessmentId)/results/$(uid()))
-          && get(/databases/$(database)/documents/assessments/$(assessmentId)/results/$(uid())).data.complete == true;
+          && get(/databases/$(database)/documents/assessments/$(assessmentId)/results/$(uid())).data.complete == true
+          && get(/databases/$(database)/documents/assessments/$(assessmentId)/results/$(uid())).data.released == true;
         allow delete: if isSelf(studentId)
           || assessmentOwner(assessmentId)
           || (
@@ -1150,6 +1155,7 @@ service cloud.firestore {
           || (
             isSelf(studentId)
             && resource.data.complete == true
+            && resource.data.released == true
           );
         allow create, update, delete: if assessmentOwner(assessmentId)
           || (

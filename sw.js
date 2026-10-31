@@ -1,4 +1,4 @@
-const CACHE="theoria-shell-v20260930-security-enforced-2";
+const CACHE="theoria-shell-v20261031-modal-repair";
 const SHELL=[
   "./",
   "./index.html",
@@ -10,6 +10,7 @@ const SHELL=[
   "./phase5.js",
   "./phase6.js",
   "./firebase.js",
+  "./modules/ui-modal.js",
   "./modules/productivity.js",
   "./modules/teaching.js",
   "./modules/admin.js",

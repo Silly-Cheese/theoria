@@ -1,0 +1,16 @@
+# Theoria local build and Firebase cache
+node_modules/
+functions/node_modules/
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+firebase-tools.log
+deployment-backups/
+.env
+.env.*
+!.env.example
+functions/.env
+functions/.env.*
+*.local
+.DS_Store
+Thumbs.db
