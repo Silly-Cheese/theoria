@@ -8,8 +8,9 @@
   <link rel="icon" type="image/svg+xml" href="./favicon.svg">
   <link rel="shortcut icon" href="./favicon.svg">
   <title>Theoria — Advanced Theological Studies</title>
-  <link rel="stylesheet" href="./styles.css?v=20261031-theoria7-question-bank-page1">
-<script src="./dialogs.js?v=20261031-theoria7-question-bank-page1" defer></script>
+  <link rel="stylesheet" href="./styles.css?v=20261031-theoria7-mobile-overhaul1">
+  <link rel="stylesheet" href="./mobile.css?v=20261031-theoria7-mobile-overhaul1">
+<script src="./dialogs.js?v=20261031-theoria7-mobile-overhaul1" defer></script>
 </head>
 <body>
   <a class="theoria-skip-link" href="#theoriaMain">Skip to academic workspace</a>
@@ -102,6 +103,13 @@
           </div>
         </nav>
       </div>
+      <div class="mobile-drawer-tools" aria-label="Quick tools">
+        <button type="button" data-mobile-proxy="commandPaletteBtn">Search</button>
+        <button type="button" data-mobile-proxy="contextHelpBtn">Page help</button>
+        <button type="button" data-mobile-proxy="accessibilityBtn">Display</button>
+        <button type="button" class="instructor-only" data-mobile-proxy="quickCreateBtn">New section</button>
+        <button type="button" class="student-only" data-mobile-proxy="quickJoinBtn">Join section</button>
+      </div>
       <div class="sidebar-profile">
         <div id="profileAvatar" class="avatar">T</div>
         <div class="profile-copy"><strong id="profileName">Theoria User</strong><span id="profileRole">Student</span></div>
@@ -111,7 +119,7 @@
 
     <header class="topbar">
       <div class="topbar-left">
-        <button id="mobileMenuBtn" class="mobile-menu" aria-label="Open navigation">☰</button>
+        <button id="mobileMenuBtn" class="mobile-menu" type="button" aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false"><span aria-hidden="true">☰</span></button>
         <div class="breadcrumb">THEORIA / <strong id="breadcrumbCurrent">Home</strong></div>
       </div>
       <div class="top-actions">
@@ -297,11 +305,11 @@
 
   <div id="modalRoot"></div>
   <div id="toast" class="toast"></div>
-  <script type="module" src="./app.js?v=20261031-theoria7-question-bank-page1"></script>
-  <script type="module" src="./phase3.js?v=20261031-theoria7-question-bank-page1"></script>
-  <script type="module" src="./phase4.js?v=20261031-theoria7-question-bank-page1"></script>
-  <script type="module" src="./phase5.js?v=20261031-theoria7-question-bank-page1"></script>
-  <script type="module" src="./phase6.js?v=20261031-theoria7-question-bank-page1"></script>
+  <script type="module" src="./app.js?v=20261031-theoria7-mobile-overhaul1"></script>
+  <script type="module" src="./phase3.js?v=20261031-theoria7-mobile-overhaul1"></script>
+  <script type="module" src="./phase4.js?v=20261031-theoria7-mobile-overhaul1"></script>
+  <script type="module" src="./phase5.js?v=20261031-theoria7-mobile-overhaul1"></script>
+  <script type="module" src="./phase6.js?v=20261031-theoria7-mobile-overhaul1"></script>
   <script type="module" src="./institutions.js?v=20261010-student-name-repair4"></script>
   <script type="module" src="./school-admin.js?v=20261010-permissions-names3"></script>
   <script type="module" src="./registrar.js?v=20261010-permissions-names3"></script>

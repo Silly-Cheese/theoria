@@ -6,6 +6,7 @@ import {
 } from "./firebase.js";
 import {mapConcurrent} from "./modules/performance.js";
 import {createAcademicModal, clearAcademicModal} from "./modules/ui-modal.js";
+import {createMobileNavigation,createMobileTableEnhancer} from "./modules/mobile-ui.js";
 
 const state = {
   role: "student",
@@ -36,6 +37,8 @@ const authError = $("#authError");
 const signInForm = $("#signInForm");
 const registerForm = $("#registerForm");
 const sidebar = $("#sidebar");
+const mobileNavigation=createMobileNavigation({doc:document,win:window,sidebar,trigger:$("#mobileMenuBtn")});
+const mobileTableEnhancer=createMobileTableEnhancer({doc:document,win:window});
 const toast = $("#toast");
 const modalRoot = $("#modalRoot");
 
@@ -172,7 +175,7 @@ function setPage(page,label){
   $$(".nav-item").forEach(el => el.classList.toggle("active", el.dataset.page === page));
   const active = document.querySelector('.nav-item[data-page="' + page + '"]');
   $("#breadcrumbCurrent").textContent = label || (active ? active.textContent.trim() : page.charAt(0).toUpperCase()+page.slice(1));
-  sidebar.classList.remove("open");
+  mobileNavigation.close({restoreFocus:false});
   window.scrollTo({top:0,behavior:"smooth"});
   window.dispatchEvent(new CustomEvent("theoria:page",{detail:{page,label:label||null}}));
   if(page==="library") renderScholarLibrary().catch(error=>{
@@ -4229,7 +4232,6 @@ registerForm.addEventListener("submit",async event=>{
 });
 
 $("#signOutBtn").addEventListener("click",async()=>{await signOut(auth);showToast("Signed out of Theoria.");});
-$("#mobileMenuBtn").addEventListener("click",()=>sidebar.classList.toggle("open"));
 $$(".nav-item").forEach(btn=>btn.addEventListener("click",()=>setPage(btn.dataset.page)));
 $("#quickJoinBtn").addEventListener("click",()=>{setPage("sections");setTimeout(()=>$("#joinCodeInput")?.focus(),50);});
 $("#quickCreateBtn").addEventListener("click",()=>openSectionModal());
