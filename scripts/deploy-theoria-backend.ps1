@@ -47,7 +47,16 @@ $nodeVersion = (& node.exe --version).Trim()
 if ($LASTEXITCODE -ne 0 -or $nodeVersion -notmatch "^v22\.") {
     throw "Use Node.js 22.x for this release (functions/package.json targets Node 22). Found: $nodeVersion"
 }
-Invoke-Checked "java.exe" @("-version")
+# Java 21+ is required by the current Firebase Firestore emulator.
+$javaText = (& cmd.exe /c "java.exe -version 2>&1") -join "`n"
+if ($LASTEXITCODE -ne 0 -or $javaText -notmatch '(?:openjdk|java)\s+version\s+"?([0-9]+)') {
+    throw "Unable to determine Java version. Install Java JDK 21 or later and reopen PowerShell."
+}
+$javaMajor = [int] $Matches[1]
+if ($javaMajor -lt 21) {
+    throw "Firebase Firestore emulator requires Java 21 or later. Found Java $javaMajor."
+}
+Write-Host "Java version: $javaMajor" -ForegroundColor DarkCyan
 
 if (-not (Test-Path ".git")) {
     throw "Run this inside a checked-out Theoria Git repository."
