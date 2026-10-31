@@ -1,9 +1,10 @@
-const CACHE="theoria-shell-v20261031-mobile-overhaul1";
+const CACHE="theoria-shell-v20261031-assessment-folders1";
 const SHELL=[
   "./",
   "./index.html",
   "./styles.css",
   "./mobile.css",
+  "./assessment-accordions.css",
   "./favicon.svg",
   "./app.js",
   "./phase3.js",
@@ -14,6 +15,7 @@ const SHELL=[
   "./modules/ui-modal.js",
   "./modules/performance.js",
   "./modules/mobile-ui.js",
+  "./modules/assessment-accordions.js",
   "./modules/question-bank-paging.js",
   "./modules/productivity.js",
   "./modules/teaching.js",

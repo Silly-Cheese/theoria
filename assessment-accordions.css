@@ -1,0 +1,74 @@
+/* Theoria Assessments — compact, accessible course navigator */
+.assessment-course-toolbar{
+  display:flex;align-items:end;gap:12px;flex-wrap:wrap;
+  padding:17px 19px;margin:0 0 16px;
+  border:1px solid var(--line);border-radius:12px;background:#fff;
+}
+.assessment-course-search{flex:1 1 260px;min-width:180px;display:grid;gap:7px}
+.assessment-course-search label{font-size:11px;font-weight:700;color:var(--slate)}
+.assessment-course-search input{
+  width:100%;min-height:43px;min-width:0;padding:10px 13px;
+  border:1px solid var(--lineDark);border-radius:8px;background:#fff;color:var(--ink);font-size:13px
+}
+.assessment-course-search input:focus{outline:2px solid var(--gold);outline-offset:1px}
+.assessment-course-toolbar-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.assessment-course-toolbar-actions button{min-height:43px;padding:10px 13px}
+.assessment-course-status{font-size:11px;color:var(--slate);align-self:center;white-space:nowrap}
+.assessment-course-accordion{
+  display:block;margin:0 0 11px;border:1px solid var(--line);border-radius:12px;background:#fff;
+  overflow:hidden;box-shadow:0 3px 14px rgba(30,22,14,.025)
+}
+.assessment-course-accordion[hidden]{display:none!important}
+.assessment-course-summary{
+  display:flex;align-items:center;gap:17px;min-height:95px;padding:19px 22px;
+  cursor:pointer;list-style:none;user-select:none;touch-action:manipulation;
+  background:linear-gradient(110deg,#fff 30%,#fcf9f4);
+}
+.assessment-course-summary::-webkit-details-marker{display:none}
+.assessment-course-summary::marker{content:""}
+.assessment-course-summary:hover{background:#fcf7f1}
+.assessment-course-summary:focus-visible{outline:3px solid var(--gold);outline-offset:-3px}
+.assessment-course-accordion[open]>.assessment-course-summary{border-bottom:1px solid var(--line);background:#faf7f2}
+.assessment-course-chevron{
+  width:34px;height:34px;flex:none;display:grid;place-items:center;border:1px solid #e3d9d1;
+  border-radius:50%;background:#f8f1e8;color:var(--burgundy);font-size:21px;transition:transform .16s ease
+}
+.assessment-course-accordion[open] .assessment-course-chevron{transform:rotate(180deg);background:#f2e7e8}
+.assessment-course-heading{display:grid;gap:5px;min-width:0;flex:1}
+.assessment-course-heading .eyebrow{font-size:9px}
+.assessment-course-title{
+  color:var(--burgundyDeep);font:400 clamp(17px,2vw,24px)/1.32 "Libre Baskerville",Georgia,serif;
+  overflow-wrap:anywhere
+}
+.assessment-course-description{font-size:11px;color:var(--slate);line-height:1.5}
+.assessment-course-count{flex:none;white-space:nowrap;border:1px solid #e1d8cc;background:#f5eee5;border-radius:100px;padding:8px 12px;font-size:11px;font-weight:700;color:var(--burgundy)}
+.assessment-course-panel{padding:20px}
+.assessment-course-actions{display:flex;justify-content:flex-end;margin-bottom:18px}
+.assessment-course-subgroup{margin:0 0 23px}
+.assessment-course-subgroup:last-child{margin-bottom:0}
+.assessment-course-subgroup .assessment-grid{margin-top:11px}
+.assessment-course-empty{margin:16px 0;text-align:center}
+@media(max-width:760px){
+  .assessment-course-toolbar{padding:13px;align-items:stretch;gap:9px}
+  .assessment-course-search{flex:1 1 100%;min-width:0}
+  .assessment-course-search input{font-size:16px}
+  .assessment-course-toolbar-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+  .assessment-course-toolbar-actions button{width:100%}
+  .assessment-course-status{width:100%;font-size:11px}
+  .assessment-course-summary{min-height:88px;padding:15px 13px;gap:10px;align-items:flex-start}
+  .assessment-course-chevron{width:30px;height:30px;font-size:18px}
+  .assessment-course-title{font-size:17px}
+  .assessment-course-count{padding:7px 9px;font-size:10px;align-self:center}
+  .assessment-course-panel{padding:14px}
+  .assessment-course-actions button{min-height:44px}
+}
+@media(max-width:420px){
+  .assessment-course-summary{flex-wrap:wrap}
+  .assessment-course-heading{flex:1 1 calc(100% - 50px)}
+  .assessment-course-count{margin-left:40px}
+}
+@media(prefers-reduced-motion:reduce){.assessment-course-chevron{transition:none}}
+@media print{
+  .assessment-course-toolbar{display:none!important}
+  .assessment-course-accordion{overflow:visible;break-inside:avoid}
+}

@@ -4,6 +4,7 @@ import {
   functions, httpsCallable
 } from "./firebase.js";
 import {mapConcurrent} from "./modules/performance.js";
+import {readCoursePreferences,courseExpanded,courseAccordionMarkup,courseNavigationToolbar,wireCourseNavigation} from "./modules/assessment-accordions.js";
 import {BANK_INITIAL_COUNT, BANK_INCREMENT, limitQuestionItems} from "./modules/question-bank-paging.js";
 
 const P3 = {
@@ -1206,8 +1207,12 @@ async function loadAssessments(){
 
 async function renderAssessments(){
   const el=$("#assessmentsContent");if(!el)return;
+  const previousSearch=el.querySelector("#assessmentCourseSearch")?.value||"";
   await loadAssessments();
   const s=state();
+  const storage=(()=>{try{return window.localStorage;}catch(_){return null;}})();
+  const userId=s.user?.uid||"guest";
+  const preferences=readCoursePreferences(storage,userId,s.role);
   if(!P3.assessments.length){
     el.innerHTML='<div class="empty-state"><div class="empty-symbol">A</div><h3>No assessments yet.</h3><p>'+(s.role==="instructor"?"Create a unit evaluation, semester examination, comprehensive final, oral examination, or disputation.":"Published assessments from your sections will appear here.")+'</p>'+(s.role==="instructor"?'<button class="primary-btn" data-phase3-action="new-assessment">Create Assessment</button>':'')+'</div>';
     return;
@@ -1225,17 +1230,26 @@ async function renderAssessments(){
       return codeCompare||String(a.courseTitle||"").localeCompare(String(b.courseTitle||""),undefined,{sensitivity:"base"});
     });
     const subgroup=(title,subtitle,items)=>items.length?'<div class="assessment-course-subgroup"><div class="page-head compact-head"><div><div class="panel-title">'+esc(title)+'</div><p class="page-subtitle">'+esc(subtitle)+'</p></div></div><div class="assessment-grid">'+items.map(card).join("")+'</div></div>':'';
-    el.innerHTML=groups.map(group=>{
+    el.innerHTML=groups.map((group,index)=>{
       const templates=group.items.filter(a=>!a.sectionId).sort((a,b)=>String(a.title||"").localeCompare(String(b.title||""),undefined,{numeric:true,sensitivity:"base"}));
       const entrance=group.items.filter(a=>!!a.sectionId&&a.entranceExam===true).sort((a,b)=>String(a.title||"").localeCompare(String(b.title||""),undefined,{numeric:true,sensitivity:"base"}));
       const assigned=group.items.filter(a=>!!a.sectionId&&a.entranceExam!==true).sort((a,b)=>String(a.sectionName||"").localeCompare(String(b.sectionName||""),undefined,{numeric:true,sensitivity:"base"})||String(a.title||"").localeCompare(String(b.title||""),undefined,{numeric:true,sensitivity:"base"}));
       const sectionCount=new Set(group.items.filter(a=>a.sectionId).map(a=>a.sectionId)).size;
-      return '<section class="assessment-library-group assessment-course-group"><div class="detail-hero assessment-course-hero"><div class="detail-top"><div><div class="eyebrow">Course Assessments</div><h2 class="detail-title">'+esc(group.courseCode)+(group.courseTitle?' — '+esc(group.courseTitle):'')+'</h2><p class="page-subtitle">'+templates.length+' reusable template'+(templates.length===1?"":"s")+' • '+assigned.length+' assigned assessment'+(assigned.length===1?"":"s")+' • '+sectionCount+' section'+(sectionCount===1?"":"s")+'</p></div>'+(templates.length?'<div class="inline-actions"><button class="primary-btn small-btn" data-phase3-action="batch-assign-course" data-course="'+esc(group.courseId)+'">Assign Multiple</button></div>':'')+'</div></div>'+
-        subgroup("Assessment Templates","Reusable assessments for this course.",templates)+
-        subgroup("Entrance Examinations","Enrollment-gating assessments for this course.",entrance)+
-        subgroup("Assigned Assessments","Live section copies, sorted by section and title.",assigned)+
-      '</section>';
+      return courseAccordionMarkup({
+        key:group.courseId||group.courseCode||group.courseTitle||"uncategorized",
+        title:group.courseCode+(group.courseTitle?' — '+group.courseTitle:''),
+        description:templates.length+' reusable template'+(templates.length===1?"":"s")+' • '+entrance.length+' entrance exam'+(entrance.length===1?"":"s")+' • '+assigned.length+' assigned • '+sectionCount+' section'+(sectionCount===1?"":"s"),
+        count:group.items.length,
+        expanded:courseExpanded(preferences,group.courseId||group.courseCode||group.courseTitle||"uncategorized",index),
+        escapeHTML:esc,
+        body:(templates.length?'<div class="assessment-course-actions"><button type="button" class="primary-btn small-btn" data-phase3-action="batch-assign-course" data-course="'+esc(group.courseId)+'">Assign Multiple</button></div>':'')+
+          subgroup("Assessment Templates","Reusable assessments for this course.",templates)+
+          subgroup("Entrance Examinations","Enrollment-gating assessments for this course.",entrance)+
+          subgroup("Assigned Assessments","Live section copies, sorted by section and title.",assigned)
+      });
     }).join("");
+    el.insertAdjacentHTML("afterbegin",courseNavigationToolbar(groups.length,previousSearch,esc));
+    wireCourseNavigation(el,{uid:userId,role:s.role,storage});
     return;
   }
   const cards=[];
@@ -1293,9 +1307,19 @@ async function renderAssessments(){
     if(!studentGroups.has(key))studentGroups.set(key,{courseCode:assessment.courseCode||"Course",courseTitle:assessment.courseTitle||"",cards:[]});
     studentGroups.get(key).cards.push({assessment,html});
   }
-  el.innerHTML=[...studentGroups.values()].sort((a,b)=>String(a.courseCode||"").localeCompare(String(b.courseCode||""),undefined,{numeric:true,sensitivity:"base"})).map(group=>
-    '<section class="assessment-library-group assessment-course-group"><div class="page-head compact-head"><div><div class="panel-title">'+esc(group.courseCode)+(group.courseTitle?' — '+esc(group.courseTitle):'')+'</div><p class="page-subtitle">Scheduled and completed assessments for this course.</p></div></div><div class="assessment-grid">'+group.cards.sort((a,b)=>(a.assessment.opensAt?.toMillis?.()||0)-(b.assessment.opensAt?.toMillis?.()||0)||String(a.assessment.title||"").localeCompare(String(b.assessment.title||""),undefined,{numeric:true,sensitivity:"base"})).map(x=>x.html).join("")+'</div></section>'
+  const orderedGroups=[...studentGroups.values()].sort((a,b)=>String(a.courseCode||"").localeCompare(String(b.courseCode||""),undefined,{numeric:true,sensitivity:"base"}));
+  el.innerHTML=courseNavigationToolbar(orderedGroups.length,previousSearch,esc)+orderedGroups.map((group,index)=>
+    courseAccordionMarkup({
+      key:group.courseCode||group.courseTitle||"uncategorized",
+      title:group.courseCode+(group.courseTitle?' — '+group.courseTitle:''),
+      description:"Scheduled and completed assessments for this course.",
+      count:group.cards.length,
+      expanded:courseExpanded(preferences,group.courseCode||group.courseTitle||"uncategorized",index),
+      escapeHTML:esc,
+      body:'<div class="assessment-grid">'+group.cards.sort((a,b)=>(a.assessment.opensAt?.toMillis?.()||0)-(b.assessment.opensAt?.toMillis?.()||0)||String(a.assessment.title||"").localeCompare(String(b.assessment.title||""),undefined,{numeric:true,sensitivity:"base"})).map(x=>x.html).join("")+'</div>'
+    })
   ).join("");
+  wireCourseNavigation(el,{uid:userId,role:s.role,storage});
 }
 
 
