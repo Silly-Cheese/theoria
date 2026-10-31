@@ -49,7 +49,10 @@ if ($LASTEXITCODE -ne 0 -or $nodeVersion -notmatch "^v22\.") {
 }
 # Java 21+ is required by the current Firebase Firestore emulator.
 $javaText = (& cmd.exe /c "java.exe -version 2>&1") -join "`n"
-if ($LASTEXITCODE -ne 0 -or $javaText -notmatch '(?:openjdk|java)\s+version\s+"?([0-9]+)') {
+if ($LASTEXITCODE -ne 0) {
+    throw "Java could not start. Install Java JDK 21 or later and reopen PowerShell."
+}
+if (-not ($javaText -match '(?:openjdk|java)\s+version\s+"?([0-9]+)')) {
     throw "Unable to determine Java version. Install Java JDK 21 or later and reopen PowerShell."
 }
 $javaMajor = [int] $Matches[1]
