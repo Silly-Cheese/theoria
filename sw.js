@@ -1,8 +1,9 @@
-const CACHE="theoria-shell-v20261031-question-bank-page1";
+const CACHE="theoria-shell-v20261031-mobile-overhaul1";
 const SHELL=[
   "./",
   "./index.html",
   "./styles.css",
+  "./mobile.css",
   "./favicon.svg",
   "./app.js",
   "./phase3.js",
@@ -12,6 +13,7 @@ const SHELL=[
   "./firebase.js",
   "./modules/ui-modal.js",
   "./modules/performance.js",
+  "./modules/mobile-ui.js",
   "./modules/question-bank-paging.js",
   "./modules/productivity.js",
   "./modules/teaching.js",

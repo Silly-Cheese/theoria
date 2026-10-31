@@ -187,18 +187,25 @@ function addPlatformControls(){
 }
 
 function addMobileDock(){
-  if(document.querySelector("#mobileDock"))return;
+  document.querySelector("#mobileDock")?.remove();
   const s=state();if(!s?.user)return;
   const items=s.role==="instructor"
-    ? [["home","Home","⌂"],["sections","Classes","▦"],["assessments","Assess","✓"],["itembank","Bank","Q"],["teaching-tools","Tools","T"]]
-    : [["home","Home","⌂"],["sections","Courses","▦"],["assessments","Assess","✓"],["progress","Progress","↗"],["transcript","Record","R"]];
-  const nav=document.createElement("nav");nav.id="mobileDock";nav.className="mobile-dock";nav.setAttribute("aria-label","Mobile navigation");
-  nav.innerHTML=items.map(([page,label,icon])=>'<button class="mobile-dock-item" data-page-shortcut="'+page+'" data-mobile-page="'+page+'"><span>'+icon+'</span><small>'+label+'</small></button>').join("");
-  document.body.appendChild(nav);syncMobileDock();
+    ? [["home","Home","⌂"],["sections","Sections","▦"],["assessments","Assess","✓"],["itembank","Bank","Q"]]
+    : [["home","Home","⌂"],["sections","Courses","▦"],["assessments","Assess","✓"],["progression","Progress","↗"]];
+  const nav=document.createElement("nav");nav.id="mobileDock";nav.className="mobile-dock";nav.setAttribute("aria-label","Quick academic navigation");
+  nav.innerHTML=items.map(([page,label,icon])=>'<button type="button" class="mobile-dock-item" data-page-shortcut="'+page+'" data-mobile-page="'+page+'" aria-label="'+label+'"><span aria-hidden="true">'+icon+'</span><small>'+label+'</small></button>').join("")+
+    '<button type="button" class="mobile-dock-item mobile-dock-more" data-mobile-menu aria-controls="sidebar" aria-expanded="false" aria-label="More academic pages"><span aria-hidden="true">☷</span><small>More</small></button>';
+  document.querySelector("#appShell")?.appendChild(nav);syncMobileDock();
 }
 function syncMobileDock(page){
   const active=page||document.querySelector(".page.active")?.id?.replace(/^page-/,"")||"home";
-  document.querySelectorAll("[data-mobile-page]").forEach(b=>b.classList.toggle("active",b.dataset.mobilePage===active));
+  const pages=[...document.querySelectorAll("[data-mobile-page]")];
+  pages.forEach(b=>{
+    const selected=b.dataset.mobilePage===active;
+    b.classList.toggle("active",selected);
+    if(selected)b.setAttribute("aria-current","page");else b.removeAttribute("aria-current");
+  });
+  document.querySelector(".mobile-dock-more")?.classList.toggle("active",!pages.some(b=>b.dataset.mobilePage===active));
 }
 function contextHelpModal(){
   const page=document.querySelector(".page.active")?.id?.replace(/^page-/,"")||"home";
@@ -245,6 +252,8 @@ function enhanceCurrentContext(){
 }
 
 document.addEventListener("click",e=>{
+  const more=e.target.closest("[data-mobile-menu]");
+  if(more){document.querySelector("#mobileMenuBtn")?.click();return;}
   const shortcut=e.target.closest("[data-page-shortcut]");if(shortcut)core()?.setPage?.(shortcut.dataset.pageShortcut);
   const b=e.target.closest("[data-phase6-action]");if(!b)return;
   if(b.dataset.phase6Action==="dismiss-system-banner")b.closest(".system-announcement-banner")?.remove();
