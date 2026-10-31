@@ -160,12 +160,15 @@ function scheduleAcademicWorkflowChecks(){
   try{last=Number(sessionStorage.getItem(marker)||0);}catch(_){}
   // Workflow reminders are advisory and need not be regenerated on every page refresh.
   if(Date.now()-last<15*60*1000)return;
+  // This is a potentially large full-section scan. Run it when the instructor
+  // opens Communications rather than competing with sign-in or course loading.
+  if(!document.querySelector("#page-communications.active"))return;
   setTimeout(()=>{
-    if(state()?.user?.uid!==uid)return;
+    if(state()?.user?.uid!==uid || !document.querySelector("#page-communications.active"))return;
     runAcademicWorkflowChecks()
       .then(()=>{try{sessionStorage.setItem(marker,String(Date.now()));}catch(_){}})
       .catch(error=>console.warn("Background workflow checks failed:",error));
-  },1800);
+  },200);
 }
 
 function updateConnectivityStatus(){
@@ -259,11 +262,14 @@ window.addEventListener("theoria:ready",async()=>{
   window.addEventListener("offline",()=>{updateConnectivityStatus();core()?.showToast?.("Theoria is offline. Local draft recovery remains active until connectivity returns.");});
   // Lightweight navigation is usable before background workflow/notification reads.
   showSystemAnnouncement().catch(error=>console.warn("Unable to load announcement",error));
-  scheduleAcademicWorkflowChecks();
   setTimeout(enhanceCurrentContext,100);
 });
 
-window.addEventListener("theoria:page",e=>{syncMobileDock(e.detail?.page);setTimeout(enhanceCurrentContext,60);});
+window.addEventListener("theoria:page",e=>{
+  syncMobileDock(e.detail?.page);
+  setTimeout(enhanceCurrentContext,60);
+  if(e.detail?.page==="communications")scheduleAcademicWorkflowChecks();
+});
 
 window.TheoriaPlatform={
   hashCode:(value)=>teaching.hashCode(value),

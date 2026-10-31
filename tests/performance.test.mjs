@@ -33,3 +33,10 @@ test("critical UI data loads no longer await every document serially",()=>{
   assert.ok(source.includes("mapConcurrent(assignments,6"));
   assert.ok(source.includes("Promise.all([\n    getDoc(doc(db,\"courses\",section.courseId))"));
 });
+
+test("costly academic notification sweep is only scheduled on Communications",()=>{
+  const code=readFileSync(new URL("../phase6.js",import.meta.url),"utf8");
+  assert.ok(code.includes('if(!document.querySelector("#page-communications.active"))return;'));
+  assert.ok(code.includes('if(e.detail?.page==="communications")scheduleAcademicWorkflowChecks();'));
+  assert.equal(code.includes("await runAcademicWorkflowChecks();"),false);
+});

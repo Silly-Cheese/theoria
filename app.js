@@ -955,6 +955,7 @@ async function loadCourseFramework(courseId){
 }
 
 async function openCourse(courseId){
+  const started=performance.now();
   let course=state.courses.find(c=>c.id===courseId);
   if(!course){
     const snap=await getDoc(doc(db,"courses",courseId));
@@ -976,6 +977,10 @@ async function openCourse(courseId){
   state.courseFramework=await loadCourseFramework(courseId);
   renderCourseDetail();
   setPage("course-detail",course.code || "Course");
+  if(new URLSearchParams(location.search).has("debugPerf"))
+    console.info("[Theoria perf] Course framework",Math.round(performance.now()-started)+"ms",{
+      units:state.courseFramework?.units?.length||0
+    });
 }
 
 function renderCourseDetail(){
@@ -1717,6 +1722,7 @@ async function loadSectionData(section){
 }
 
 async function openSection(sectionId,tab="overview"){
+  const started=performance.now();
   let section=state.sections.find(s=>s.id===sectionId);
   if(!section){
     const snap=await getDoc(doc(db,"sections",sectionId));
@@ -1734,6 +1740,11 @@ async function openSection(sectionId,tab="overview"){
   state.sectionData=await loadSectionData(section);
   renderSectionDetail(tab);
   setPage("section-detail",section.courseCode || "Section");
+  if(new URLSearchParams(location.search).has("debugPerf"))
+    console.info("[Theoria perf] Section workspace",Math.round(performance.now()-started)+"ms",{
+      assignments:state.sectionData?.assignments?.length||0,
+      assessmentRefs:state.sectionData?.assessmentRefs?.length||0
+    });
 }
 
 function sectionTabs(active){
