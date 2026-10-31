@@ -42,6 +42,7 @@ export function createMobileNavigation({doc,win,sidebar,trigger}){
   trigger.addEventListener("click",toggle);
   backdrop.addEventListener("click",()=>close());
   sidebar.addEventListener("click",e=>{
+    if(e.target.closest("[data-close-mobile-nav]")){close();return;}
     const proxy=e.target.closest("[data-mobile-proxy]");
     if(proxy){
       const original=doc.getElementById(proxy.dataset.mobileProxy);
