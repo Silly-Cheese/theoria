@@ -175,7 +175,7 @@ function setPage(page,label){
   $$(".nav-item").forEach(el => el.classList.toggle("active", el.dataset.page === page));
   const active = document.querySelector('.nav-item[data-page="' + page + '"]');
   $("#breadcrumbCurrent").textContent = label || (active ? active.textContent.trim() : page.charAt(0).toUpperCase()+page.slice(1));
-  mobileNavigation.close({restoreFocus:false});
+  mobileNavigation.close();
   window.scrollTo({top:0,behavior:"smooth"});
   window.dispatchEvent(new CustomEvent("theoria:page",{detail:{page,label:label||null}}));
   if(page==="library") renderScholarLibrary().catch(error=>{
