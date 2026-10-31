@@ -1,5 +1,5 @@
 import {db,doc,getDoc,setDoc,collection,getDocs,query,where,serverTimestamp} from "./firebase.js";
-import {initProductivity} from "./modules/productivity.js?v=20260930-securityenforced2";
+import {initProductivity} from "./modules/productivity.js?v=20261031-theoria7-fast-workspace3";
 import {initTeaching} from "./modules/teaching.js?v=20260930-securityenforced2";
 import {initAdmin} from "./modules/admin.js?v=20260930-securityenforced2";
 import {initResilience} from "./modules/resilience.js?v=20260930-securityenforced2";
@@ -151,6 +151,26 @@ async function runAcademicWorkflowChecks(){
   productivity.updateNotificationBadge?.();
 }
 
+function scheduleAcademicWorkflowChecks(){
+  const s=state();
+  if(!s?.user||s.role!=="instructor"||s.profile?.notificationPreferences?.workflows===false)return;
+  const uid=s.user.uid;
+  const marker="theoria:workflow-check:"+uid;
+  let last=0;
+  try{last=Number(sessionStorage.getItem(marker)||0);}catch(_){}
+  // Workflow reminders are advisory and need not be regenerated on every page refresh.
+  if(Date.now()-last<15*60*1000)return;
+  // This is a potentially large full-section scan. Run it when the instructor
+  // opens Communications rather than competing with sign-in or course loading.
+  if(!document.querySelector("#page-communications.active"))return;
+  setTimeout(()=>{
+    if(state()?.user?.uid!==uid || !document.querySelector("#page-communications.active"))return;
+    runAcademicWorkflowChecks()
+      .then(()=>{try{sessionStorage.setItem(marker,String(Date.now()));}catch(_){}})
+      .catch(error=>console.warn("Background workflow checks failed:",error));
+  },200);
+}
+
 function updateConnectivityStatus(){
   const pill=document.querySelector("#connectivityStatus");if(!pill)return;
   pill.textContent=navigator.onLine?"Online":"Offline — recovery active";
@@ -235,18 +255,21 @@ window.addEventListener("theoria:ready",async()=>{
   if("serviceWorker" in navigator){
     navigator.serviceWorker.register("./sw.js").catch(error=>console.warn("Theoria offline shell registration failed:",error));
   }
-  await applyFeatureFlags();
   addPlatformControls();
   addMobileDock();
+  await applyFeatureFlags();
   window.addEventListener("online",()=>{updateConnectivityStatus();core()?.showToast?.("Theoria is back online. Cloud saves are available again.");});
   window.addEventListener("offline",()=>{updateConnectivityStatus();core()?.showToast?.("Theoria is offline. Local draft recovery remains active until connectivity returns.");});
-  await showSystemAnnouncement();
-  await productivity.synthesizeNotifications?.();
-  await runAcademicWorkflowChecks();
+  // Lightweight navigation is usable before background workflow/notification reads.
+  showSystemAnnouncement().catch(error=>console.warn("Unable to load announcement",error));
   setTimeout(enhanceCurrentContext,100);
 });
 
-window.addEventListener("theoria:page",e=>{syncMobileDock(e.detail?.page);setTimeout(enhanceCurrentContext,60);});
+window.addEventListener("theoria:page",e=>{
+  syncMobileDock(e.detail?.page);
+  setTimeout(enhanceCurrentContext,60);
+  if(e.detail?.page==="communications")scheduleAcademicWorkflowChecks();
+});
 
 window.TheoriaPlatform={
   hashCode:(value)=>teaching.hashCode(value),

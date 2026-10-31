@@ -1,4 +1,4 @@
-const CACHE="theoria-shell-v20261031-submit-fix";
+const CACHE="theoria-shell-v20261031-fast-workspace3";
 const SHELL=[
   "./",
   "./index.html",
@@ -11,6 +11,7 @@ const SHELL=[
   "./phase6.js",
   "./firebase.js",
   "./modules/ui-modal.js",
+  "./modules/performance.js",
   "./modules/productivity.js",
   "./modules/teaching.js",
   "./modules/admin.js",
