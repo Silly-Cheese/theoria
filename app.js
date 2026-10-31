@@ -4,6 +4,7 @@ import {
   doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc,
   collection, getDocs, query, where, writeBatch, serverTimestamp
 } from "./firebase.js";
+import {mapConcurrent} from "./modules/performance.js";
 import {createAcademicModal, clearAcademicModal} from "./modules/ui-modal.js";
 
 const state = {
@@ -180,98 +181,105 @@ function setPage(page,label){
   });
 }
 
-async function loadWorkspace(){
-  if(!state.user) return;
+async function migrateLegacyCatalogInBackground(courses,ownerUid){
+  const legacy=courses.filter(c=>c.ownerId===ownerUid&&c.catalogCourse===undefined);
+  if(!legacy.length)return;
+  await mapConcurrent(legacy,3,async course=>{
+    if(state.user?.uid!==ownerUid)return;
+    const catalogPublished=course.status!=="Draft"&&course.status!=="Archived";
+    try{
+      await updateDoc(doc(db,"courses",course.id),{
+        catalogCourse:true,catalogPublished,catalogManaged:true,
+        catalogUpdatedAt:serverTimestamp(),updatedAt:serverTimestamp()
+      });
+      Object.assign(course,{catalogCourse:true,catalogPublished,catalogManaged:true});
+    }catch(error){console.warn("Unable to migrate legacy course:",course.id,error);}
+  });
+}
 
-  if(state.role === "instructor"){
+async function loadWorkspace(){
+  if(!state.user)return;
+  const uid=state.user.uid;
+  const workspaceStart=performance.now();
+
+  if(state.role==="instructor"){
     let courses=[];
     if(state.isSystemOwner){
       const snap=await getDocs(collection(db,"courses"));
       courses=snap.docs.map(d=>({id:d.id,...d.data()}));
-
-      // Migrate the owner's existing active course frameworks into the official catalog model.
-      for(const course of courses){
-        if(course.ownerId===state.user.uid && course.catalogCourse===undefined){
-          const catalogPublished=course.status!=="Draft"&&course.status!=="Archived";
-          try{
-            await updateDoc(doc(db,"courses",course.id),{
-              catalogCourse:true,
-              catalogPublished,
-              catalogManaged:true,
-              catalogUpdatedAt:serverTimestamp(),
-              updatedAt:serverTimestamp()
-            });
-            course.catalogCourse=true;
-            course.catalogPublished=catalogPublished;
-            course.catalogManaged=true;
-          }catch(error){
-            console.warn("Unable to migrate course into Theoria catalog:",course.id,error);
-          }
-        }
-      }
     }else{
       const [catalogSnap,ownedSnap]=await Promise.all([
         getDocs(query(collection(db,"courses"),where("catalogPublished","==",true))),
-        getDocs(query(collection(db,"courses"),where("ownerId","==",state.user.uid)))
+        getDocs(query(collection(db,"courses"),where("ownerId","==",uid)))
       ]);
       const byId=new Map();
       catalogSnap.docs.forEach(d=>byId.set(d.id,{id:d.id,...d.data()}));
       ownedSnap.docs.forEach(d=>byId.set(d.id,{id:d.id,...d.data()}));
       courses=[...byId.values()];
-    }
-    // Resolve course-level academic roles. Course Coordinators can maintain
-    // frameworks and Question Banks without receiving System Owner powers.
-    if(!state.isSystemOwner){
-      for(const course of courses){
+      // Role documents are independent; bounded concurrency avoids N serial network round trips.
+      await mapConcurrent(courses,6,async course=>{
         try{
-          const roleSnap=await getDoc(doc(db,"courses",course.id,"staff",state.user.uid));
+          const roleSnap=await getDoc(doc(db,"courses",course.id,"staff",uid));
           if(roleSnap.exists())course.courseStaffRole=roleSnap.data().role||"coordinator";
         }catch(_){}
-      }
+      });
     }
     state.courses=courses;
-
-    const [sectionSnap,staffSectionSnap] = await Promise.all([
-      getDocs(query(collection(db,"sections"),where("ownerId","==",state.user.uid))),
-      getDocs(collection(db,"users",state.user.uid,"staffSections"))
+    const [sectionSnap,staffSectionSnap]=await Promise.all([
+      getDocs(query(collection(db,"sections"),where("ownerId","==",uid))),
+      getDocs(collection(db,"users",uid,"staffSections"))
     ]);
     const sectionMap=new Map(sectionSnap.docs.map(d=>[d.id,{id:d.id,...d.data(),staffRole:"owner"}]));
-    for(const staffRef of staffSectionSnap.docs){
+    const staffRows=await mapConcurrent(staffSectionSnap.docs,6,async staffRef=>{
       try{
-        const sec=await getDoc(doc(db,"sections",staffRef.id));
-        if(sec.exists()&&!sectionMap.has(sec.id))sectionMap.set(sec.id,{id:sec.id,...sec.data(),staffRole:staffRef.data().role||"staff"});
-      }catch(error){console.warn("Unable to load staff section",staffRef.id,error);}
-    }
+        const snap=await getDoc(doc(db,"sections",staffRef.id));
+        return snap.exists()?{id:snap.id,...snap.data(),staffRole:staffRef.data().role||"staff"}:null;
+      }catch(error){
+        console.warn("Unable to load staff section",staffRef.id,error);
+        return null;
+      }
+    });
+    for(const row of staffRows)if(row&&!sectionMap.has(row.id))sectionMap.set(row.id,row);
     state.sections=[...sectionMap.values()];
+    if(state.isSystemOwner && courses.some(c=>c.ownerId===uid&&c.catalogCourse===undefined)){
+      // Metadata migration is not necessary for displaying the home screen.
+      setTimeout(()=>{if(state.user?.uid===uid)migrateLegacyCatalogInBackground(courses,uid);},1500);
+    }
   }else{
-    const enrollmentSnap = await getDocs(collection(db,"users",state.user.uid,"enrollments"));
-    const sections = [];
-    for(const enrollDoc of enrollmentSnap.docs){
-      const enrollment=enrollDoc.data();
-      if(["Removed","Withdrawn"].includes(String(enrollment.status||"")))continue;
-      const s = await getDoc(doc(db,"sections",enrollDoc.id));
-      if(s.exists()) sections.push({id:s.id,...s.data(),enrollmentStatus:String(enrollment.status||"Enrolled")});
-    }
-    state.sections = sections;
-    const uniqueCourseIds = [...new Set(sections.map(s => s.courseId).filter(Boolean))];
+    const [enrollmentSnap,catalogSnap]=await Promise.all([
+      getDocs(collection(db,"users",uid,"enrollments")),
+      getDocs(query(collection(db,"courses"),where("catalogPublished","==",true)))
+        .catch(error=>{console.warn("Unable to load published catalog:",error);return null;})
+    ]);
+    const active=enrollmentSnap.docs.filter(d=>!["Removed","Withdrawn"].includes(String(d.data().status||"")));
+    const sectionRows=await mapConcurrent(active,6,async enrollment=>{
+      const snap=await getDoc(doc(db,"sections",enrollment.id));
+      return snap.exists()?{id:snap.id,...snap.data(),enrollmentStatus:String(enrollment.data().status||"Enrolled")}:null;
+    });
+    const sections=sectionRows.filter(Boolean);
+    state.sections=sections;
     const byId=new Map();
-    for(const id of uniqueCourseIds){
-      const c = await getDoc(doc(db,"courses",id));
-      if(c.exists()) byId.set(c.id,{id:c.id,...c.data()});
-    }
-    try{
-      const catalogSnap=await getDocs(query(collection(db,"courses"),where("catalogPublished","==",true)));
-      catalogSnap.docs.forEach(d=>byId.set(d.id,{id:d.id,...d.data()}));
-    }catch(error){console.warn("Unable to load published course catalog for progression:",error);}
+    catalogSnap?.docs.forEach(d=>byId.set(d.id,{id:d.id,...d.data()}));
+    const missingIds=[...new Set(sections.map(s=>s.courseId).filter(id=>id&&!byId.has(id)))];
+    const extraCourses=await mapConcurrent(missingIds,6,async id=>{
+      const snap=await getDoc(doc(db,"courses",id));
+      return snap.exists()?{id:snap.id,...snap.data()}:null;
+    });
+    for(const c of extraCourses)if(c)byId.set(c.id,c);
     state.courses=[...byId.values()];
   }
 
+  if(state.user?.uid!==uid)return; // An account switch must not render prior account data.
   state.courses.sort((a,b)=>String(a.code||"").localeCompare(String(b.code||"")));
   state.sections.sort((a,b)=>String(a.courseCode||"").localeCompare(String(b.courseCode||"")));
   applyOwnerUI();
   renderHome();
   renderCourses();
   renderSections();
+  if(new URLSearchParams(location.search).has("debugPerf"))
+    console.info("[Theoria perf] Initial workspace",Math.round(performance.now()-workspaceStart)+"ms",{
+      courses:state.courses.length,sections:state.sections.length,role:state.role
+    });
 }
 
 function sectionCard(section){
@@ -932,15 +940,18 @@ function openSectionModal(existing,preferredCourseId=""){
 }
 
 async function loadCourseFramework(courseId){
-  const unitsSnap=await getDocs(collection(db,"courses",courseId,"units"));
-  const units=unitsSnap.docs.map(d=>({id:d.id,...d.data()}));
-  const competenciesSnap=await getDocs(collection(db,"courses",courseId,"competencies"));
-  const competencies=competenciesSnap.docs.map(d=>({id:d.id,...d.data()}));
-  for(const unit of units){
-    const topicSnap=await getDocs(collection(db,"courses",courseId,"units",unit.id,"topics"));
-    unit.topics=topicSnap.docs.map(d=>({id:d.id,...d.data()}));
-  }
-  return {units:sortByOrder(units),competencies:sortByOrder(competencies)};
+  const [unitsSnap,competenciesSnap]=await Promise.all([
+    getDocs(collection(db,"courses",courseId,"units")),
+    getDocs(collection(db,"courses",courseId,"competencies"))
+  ]);
+  const units=await mapConcurrent(unitsSnap.docs,6,async d=>{
+    const topicSnap=await getDocs(collection(db,"courses",courseId,"units",d.id,"topics"));
+    return {id:d.id,...d.data(),topics:topicSnap.docs.map(t=>({id:t.id,...t.data()}))};
+  });
+  return {
+    units:sortByOrder(units),
+    competencies:sortByOrder(competenciesSnap.docs.map(d=>({id:d.id,...d.data()})))
+  };
 }
 
 async function openCourse(courseId){
@@ -1518,7 +1529,15 @@ function openTopicModal(unitId,existing){
 }
 
 async function loadSectionData(section){
-  const courseSnap=await getDoc(doc(db,"courses",section.courseId));
+  const uid=state.user?.uid;
+  const [courseSnap,assignmentSnap,resourceSnap,assessmentRefSnap]=await Promise.all([
+    getDoc(doc(db,"courses",section.courseId)),
+    state.role==="instructor"
+      ? getDocs(collection(db,"sections",section.id,"assignments"))
+      : getDocs(query(collection(db,"sections",section.id,"assignments"),where("status","==","Published"))),
+    getDocs(collection(db,"sections",section.id,"resources")),
+    getDocs(collection(db,"sections",section.id,"assessmentRefs"))
+  ]);
   const course=courseSnap.exists()?{id:courseSnap.id,...courseSnap.data()}:null;
   let framework={units:[],competencies:[]};
   let frameworkVersionLabel=section.courseVersion||"";
@@ -1543,11 +1562,6 @@ async function loadSectionData(section){
     }
     if(!frameworkVersionPinned)framework=await loadCourseFramework(course.id);
   }
-  const assignmentSnap=state.role==="instructor"
-    ? await getDocs(collection(db,"sections",section.id,"assignments"))
-    : await getDocs(query(collection(db,"sections",section.id,"assignments"),where("status","==","Published")));
-  const resourceSnap=await getDocs(collection(db,"sections",section.id,"resources"));
-  const assessmentRefSnap=await getDocs(collection(db,"sections",section.id,"assessmentRefs"));
   let assessmentRefs=assessmentRefSnap.docs.map(d=>({id:d.id,...d.data()}));
 
   let members=[];
@@ -1567,8 +1581,8 @@ async function loadSectionData(section){
     extensions=extensionSnap.docs.map(d=>({id:d.id,...d.data()}));
 
     // Hydrate older assessmentRefs that predate points/type metadata.
-    for(const ref of assessmentRefs){
-      if(ref.totalPoints!==undefined && ref.totalPoints!==null && ref.assessmentType)continue;
+    await mapConcurrent(assessmentRefs,6,async ref=>{
+      if(ref.totalPoints!==undefined && ref.totalPoints!==null && ref.assessmentType)return;
       try{
         const a=await getDoc(doc(db,"assessments",ref.id));
         if(a.exists()){
@@ -1579,7 +1593,7 @@ async function loadSectionData(section){
           ref.status=data.status||ref.status||"Published";
         }
       }catch(_){}
-    }
+    });
   }else{
     const memberSnap=await getDoc(doc(db,"sections",section.id,"members",state.user.uid));
     if(memberSnap.exists()) members=[{id:memberSnap.id,...memberSnap.data()}];
@@ -1591,17 +1605,18 @@ async function loadSectionData(section){
     extensions=extensionSnap.docs.map(d=>({id:d.id,...d.data()}));
 
     // Student assessment-grade rules require direct reads and released=true.
-    for(const ref of assessmentRefs){
+    const studentAssessmentGrades=await mapConcurrent(assessmentRefs,6,async ref=>{
       try{
-        const g=await getDoc(doc(db,"sections",section.id,"assessmentGrades",ref.id+"_"+state.user.uid));
-        if(g.exists()) assessmentGrades.push({id:g.id,...g.data()});
-      }catch(_){}
-    }
+        const g=await getDoc(doc(db,"sections",section.id,"assessmentGrades",ref.id+"_"+uid));
+        return g.exists()?{id:g.id,...g.data()}:null;
+      }catch(_){return null;}
+    });
+    assessmentGrades=studentAssessmentGrades.filter(Boolean);
   }
 
   if(state.role==="student"){
-    for(const ref of assessmentRefs){
-      if(ref.assessmentType||ref.type)continue;
+    await mapConcurrent(assessmentRefs,6,async ref=>{
+      if(ref.assessmentType||ref.type)return;
       try{
         const assessmentSnap=await getDoc(doc(db,"assessments",ref.id));
         if(assessmentSnap.exists()){
@@ -1612,7 +1627,7 @@ async function loadSectionData(section){
           ref.totalPoints=Number(data.totalPoints||ref.totalPoints||0);
         }
       }catch(_){}
-    }
+    });
   }
 
   assessmentRefs=assessmentRefs
@@ -1644,12 +1659,13 @@ async function loadSectionData(section){
   });
   let assignmentSubmissions=[];
   if(state.role==="student"){
-    for(const assignment of assignments){
+    const submissions=await mapConcurrent(assignments,6,async assignment=>{
       try{
-        const sub=await getDoc(doc(db,"sections",section.id,"assignments",assignment.id,"submissions",state.user.uid));
-        if(sub.exists()) assignmentSubmissions.push({id:sub.id,assignmentId:assignment.id,...sub.data()});
-      }catch(_){}
-    }
+        const sub=await getDoc(doc(db,"sections",section.id,"assignments",assignment.id,"submissions",uid));
+        return sub.exists()?{id:sub.id,assignmentId:assignment.id,...sub.data()}:null;
+      }catch(_){return null;}
+    });
+    assignmentSubmissions=submissions.filter(Boolean);
   }
 
   let gradingPathways=[],academicRecords=[],appeals=[],mastery=[];
@@ -4419,8 +4435,11 @@ onAuthStateChanged(auth,async user=>{
     authShell.classList.remove("hidden");appShell.classList.add("hidden");closeModal();return;
   }
   try{
-    state.profile=await loadProfile(user);
-    const ownerSnap=await getDoc(doc(db,"system","owner"));
+    const [profile,ownerSnap]=await Promise.all([
+      loadProfile(user),
+      getDoc(doc(db,"system","owner"))
+    ]);
+    state.profile=profile;
     state.isSystemOwner=ownerSnap.exists()
       && ownerSnap.data().uid===user.uid
       && ownerSnap.data().confirmed===true;

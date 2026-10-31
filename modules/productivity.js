@@ -560,7 +560,10 @@ function bind(){
 
 export function initProductivity(){
   applyAccessibility();bind();
-  window.addEventListener("theoria:ready",async()=>{await synthesizeNotifications();});
+  window.addEventListener("theoria:ready",()=>{
+    // Notifications are helpful, but should not compete with the initial course dashboard.
+    setTimeout(()=>{synthesizeNotifications().catch(error=>console.warn("Notification refresh failed:",error));},1000);
+  });
   window.addEventListener("theoria:page",e=>{
     if(e.detail.page==="planner")renderPlanner();
     if(e.detail.page==="communications")renderCommunications();
