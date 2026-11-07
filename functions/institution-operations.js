@@ -461,6 +461,10 @@ export const institutionCommand = onCall(options, async request => {
       const [offer, section] = await Promise.all([tx.get(offeringRef), tx.get(sectionRef)]);
       needed(offer.exists && section.exists, "Offering or section not found.");
       needed(offer.data().courseId === section.data().courseId, "The section must teach the published course.");
+      needed(!section.data().institutionId ||
+        (section.data().institutionId === institutionId &&
+         section.data().institutionOfferingId === data.offeringId),
+        "This section is already linked to another institutional offering.");
       const owner = section.data().ownerId;
       needed(id(owner), "Section has no valid instructor.");
       const ownerStaff = await tx.get(ref(institutionId, "staff", owner));
@@ -473,6 +477,8 @@ export const institutionCommand = onCall(options, async request => {
       const existingSeats = currentMembers.docs.filter(s => s.data().status === "enrolled").length;
       const capacity = Number(offer.data().capacity || 0);
       needed(!capacity || existingSeats <= capacity, "Existing roster exceeds offering capacity.");
+      tx.update(sectionRef, { institutionId, institutionOfferingId: data.offeringId,
+        institutionLinkedAt: now });
       tx.update(offeringRef, { sectionId: data.sectionId, seatsTaken: existingSeats,
         sectionLinkedBy: actor, sectionLinkedAt: now });
       audit(tx, institutionId, actor, "offering_section_linked",
