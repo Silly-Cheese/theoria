@@ -1,4 +1,4 @@
-import { auth, db, doc, getDoc, functions, httpsCallable } from "./firebase.js";
+import { auth, db, doc, getDoc, getDocs, collection, functions, httpsCallable } from "./firebase.js";
 
 // The unified workspace deliberately sits above the older administrative tools.
 // The latter remain available for historical/advanced functions during migration.
@@ -315,13 +315,20 @@ async function handle(button) {
       ["assistant_principal", "Assistant principal"], ["principal", "Principal"],
       ["district_admin", "District administrator"]
     ]), values => command("inviteStaff", values));
-  if (name === "createOffering") return modal("Publish catalog course",
-    idField("courseId", "Official published catalog course ID") +
-    field("term", "Academic term") +
-    field("openDate", "Registration opens", "date") +
-    field("closeDate", "Registration closes", "date") +
-    '<p class="ias-small">Theoria validates the official course and registration window on the server. You can copy the course ID from the Courses catalog.</p>',
-    values => command("createOffering", values));
+  if (name === "createOffering") {
+    const catalog = await getDocs(collection(db, "courses"));
+    const courses = catalog.docs.filter(d => d.data().catalogCourse === true &&
+      d.data().catalogPublished === true && d.data().status !== "Archived")
+      .map(d => [d.id, (d.data().code || "") + " — " + (d.data().title || d.id)]);
+    if (!courses.length) return flash("No published official Theoria catalog courses are available.");
+    return modal("Publish catalog course",
+      chooser("courseId", "Official Theoria course", courses) +
+      field("term", "Academic term") +
+      field("openDate", "Registration opens", "date") +
+      field("closeDate", "Registration closes", "date") +
+      '<p class="ias-small">Theoria validates the catalog course and registration window on the server.</p>',
+      values => command("createOffering", values));
+  }
   if (name === "linkOffering") return modal("Link section to offering",
     idField("sectionId", "Existing Theoria section ID") +
     '<p class="ias-small">The section must teach the same course and belong to an institution-affiliated instructor.</p>',
