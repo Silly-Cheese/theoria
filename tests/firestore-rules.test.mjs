@@ -112,3 +112,43 @@ test("certified records and amendment history cannot be deleted by instructors",
   await assertFails(deleteDoc(doc(teacher.firestore(),"sections","section-history","academicRecords","learner-a")));
   await assertFails(deleteDoc(doc(teacher.firestore(),"sections","section-history","recordHistory","event-a")));
 });
+
+
+test("institution-linked classes reject direct student join bypasses",async()=>{
+  await env.withSecurityRulesDisabled(async admin=>{
+    const db=admin.firestore();
+    await setDoc(doc(db,"users","enrolled-student"),{role:"student",displayName:"Learner"});
+    await setDoc(doc(db,"courses","course-1"),{entranceExamRequired:false,ownerId:"faculty-1"});
+    await setDoc(doc(db,"sections","school-section"),{
+      ownerId:"faculty-1",courseId:"course-1",joinOpen:true,
+      institutionId:"school-a",institutionOfferingId:"offering-a"
+    });
+    await setDoc(doc(db,"sections","independent-section"),{
+      ownerId:"faculty-1",courseId:"course-1",joinOpen:true
+    });
+  });
+  const student=env.authenticatedContext("enrolled-student");
+  const member={userId:"enrolled-student",role:"student",status:"enrolled"};
+  await assertFails(setDoc(doc(student.firestore(),"sections","school-section","members","enrolled-student"),member));
+  const teacher=env.authenticatedContext("faculty-1");
+  await assertFails(setDoc(doc(teacher.firestore(),"sections","school-section","members","enrolled-student"),member));
+  await assertSucceeds(setDoc(doc(student.firestore(),"sections","independent-section","members","enrolled-student"),member));
+});
+
+test("instructor cannot detach an institution-linked section or delete it",async()=>{
+  const teacher=env.authenticatedContext("faculty-1");
+  await assertFails(updateDoc(doc(teacher.firestore(),"sections","school-section"),{
+    institutionId:"different-school"
+  }));
+  await assertFails(deleteDoc(doc(teacher.firestore(),"sections","school-section")));
+  await assertSucceeds(updateDoc(doc(teacher.firestore(),"sections","school-section"),{
+    sectionName:"Updated assigned section"
+  }));
+});
+
+test("institution audit events are callable-only",async()=>{
+  const admin=env.authenticatedContext("owner-a");
+  await assertFails(setDoc(doc(admin.firestore(),"institutions","school-a","auditEvents","spoofed"),{
+    createdBy:"owner-a",createdAt:new Date(),action:"fake"
+  }));
+});

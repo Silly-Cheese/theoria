@@ -51,7 +51,7 @@ async function render(){
  if(!inst){root.innerHTML='<div class="institution-empty"><h3>Find your school</h3><p>When your school appears here, request membership before registering for its courses.</p></div>';return;}
  root.innerHTML='<div class="institution-heading"><div><div class="eyebrow">'+escapeHTML(inst.kind==="district"?"District workspace":"School course catalog")+'</div><h2>'+escapeHTML(inst.name)+'</h2><p class="page-subtitle">'+escapeHTML(inst.description||"Academic programs and registration")+'</p></div>'+(isManager(inst)?'<button class="secondary-btn small-btn" data-inst-action="new-offering">Publish offering</button>':'')+'</div>'+
  (inst.parentDistrictId?'<p class="fineprint">Part of a school district</p>':'')+
- (profileRole==="student"?'<div class="institution-member-status" id="institutionMemberStatus"></div>':'')+'<div id="institutionOfferings" aria-live="polite">Loading course catalog…</div><div id="schoolManagementArea"></div>';
+ (profileRole==="student"?'<div class="institution-member-status" id="institutionMemberStatus"></div>':'')+'<div id="institutionOfferings" aria-live="polite">Loading course catalog…</div><div id="institutionAdminNew"></div><div id="schoolManagementArea"></div>';
  const membership=memberships.get(inst.id);const statusEl=$("#institutionMemberStatus");if(statusEl)statusEl.innerHTML=membership?'<p class="page-subtitle">School membership: <strong>'+escapeHTML(membership.status)+'</strong></p>' :'<p class="page-subtitle">You have not joined this '+(inst.kind==="district"?'district':'school')+' yet.</p><button class="primary-btn" data-inst-join="'+escapeHTML(inst.id)+'">Request to join '+(inst.kind==="district"?'district':'school')+'</button>';
  try{
   const snap=await getDocs(query(collection(db,"institutions",inst.id,"offerings"),where("published","==",true)));
@@ -62,10 +62,11 @@ async function render(){
   $("#institutionOfferings").innerHTML=own.length?own.map(o=>{
    const now=today(),open=o.published&&o.openDate<=now&&now<=o.closeDate;
    return '<article class="institution-offering"><div class="institution-offering-top"><div><div class="eyebrow">'+escapeHTML(o.code||"COURSE")+'</div><h3>'+escapeHTML(o.title)+'</h3></div><span class="badge '+(open?'live':'')+'">'+(open?"Registration open":o.published?"Registration closed":"Draft")+'</span></div><p>'+escapeHTML(o.description||"Institutional course offering")+'</p><p class="fineprint">Term: '+escapeHTML(o.term||"To be arranged")+' · '+escapeHTML(o.openDate||"—")+' to '+escapeHTML(o.closeDate||"—")+'</p>'+
-   (profileRole==="student"&&membership?.status==="active"&&!isManager(inst)?(placements.get(inst.id+"_"+o.id)?.sectionReference?'<a class="primary-btn small-btn" href="./index.html?join='+encodeURIComponent(placements.get(inst.id+"_"+o.id).sectionReference)+'">Join assigned section</a>':enrollmentRequests.get(inst.id+"_"+o.id)?'<span class="badge">'+escapeHTML("Request "+enrollmentRequests.get(inst.id+"_"+o.id).status)+'</span>':open?'<button class="primary-btn small-btn" data-inst-request="'+escapeHTML(o.id)+'">Request enrollment</button>':'<span class="fineprint">Enrollment unavailable</span>'):isManager(inst)?'<button class="secondary-btn small-btn" data-inst-requests="'+escapeHTML(o.id)+'">Review requests</button>':'')+'</article>';
+   (profileRole==="student"&&membership?.status==="active"&&!isManager(inst)?(placements.get(inst.id+"_"+o.id)?.directEnrollment?'<span class="badge live">Enrolled · View in Sections</span>':placements.get(inst.id+"_"+o.id)?.sectionReference?'<a class="primary-btn small-btn" href="./index.html?join='+encodeURIComponent(placements.get(inst.id+"_"+o.id).sectionReference)+'">Join assigned section</a>':enrollmentRequests.get(inst.id+"_"+o.id)?'<span class="badge">'+escapeHTML("Request "+enrollmentRequests.get(inst.id+"_"+o.id).status)+'</span>':open?'<button class="primary-btn small-btn" data-inst-request="'+escapeHTML(o.id)+'">Request enrollment</button>':'<span class="fineprint">Enrollment unavailable</span>'):isManager(inst)?'<button class="secondary-btn small-btn" data-inst-requests="'+escapeHTML(o.id)+'">Review requests</button>':'')+'</article>';
   }).join(""):'<p class="page-subtitle">No published offerings yet. Administrators can create the school catalog here.</p>';
  }catch(e){console.error(e);$("#institutionOfferings").textContent="Unable to load offerings. Check access and Firestore rules.";}
- window.TheoriaSchoolAdmin?.mount(inst,currentUser);
+ if(window.TheoriaInstitutionAdmin)window.TheoriaInstitutionAdmin.mount(inst,currentUser);
+ else window.TheoriaSchoolAdmin?.mount(inst,currentUser);
 }
 
 async function finishDistrictOnboarding(profile,name,title){
@@ -173,5 +174,6 @@ document.addEventListener("click",async e=>{
 });
 onAuthStateChanged(auth,user=>{currentUser=user;if(!user){institutions=[];activeId="";onboardingShownFor="";return;}const root=$("#institutionWorkspace");if(root)refresh().catch(console.error);});
 window.addEventListener("theoria:ready",()=>{maybeOnboard().catch(console.error);});
+window.addEventListener("theoria:institution-admin-ready",()=>{if(currentUser)refresh().catch(console.error);});
 window.addEventListener("theoria:page",e=>{if(e.detail.page==="institutions"&&currentUser)refresh().catch(error=>notice(error.message));});
 const page=$("#page-institutions");if(page)page.innerHTML=shell();
