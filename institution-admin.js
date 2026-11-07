@@ -7,7 +7,7 @@ const E = value => String(value ?? "").replace(/[&<>"']/g, ch =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
 const api = httpsCallable(functions, "institutionCommand");
 const snapshotApi = httpsCallable(functions, "institutionSnapshot");
-let institution = null, user = null, state = null, activeTab = "overview", loadingKey = 0, busy = false;
+let institution = null, user = null, state = null, activeTab = "overview", loadingKey = 0, busy = false, legacyMounted = false;
 const flash = message => {
   const el = $("#institutionNewMessage");
   if (el) { el.textContent = message; el.hidden = false; }
@@ -247,6 +247,10 @@ async function handle(button) {
   if (name === "refresh") return load();
   if (name === "legacy") {
     document.body.classList.toggle("theoria-show-legacy");
+    if (document.body.classList.contains("theoria-show-legacy") && !legacyMounted) {
+      legacyMounted = true;
+      window.TheoriaSchoolAdmin?.mount(institution, user);
+    }
     button.textContent = document.body.classList.contains("theoria-show-legacy") ?
       "Hide additional tools" : "Additional tools";
     return;
@@ -403,7 +407,10 @@ document.addEventListener("submit", async event => {
 window.TheoriaInstitutionAdmin = {
   mount(nextInstitution, nextUser) {
     institution = nextInstitution; user = nextUser;
-    activeTab = "overview"; state = null;
+    activeTab = "overview"; state = null; legacyMounted = false;
+    document.body.classList.remove("theoria-show-legacy", "theoria-institution-upgraded");
     if (institution && user) load().catch(console.error);
   }
 };
+
+window.dispatchEvent(new Event("theoria:institution-admin-ready"));
