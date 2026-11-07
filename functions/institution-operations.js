@@ -288,6 +288,35 @@ export const institutionCommand = onCall(options, async request => {
   return db.runTransaction(async tx => {
     const ctx = await access(doc => tx.get(doc), actor, institutionId);
     const now = timestamp();
+    if (action === "createOffering") {
+      allow(ctx, "admissions");
+      needed(ctx.institution.kind === "school" && ctx.institution.status === "active",
+        "Publish offerings from an active school.");
+      needed(id(data.courseId), "Choose an official Theoria catalog course.", "invalid-argument");
+      const course = await tx.get(db.doc("courses/" + data.courseId));
+      needed(course.exists && course.data().catalogCourse === true &&
+        course.data().catalogPublished === true && course.data().status !== "Archived",
+        "Only officially published catalog courses may be offered.");
+      const term = text(data.term, 80), openDate = text(data.openDate, 10),
+        closeDate = text(data.closeDate, 10);
+      needed(term.length > 0 && /^\d{4}-\d{2}-\d{2}$/.test(openDate) &&
+        /^\d{4}-\d{2}-\d{2}$/.test(closeDate) && openDate <= closeDate,
+        "Provide a term and a valid registration window.", "invalid-argument");
+      const start = new Date(openDate + "T00:00:00Z");
+      const end = new Date(Date.parse(closeDate + "T00:00:00Z") + 86400000);
+      needed(Number.isFinite(start.getTime()) && Number.isFinite(end.getTime()),
+        "Invalid calendar dates.", "invalid-argument");
+      const offeringDoc = i.collection("offerings").doc();
+      tx.create(offeringDoc, {
+        courseId: data.courseId, title: course.data().title,
+        code: course.data().code || "", term,
+        description: text(course.data().description, 1000),
+        openDate, closeDate, openAt: start, closeAt: end,
+        published: true, createdBy: actor, createdAt: now
+      });
+      audit(tx, institutionId, actor, "school_offering_created", { offeringId: offeringDoc.id });
+      return { offeringId: offeringDoc.id };
+    }
     if (action === "createTerm") {
       allow(ctx, "policy");
       const title = text(data.title, 120), startDate = text(data.startDate, 10), endDate = text(data.endDate, 10);
