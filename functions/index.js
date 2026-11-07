@@ -63,3 +63,5 @@ export const setAssessmentResultVisibility = onCall(
     });
   }
 );
+
+export { institutionSnapshot, institutionCommand } from "./institution-operations.js";
