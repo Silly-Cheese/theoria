@@ -582,7 +582,9 @@ service cloud.firestore {
       allow update: if sectionOwner(sectionId)
         && (!('institutionId' in resource.data)
           || (request.resource.data.institutionId == resource.data.institutionId
-            && request.resource.data.institutionOfferingId == resource.data.institutionOfferingId));
+            && request.resource.data.institutionOfferingId == resource.data.institutionOfferingId
+            && request.resource.data.ownerId == resource.data.ownerId
+            && request.resource.data.courseId == resource.data.courseId));
       allow delete: if sectionOwner(sectionId) && !('institutionId' in resource.data);
 
       match /members/{userId} {
