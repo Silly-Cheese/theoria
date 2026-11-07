@@ -1,8 +1,10 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { initializeApp, getApps } from "firebase-admin/app";
 
 // Theoria institutional operations: server-enforced authority, transactional writes,
 // and append-only administrative history. Existing legacy data is read, not migrated destructively.
+if (!getApps().length) initializeApp();
 const db = getFirestore();
 const timestamp = () => FieldValue.serverTimestamp();
 const id = value => typeof value === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(value);
