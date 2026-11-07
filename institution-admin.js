@@ -146,7 +146,7 @@ function body() {
   if (activeTab === "registration") {
     const ready = records("members").filter(x => x.status === "active");
     return '<div class="ias-section-head"><h3>Course registration & class rosters</h3>' +
-      action("Register students", "register") + action("Bulk enroll", "bulkRegister") + '</div>' +
+      action("Publish offering", "createOffering") + action("Register students", "register") + action("Bulk enroll", "bulkRegister") + '</div>' +
       '<h4>Published course offerings</h4>' + list(records("offerings"), o =>
         line((o.code || "") + " · " + o.title,
           "Term: " + (o.term || "Unassigned") + " · Seats: " + (o.seatsTaken || 0) +
@@ -315,6 +315,13 @@ async function handle(button) {
       ["assistant_principal", "Assistant principal"], ["principal", "Principal"],
       ["district_admin", "District administrator"]
     ]), values => command("inviteStaff", values));
+  if (name === "createOffering") return modal("Publish catalog course",
+    idField("courseId", "Official published catalog course ID") +
+    field("term", "Academic term") +
+    field("openDate", "Registration opens", "date") +
+    field("closeDate", "Registration closes", "date") +
+    '<p class="ias-small">Theoria validates the official course and registration window on the server. You can copy the course ID from the Courses catalog.</p>',
+    values => command("createOffering", values));
   if (name === "linkOffering") return modal("Link section to offering",
     idField("sectionId", "Existing Theoria section ID") +
     '<p class="ias-small">The section must teach the same course and belong to an institution-affiliated instructor.</p>',
