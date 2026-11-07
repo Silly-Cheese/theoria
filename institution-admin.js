@@ -119,6 +119,7 @@ function body() {
         "No outstanding admissions applications.") + '</section><section><h3>Institution essentials</h3>' +
       '<p class="ias-muted">School enrollment, course placement, academic years, faculty assignments, and student history share one workspace.</p>' +
       action("Edit institution", "editInstitution") + action("Enrollment policies", "policies") +
+      (state.role === "owner" ? action("Archive institution", "archiveInstitution") : "") +
       '<p class="ias-small">All counts are limited to the first 80 records per category. Use reports/export tools for larger populations.</p></section></div>';
   }
   if (activeTab === "admissions") return '<div class="ias-section-head"><h3>Admissions & membership review</h3></div>' +
@@ -135,7 +136,7 @@ function body() {
         action("Decline", "decideMembership", 'data-uid="' + E(x.studentUid) + '" data-decision="decline"')),
       "No membership requests.");
   if (activeTab === "students") return '<div class="ias-section-head"><h3>Students & annual enrollment</h3>' +
-    action("Rollover academic year", "rollover") + '</div>' +
+    action("Rollover academic year", "rollover") + action("Transfer student", "transferStudent") + '</div>' +
     list(records("members").filter(x => x.status === "active"), x => {
       const enrollment = records("academicEnrollments").find(y => y.studentUid === x.studentUid);
       return line(x.studentName || x.studentUid, "UID: " + x.studentUid +
@@ -172,12 +173,15 @@ function body() {
     '<p class="ias-muted">Advanced scheduling, grade certification and guardian communication remain accessible under Additional tools.</p>';
   if (activeTab === "staff") return '<div class="ias-section-head"><h3>Faculty & staff access</h3>' +
     action("Invite staff", "inviteStaff") + '</div>' +
-    list(records("staff"), s => line(s.displayName || s.email, s.role + " · " + s.email), "No active staff assigned.") +
+    list(records("staff"), s => line(s.displayName || s.email, s.role + " · " + s.email,
+      state.role === "owner" ? action("Revoke role", "removeStaff", 'data-uid="' + E(s.uid) + '"') : ""),
+      "No active staff assigned.") +
     '<h4>Pending invitations</h4>' +
     list(records("invitations").filter(x => x.status === "pending"),
       inv => line(inv.email, "Role: " + inv.role), "No outstanding invitations.");
   if (activeTab === "district") return '<div class="ias-section-head"><h3>District governance</h3>' +
-    (state.institution.kind === "school" ? action("Request affiliation", "requestDistrict") : "") + '</div>' +
+    (state.institution.kind === "school" ? action("Request affiliation", "requestDistrict") :
+      state.role === "owner" ? action("Create district school", "createSchool") : "") + '</div>' +
     (state.institution.kind === "district"
       ? '<h4>Schools in district</h4>' +
         list(state.schools || [], school => line(school.name, school.verified ? "Verified institution" : "Unverified institution"),
@@ -245,6 +249,22 @@ async function handle(button) {
     document.body.classList.toggle("theoria-show-legacy");
     button.textContent = document.body.classList.contains("theoria-show-legacy") ?
       "Hide additional tools" : "Additional tools";
+    return;
+  }
+  if (name === "archiveInstitution") {
+    if (state.role !== "owner") return;
+    const confirmation = await window.TheoriaDialog?.confirm?.(
+      "Archive this institution? Students will no longer find it in the active directory. Existing records will be preserved.");
+    if (!confirmation) return;
+    try { await command("archiveInstitution"); flash("Institution archived. Historical records are preserved."); }
+    catch (error) { flash(error.message || "Archive failed."); }
+    return load();
+  }
+  if (name === "removeStaff") {
+    if (state.role !== "owner") return;
+    if (!await window.TheoriaDialog?.confirm?.("Remove this staff member’s institutional access?")) return;
+    try { await command("removeStaff", { staffUid: button.dataset.uid }); await load(); flash("Staff access revoked."); }
+    catch (error) { flash(error.message || "Role revocation failed."); }
     return;
   }
   if (name === "acceptInvite") {
@@ -325,6 +345,19 @@ async function handle(button) {
     field("academicYear", "New academic year", "text", "2027–2028") +
     field("gradeLevel", "New grade / level", "text", "", false),
     values => command("rollover", values));
+  if (name === "createSchool") return modal("Create district school",
+    field("name", "New school name") +
+    '<label>Description<textarea name="description" maxlength="750"></textarea></label>',
+    values => command("createSchool", values));
+  if (name === "transferStudent") return modal("Transfer student to another school",
+    chooser("studentUid", "Currently enrolled student",
+      records("members").filter(m => m.status === "active")
+        .map(m => [m.studentUid, m.studentName || m.studentUid])) +
+    idField("destinationId", "Destination Theoria school ID") +
+    field("academicYear", "Destination academic year") +
+    field("gradeLevel", "Destination grade / level", "text", "", false) +
+    '<p class="ias-small">You must be authorized in both schools. Existing academic records remain with their origin school. Active registrations must be withdrawn first.</p>',
+    values => command("transferStudent", values));
   if (name === "requestDistrict") return modal("Request district affiliation",
     idField("districtId", "Theoria district ID") +
     '<p class="ias-small">The district must explicitly approve the request.</p>',
@@ -360,8 +393,10 @@ document.addEventListener("submit", async event => {
   busy = true; submit.disabled = true;
   try {
     const values = Object.fromEntries(new FormData(event.target));
-    await command("apply", values);
-    event.target.innerHTML = '<p class="ias-notice">Application submitted to admissions.</p>';
+    const result = await command("apply", values);
+    event.target.innerHTML = '<p class="ias-notice">' +
+      (result.status === "active" ? "You have been enrolled under this school’s automatic admissions policy." :
+        "Application submitted to admissions.") + '</p>';
   } catch (error) { window.TheoriaDialog?.alert?.(error.message || "Application failed."); }
   finally { busy = false; submit.disabled = false; }
 });
