@@ -118,6 +118,7 @@ test("institution-linked classes reject direct student join bypasses",async()=>{
   await env.withSecurityRulesDisabled(async admin=>{
     const db=admin.firestore();
     await setDoc(doc(db,"users","enrolled-student"),{role:"student",displayName:"Learner"});
+    await setDoc(doc(db,"courses","course-1"),{entranceExamRequired:false,ownerId:"faculty-1"});
     await setDoc(doc(db,"sections","school-section"),{
       ownerId:"faculty-1",courseId:"course-1",joinOpen:true,
       institutionId:"school-a",institutionOfferingId:"offering-a"
