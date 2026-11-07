@@ -172,7 +172,7 @@ async function registrationTransaction(actor, institutionId, studentUid, offerin
       tx.update(requestRef, { status: "approved", reviewedBy: actor, reviewedAt: now });
     tx.set(ref(institutionId, "placements", offeringId + "_" + studentUid), {
       studentUid, studentName: displayName, offeringId, sectionReference: section.joinCode || "",
-      status: "placed", approvedRequestId: offeringId + "_" + studentUid, placedBy: actor, placedAt: now
+      status: "placed", directEnrollment: true, approvedRequestId: offeringId + "_" + studentUid, placedBy: actor, placedAt: now
     }, { merge: true });
     if (!enrollment.exists) tx.set(enrollmentRef, {
       studentUid, studentName: displayName, status: "active",
