@@ -65,8 +65,8 @@ async function render(){
    (profileRole==="student"&&membership?.status==="active"&&!isManager(inst)?(placements.get(inst.id+"_"+o.id)?.sectionReference?'<a class="primary-btn small-btn" href="./index.html?join='+encodeURIComponent(placements.get(inst.id+"_"+o.id).sectionReference)+'">Join assigned section</a>':enrollmentRequests.get(inst.id+"_"+o.id)?'<span class="badge">'+escapeHTML("Request "+enrollmentRequests.get(inst.id+"_"+o.id).status)+'</span>':open?'<button class="primary-btn small-btn" data-inst-request="'+escapeHTML(o.id)+'">Request enrollment</button>':'<span class="fineprint">Enrollment unavailable</span>'):isManager(inst)?'<button class="secondary-btn small-btn" data-inst-requests="'+escapeHTML(o.id)+'">Review requests</button>':'')+'</article>';
   }).join(""):'<p class="page-subtitle">No published offerings yet. Administrators can create the school catalog here.</p>';
  }catch(e){console.error(e);$("#institutionOfferings").textContent="Unable to load offerings. Check access and Firestore rules.";}
- window.TheoriaSchoolAdmin?.mount(inst,currentUser);
- window.TheoriaInstitutionAdmin?.mount(inst,currentUser);
+ if(window.TheoriaInstitutionAdmin)window.TheoriaInstitutionAdmin.mount(inst,currentUser);
+ else window.TheoriaSchoolAdmin?.mount(inst,currentUser);
 }
 
 async function finishDistrictOnboarding(profile,name,title){
@@ -174,5 +174,6 @@ document.addEventListener("click",async e=>{
 });
 onAuthStateChanged(auth,user=>{currentUser=user;if(!user){institutions=[];activeId="";onboardingShownFor="";return;}const root=$("#institutionWorkspace");if(root)refresh().catch(console.error);});
 window.addEventListener("theoria:ready",()=>{maybeOnboard().catch(console.error);});
+window.addEventListener("theoria:institution-admin-ready",()=>{if(currentUser)refresh().catch(console.error);});
 window.addEventListener("theoria:page",e=>{if(e.detail.page==="institutions"&&currentUser)refresh().catch(error=>notice(error.message));});
 const page=$("#page-institutions");if(page)page.innerHTML=shell();
