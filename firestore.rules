@@ -577,7 +577,13 @@ service cloud.firestore {
       allow create: if isInstructor()
         && request.resource.data.ownerId == uid()
         && canUseCourseAsInstructor(request.resource.data.courseId);
-      allow update, delete: if sectionOwner(sectionId);
+      // Institution-linked sections are managed by transactional registrar operations.
+      // Their affiliation cannot be removed by an ordinary section edit.
+      allow update: if sectionOwner(sectionId)
+        && (!('institutionId' in resource.data)
+          || (request.resource.data.institutionId == resource.data.institutionId
+            && request.resource.data.institutionOfferingId == resource.data.institutionOfferingId));
+      allow delete: if sectionOwner(sectionId) && !('institutionId' in resource.data);
 
       match /members/{userId} {
         allow read: if sectionOwner(sectionId) || sectionStaff(sectionId) || isSelf(userId);
@@ -585,6 +591,7 @@ service cloud.firestore {
             (
               isSelf(userId)
               && request.resource.data.userId == uid()
+              && !('institutionId' in get(/databases/$(database)/documents/sections/$(sectionId)).data)
               && get(/databases/$(database)/documents/sections/$(sectionId)).data.joinOpen == true
               && (
                 !sectionRequiresEntranceExam(sectionId)
@@ -1504,10 +1511,8 @@ service cloud.firestore {
       }
       match /auditEvents/{eventId} {
         allow read: if institutionAdmin(instId);
-        allow create: if institutionAdmin(instId)
-          && request.resource.data.createdBy == uid()
-          && request.resource.data.createdAt == request.time;
-        allow update, delete: if false;
+        // System audit entries are exclusively produced by privileged Functions.
+        allow create, update, delete: if false;
       }
       match /rubrics/{rubricId} {
         allow read: if institutionAdmin(instId);
