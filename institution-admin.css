@@ -1,0 +1,62 @@
+/* Theoria institutional operations — unified layout, responsive and accessible. */
+#institutionAdminNew { min-width:0; margin:18px 0 24px; }
+.ias-workspace { border:1px solid var(--border, rgba(120,120,120,.25)); border-radius:20px;
+  background:var(--surface, #fff); padding:22px; box-shadow:0 8px 30px rgba(15,23,42,.04);
+  color:inherit; min-width:0; }
+.ias-head,.ias-tools,.ias-section-head,.ias-entry,.ias-entry-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.ias-head { align-items:flex-start; flex-wrap:wrap; }
+.ias-head h2 { margin:4px 0 6px; font-size:clamp(1.25rem,2vw,1.8rem); line-height:1.3; }
+.ias-muted { opacity:.75; line-height:1.5; margin:5px 0 10px; }
+.ias-small { opacity:.73; line-height:1.5; font-size:.82rem; margin:12px 0; }
+.ias-tools,.ias-entry-actions { flex-wrap:wrap; justify-content:flex-start; }
+.ias-nav { display:flex; gap:7px; overflow-x:auto; border-bottom:1px solid var(--border,rgba(120,120,120,.25)); margin:20px 0;
+  padding:0 0 9px; max-width:100%; scrollbar-width:thin; }
+.ias-nav button { border:1px solid transparent; background:transparent; color:inherit;
+  padding:9px 12px; border-radius:10px; font:inherit; font-size:.88rem; cursor:pointer; white-space:nowrap; }
+.ias-nav button:hover,.ias-nav button:focus-visible { border-color:var(--border,rgba(120,120,120,.3)); background:rgba(100,116,139,.1); }
+.ias-nav button.active { background:var(--accent-soft,rgba(40,96,150,.12)); border-color:var(--border,rgba(120,120,120,.3)); font-weight:700; }
+.ias-stat-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:11px; }
+.ias-tile { border:1px solid var(--border,rgba(120,120,120,.2)); border-radius:13px;
+  background:var(--surface-alt,rgba(100,116,139,.05)); padding:18px 14px; min-width:0; }
+.ias-tile strong { display:block; font-size:clamp(1.25rem,2vw,1.75rem); line-height:1.25; }
+.ias-tile span { display:block; font-size:.78rem; opacity:.75; margin-top:5px; }
+.ias-two-column { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(250px,1fr); gap:24px; margin-top:20px; }
+.ias-workspace h3 { font-size:1.05rem; margin:12px 0; }
+.ias-workspace h4 { margin:22px 0 10px; font-size:.91rem; }
+.ias-entry { border-bottom:1px solid var(--border,rgba(120,120,120,.19)); align-items:center;
+  padding:13px 0; min-width:0; }
+.ias-entry:first-of-type { border-top:1px solid var(--border,rgba(120,120,120,.19)); }
+.ias-entry > div:first-child { min-width:0; overflow-wrap:anywhere; }
+.ias-entry strong { display:block; font-size:.92rem; }
+.ias-entry p { margin:5px 0 0; font-size:.83rem; opacity:.78; line-height:1.5; overflow-wrap:anywhere; }
+.ias-empty { padding:22px 15px; text-align:center; background:rgba(100,116,139,.06);
+  border-radius:12px; opacity:.76; font-size:.9rem; }
+.ias-notice { border-left:3px solid var(--accent,#475569); background:rgba(100,116,139,.07);
+  padding:12px 14px; border-radius:8px; margin:16px 0; overflow-wrap:anywhere; }
+.ias-notice[hidden] { display:none !important; }
+.ias-apply { margin-top:18px; border-top:1px solid var(--border,rgba(120,120,120,.2)); padding-top:15px; }
+.ias-form { display:grid; gap:14px; max-width:540px; margin-top:12px; }
+.ias-form label { display:grid; gap:7px; }
+.ias-form input,.ias-form textarea { border:1px solid var(--border,#cbd5e1);
+  border-radius:10px; background:var(--surface,#fff); color:inherit; font:inherit; padding:11px; width:100%; }
+#iasFormError:not(:empty) { margin:10px 0; color:#b91c1c; }
+body.theoria-institution-upgraded:not(.theoria-show-legacy) #schoolManagementArea,
+body.theoria-institution-upgraded:not(.theoria-show-legacy) #schoolRegistrarExpansion,
+body.theoria-institution-upgraded:not(.theoria-show-legacy) #theoriaExpansion,
+body.theoria-institution-upgraded:not(.theoria-show-legacy) #campusOperations { display:none !important; }
+#page-institutions .institution-grid { grid-template-columns:minmax(205px,265px) minmax(0,1fr); align-items:start; }
+#page-institutions .institution-grid>.panel { min-width:0; }
+#page-institutions .institution-list-item { width:100%; overflow-wrap:anywhere; }
+@media(max-width:950px) {
+  #page-institutions .institution-grid { grid-template-columns:minmax(0,1fr); }
+  .ias-stat-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media(max-width:650px) {
+  .ias-workspace { padding:15px 12px; border-radius:14px; }
+  .ias-two-column { grid-template-columns:minmax(0,1fr); }
+  .ias-head,.ias-section-head { align-items:stretch; flex-direction:column; }
+  .ias-entry { align-items:flex-start; flex-direction:column; }
+  .ias-entry-actions { gap:8px; }
+  .ias-tools button,.ias-entry-actions button { min-height:40px; }
+  .ias-tile { padding:12px; }
+}
