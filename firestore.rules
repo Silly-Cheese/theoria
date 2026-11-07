@@ -601,11 +601,16 @@ service cloud.firestore {
             || (
               sectionOwner(sectionId)
               && request.resource.data.userId == userId
+              && !('institutionId' in get(/databases/$(database)/documents/sections/$(sectionId)).data)
             )
           )
           && request.resource.data.role == 'student';
-        allow update: if sectionAcademicManager(sectionId);
-        allow delete: if sectionAcademicManager(sectionId) || isSelf(userId);
+        allow update: if sectionAcademicManager(sectionId)
+          && (!('institutionId' in get(/databases/$(database)/documents/sections/$(sectionId)).data)
+            || request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['displayName','email','accommodations','useProfileDefaults']));
+        allow delete: if (sectionAcademicManager(sectionId) || isSelf(userId))
+          && !('institutionId' in get(/databases/$(database)/documents/sections/$(sectionId)).data);
       }
 
       match /staff/{userId} {
