@@ -57,16 +57,15 @@ export const sectionLifecycle = onCall(callableOptions, async request => {
         "Section owner permissions have changed.");
       const previous = fresh.data();
       assert(previous.status !== "Archived", "failed-precondition", "Section is already archived.");
+      const joinRef = previous.joinCode && /^THR-[A-Z0-9]+$/.test(previous.joinCode) ?
+        db.doc("joinCodes/" + previous.joinCode) : null;
+      const join = joinRef ? await tx.get(joinRef) : null;
       tx.update(sectionRef, {
         status: "Archived", joinOpen: false, archivedBy: uid,
         archivedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp()
       });
-      if (previous.joinCode && /^THR-[A-Z0-9]+$/.test(previous.joinCode)) {
-        const joinRef = db.doc("joinCodes/" + previous.joinCode);
-        const join = await tx.get(joinRef);
-        if (join.exists && join.data().sectionId === data.sectionId) {
-          tx.update(joinRef, { active: false, updatedAt: FieldValue.serverTimestamp() });
-        }
+      if (join?.exists && join.data().sectionId === data.sectionId) {
+        tx.update(joinRef, { active: false, updatedAt: FieldValue.serverTimestamp() });
       }
       tx.create(db.collection("systemAcademicAudit").doc(), {
         actorUid: uid, action: "section_archived",
@@ -86,17 +85,15 @@ export const sectionLifecycle = onCall(callableOptions, async request => {
     assert(fresh.exists && fresh.data().ownerId === uid, "permission-denied",
       "Section ownership changed.");
     assert(!fresh.data().institutionId, "failed-precondition", "School-linked section.");
+    const code = fresh.data().joinCode;
+    const joinRef = code && /^THR-[A-Z0-9]+$/.test(code) ? db.doc("joinCodes/" + code) : null;
+    const join = joinRef ? await tx.get(joinRef) : null;
     tx.update(sectionRef, {
       joinOpen: false, status: "PendingDeletion", lifecycleStatus: "deleting",
       updatedAt: FieldValue.serverTimestamp()
     });
-    const code = fresh.data().joinCode;
-    if (code && /^THR-[A-Z0-9]+$/.test(code)) {
-      const joinRef = db.doc("joinCodes/" + code);
-      const join = await tx.get(joinRef);
-      if (join.exists && join.data().sectionId === data.sectionId)
-        tx.update(joinRef, { active: false, updatedAt: FieldValue.serverTimestamp() });
-    }
+    if (join?.exists && join.data().sectionId === data.sectionId)
+      tx.update(joinRef, { active: false, updatedAt: FieldValue.serverTimestamp() });
   });
   // Fail-closed if new records appeared during the short transition.
   const finalCheck = await inspectSection(data.sectionId);
