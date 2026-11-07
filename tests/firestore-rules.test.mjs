@@ -130,6 +130,8 @@ test("institution-linked classes reject direct student join bypasses",async()=>{
   const student=env.authenticatedContext("enrolled-student");
   const member={userId:"enrolled-student",role:"student",status:"enrolled"};
   await assertFails(setDoc(doc(student.firestore(),"sections","school-section","members","enrolled-student"),member));
+  const teacher=env.authenticatedContext("faculty-1");
+  await assertFails(setDoc(doc(teacher.firestore(),"sections","school-section","members","enrolled-student"),member));
   await assertSucceeds(setDoc(doc(student.firestore(),"sections","independent-section","members","enrolled-student"),member));
 });
 
