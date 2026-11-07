@@ -175,6 +175,8 @@ export const institutionSnapshot = onCall(options, async request => {
   needed(id(institutionId), "Choose an institution.", "invalid-argument");
   const ctx = await access(doc => doc.get(), uid, institutionId);
   allow(ctx, "school");
+  const settingsRef = ref(institutionId, "institutionSettings", "general");
+  const settings = await settingsRef.get();
   const names = ["members", "applications", "requests", "offerings", "registrations", "staff",
     "invitations", "terms", "departments", "studentRecords", "auditEvents", "academicEnrollments",
     "districtRequests"];
@@ -185,7 +187,7 @@ export const institutionSnapshot = onCall(options, async request => {
     const all = await db.collection("institutions").where("parentDistrictId", "==", institutionId).limit(100).get();
     schools = serial(all);
   }
-  return { institution: { id: institutionId, ...ctx.institution }, role: ctx.role, schools, ...collections,
+  return { institution: { id: institutionId, ...ctx.institution }, settings: settings.exists ? settings.data() : {}, role: ctx.role, schools, ...collections,
     limits: { perCollection: 80, schools: 100 } };
 });
 
@@ -201,16 +203,34 @@ export const institutionCommand = onCall(options, async request => {
       needed(institution.exists && institution.data().kind === "school" &&
         institution.data().status === "active", "Applications require an active school.");
       const application = ref(institutionId, "applications", actor);
+      const membership = ref(institutionId, "members", actor);
+      const enrollmentRef = ref(institutionId, "academicEnrollments", actor);
+      const setting = await tx.get(ref(institutionId, "institutionSettings", "general"));
+      needed(setting.data()?.allowStudentApplications !== false,
+        "The school has closed student applications.", "permission-denied");
       const existing = await tx.get(application);
-      const member = await tx.get(ref(institutionId, "members", actor));
+      const member = await tx.get(membership);
+      const previousEnrollment = await tx.get(enrollmentRef);
       needed(!member.exists || member.data().status !== "active", "You are already enrolled.");
       needed(!existing.exists || existing.data().status !== "pending", "An application is already pending.");
       const now = timestamp();
+      const automatic = setting.exists && setting.data().requireAdmissionsReview === false;
       tx.set(application, {
         ...student, gradeLevel: text(data.gradeLevel, 40), program: text(data.program, 120),
-        notes: text(data.notes, 1500), status: "pending", createdAt: now, updatedAt: now
+        notes: text(data.notes, 1500), status: automatic ? "approved" : "pending",
+        createdAt: now, updatedAt: now,
+        ...(automatic ? { reviewedBy: "institution_policy", reviewedAt: now } : {})
       });
-      return { status: "pending" };
+      if (automatic) {
+        tx.set(membership, { ...student, status: "active", requestedAt: now,
+          reviewedBy: "institution_policy", reviewedAt: now }, { merge: true });
+        if (!previousEnrollment.exists) tx.create(enrollmentRef, {
+          ...student, status: "active", gradeLevel: text(data.gradeLevel, 40),
+          program: text(data.program, 120), academicYear: "", admittedAt: now, updatedAt: now
+        });
+        audit(tx, institutionId, actor, "policy_auto_admission", { studentUid: actor });
+      }
+      return { status: automatic ? "active" : "pending" };
     });
   }
   if (action === "acceptInvitation") {
@@ -255,6 +275,101 @@ export const institutionCommand = onCall(options, async request => {
   return db.runTransaction(async tx => {
     const ctx = await access(doc => tx.get(doc), actor, institutionId);
     const now = timestamp();
+    if (action === "createTerm") {
+      allow(ctx, "policy");
+      const title = text(data.title, 120), startDate = text(data.startDate, 10), endDate = text(data.endDate, 10);
+      needed(title.length >= 3 && /^\d{4}-\d{2}-\d{2}$/.test(startDate) &&
+        /^\d{4}-\d{2}-\d{2}$/.test(endDate) && startDate <= endDate,
+        "Provide a valid title and date range.", "invalid-argument");
+      tx.create(i.collection("terms").doc(), {
+        title, startDate, endDate, gradingScheme: "standard", createdBy: actor, createdAt: now
+      });
+      audit(tx, institutionId, actor, "academic_term_created");
+      return { created: true };
+    }
+    if (action === "createDepartment") {
+      allow(ctx, "policy");
+      const name = text(data.name, 120);
+      needed(name.length >= 2, "Department name required.", "invalid-argument");
+      tx.create(i.collection("departments").doc(), {
+        name, description: text(data.description, 500), createdBy: actor, createdAt: now
+      });
+      audit(tx, institutionId, actor, "academic_department_created");
+      return { created: true };
+    }
+    if (action === "archiveInstitution") {
+      needed(ctx.role === "owner", "Only an institution owner can archive it.", "permission-denied");
+      needed(ctx.institution.status === "active", "Institution is already archived.");
+      tx.update(i, { status: "archived", archivedBy: actor, archivedAt: now });
+      audit(tx, institutionId, actor, "institution_archived");
+      return { archived: true };
+    }
+    if (action === "removeStaff") {
+      needed(ctx.role === "owner", "Only the owner may remove staff.", "permission-denied");
+      needed(id(data.staffUid) && data.staffUid !== actor, "Choose a non-owner staff member.", "invalid-argument");
+      const staffRef = ref(institutionId, "staff", data.staffUid);
+      const staff = await tx.get(staffRef);
+      needed(staff.exists, "Staff assignment not found.");
+      tx.delete(staffRef);
+      audit(tx, institutionId, actor, "staff_role_revoked", { staffUid: data.staffUid });
+      return { revoked: true };
+    }
+    if (action === "createSchool") {
+      needed(ctx.institution.kind === "district" && ctx.role === "owner",
+        "Only the district owner may create schools.", "permission-denied");
+      const name = text(data.name, 100);
+      needed(name.length >= 3, "Name must have at least 3 characters.", "invalid-argument");
+      const schoolDoc = db.collection("institutions").doc();
+      tx.create(schoolDoc, {
+        name, kind: "school", description: text(data.description, 750),
+        parentDistrictId: institutionId, ownerUid: ctx.institution.ownerUid,
+        status: "active", verified: false, createdAt: now
+      });
+      tx.create(schoolDoc.collection("districtLinks").doc(institutionId), {
+        districtId: institutionId, status: "active", acceptedBy: actor, acceptedAt: now
+      });
+      audit(tx, institutionId, actor, "district_school_created", { schoolId: schoolDoc.id });
+      return { schoolId: schoolDoc.id };
+    }
+    if (action === "transferStudent") {
+      allow(ctx, "admissions");
+      needed(ctx.institution.kind === "school" && id(data.destinationId) &&
+        data.destinationId !== institutionId, "Choose a different destination school.", "invalid-argument");
+      needed(id(data.studentUid), "Choose a student.", "invalid-argument");
+      const dest = await access(doc => tx.get(doc), actor, data.destinationId);
+      allow(dest, "admissions");
+      needed(dest.institution.kind === "school" && dest.institution.status === "active",
+        "Destination school must be active.");
+      const sourceMember = ref(institutionId, "members", data.studentUid);
+      const sourceEnroll = ref(institutionId, "academicEnrollments", data.studentUid);
+      const destinationMember = ref(data.destinationId, "members", data.studentUid);
+      const destinationEnroll = ref(data.destinationId, "academicEnrollments", data.studentUid);
+      const sourceSchedule = ref(institutionId, "studentSchedules", data.studentUid);
+      const [from, prior, to, targetPrior, schedule] = await Promise.all([
+        tx.get(sourceMember), tx.get(sourceEnroll), tx.get(destinationMember),
+        tx.get(destinationEnroll), tx.get(sourceSchedule)
+      ]);
+      needed(from.exists && from.data().status === "active", "Student has no active source enrollment.");
+      needed(!to.exists || to.data().status !== "active", "Student already attends the destination.");
+      const entries = schedule.data()?.entries || {};
+      needed(!Object.values(entries).some(e => e.status === "active"),
+        "Withdraw active course registrations before transferring schools.");
+      const studentName = text(from.data().studentName || prior.data()?.studentName || "Student", 100);
+      tx.update(sourceMember, { status: "transferred", transferredTo: data.destinationId,
+        transferredBy: actor, transferredAt: now });
+      if (prior.exists) tx.update(sourceEnroll, { status: "transferred", updatedAt: now });
+      tx.set(destinationMember, { studentUid: data.studentUid, studentName,
+        status: "active", requestedAt: now, reviewedBy: actor, reviewedAt: now }, { merge: true });
+      tx.set(destinationEnroll, { studentUid: data.studentUid, studentName,
+        status: "active", academicYear: text(data.academicYear, 80),
+        gradeLevel: text(data.gradeLevel, 40), transferredFrom: institutionId,
+        admittedAt: now, updatedAt: now }, { merge: true });
+      audit(tx, institutionId, actor, "student_transferred_out",
+        { studentUid: data.studentUid, destinationId: data.destinationId });
+      audit(tx, data.destinationId, actor, "student_transferred_in",
+        { studentUid: data.studentUid, sourceId: institutionId });
+      return { transferred: true };
+    }
     if (action === "updateInstitution") {
       allow(ctx, "policy");
       needed(ctx.role === "owner" || ctx.role === "district_owner",
