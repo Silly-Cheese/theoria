@@ -78,6 +78,12 @@ async function eligibleEntrance(tx, section, studentUid, course) {
     failure("failed-precondition", "This course has prerequisites requiring a separate academic eligibility review.");
   if (Array.isArray(course.progressionRequirements) && course.progressionRequirements.length)
     failure("failed-precondition", "This course has progression requirements requiring a separate academic eligibility review.");
+  const progression = course.prerequisitePolicy || {};
+  if ((Array.isArray(progression.requiredCourseIds) && progression.requiredCourseIds.length) ||
+      (Array.isArray(progression.competencyRequirements) && progression.competencyRequirements.length) ||
+      progression.instructorApproval === true)
+    failure("failed-precondition",
+      "Course progression requirements must be certified by the instructor before institutional placement.");
   if (course.entranceExamRequired !== true && section.entranceExamRequired !== true) return;
   needed(id(section.entranceAssessmentId), "Entrance assessment is not configured.");
   const [candidate, result] = await Promise.all([
@@ -137,12 +143,19 @@ async function registrationTransaction(actor, institutionId, studentUid, offerin
       offeringId, sectionId, studentUid, studentName: displayName, term: currentYear,
       status: "active", enrolledBy: actor, enrolledAt: now, updatedAt: now
     });
+    const preferences = sectionMember.data()?.accommodations ||
+      student.data().defaultAccommodations || {};
     tx.set(memberRef, {
       userId: studentUid, displayName, email: student.data().email || "",
       role: "student", status: "enrolled", joinedAt: now,
       useProfileDefaults: true, accommodations: {
-        timeMultiplier: 1, breaks: false, calculator: false, largeText: false,
-        reducedDistractions: false, notes: ""
+        timeMultiplier: Number.isFinite(Number(preferences.timeMultiplier)) ?
+          Math.min(4, Math.max(1, Number(preferences.timeMultiplier))) : 1,
+        breaks: preferences.breaks === true,
+        calculator: preferences.calculator === true,
+        largeText: preferences.largeText === true,
+        reducedDistractions: preferences.reducedDistractions === true,
+        notes: text(preferences.notes, 500)
       }
     }, { merge: true });
     tx.set(userEnrollmentRef, {
@@ -416,12 +429,15 @@ export const institutionCommand = onCall(options, async request => {
       });
       else tx.create(memberRef, { studentUid, studentName, status: approve ? "active" : "declined",
         requestedAt: now, reviewedBy: actor, reviewedAt: now });
-      if (approve && !enrollment.exists) tx.create(enrollRef, {
-        studentUid, studentName, status: "active", academicYear: text(data.academicYear, 80),
-        gradeLevel: text(application.data()?.gradeLevel || data.gradeLevel, 40),
-        program: text(application.data()?.program, 120),
-        admittedAt: now, updatedAt: now
-      });
+      if (approve) {
+        if (!enrollment.exists) tx.create(enrollRef, {
+          studentUid, studentName, status: "active", academicYear: text(data.academicYear, 80),
+          gradeLevel: text(application.data()?.gradeLevel || data.gradeLevel, 40),
+          program: text(application.data()?.program, 120),
+          admittedAt: now, updatedAt: now
+        });
+        else tx.update(enrollRef, { status: "active", updatedAt: now });
+      }
       audit(tx, institutionId, actor, approve ? "admission_approved" : "admission_declined", { studentUid });
       return { studentUid, status: approve ? "active" : "declined" };
     }
