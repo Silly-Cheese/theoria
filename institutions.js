@@ -51,7 +51,7 @@ async function render(){
  if(!inst){root.innerHTML='<div class="institution-empty"><h3>Find your school</h3><p>When your school appears here, request membership before registering for its courses.</p></div>';return;}
  root.innerHTML='<div class="institution-heading"><div><div class="eyebrow">'+escapeHTML(inst.kind==="district"?"District workspace":"School course catalog")+'</div><h2>'+escapeHTML(inst.name)+'</h2><p class="page-subtitle">'+escapeHTML(inst.description||"Academic programs and registration")+'</p></div>'+(isManager(inst)?'<button class="secondary-btn small-btn" data-inst-action="new-offering">Publish offering</button>':'')+'</div>'+
  (inst.parentDistrictId?'<p class="fineprint">Part of a school district</p>':'')+
- (profileRole==="student"?'<div class="institution-member-status" id="institutionMemberStatus"></div>':'')+'<div id="institutionOfferings" aria-live="polite">Loading course catalog…</div><div id="schoolManagementArea"></div>';
+ (profileRole==="student"?'<div class="institution-member-status" id="institutionMemberStatus"></div>':'')+'<div id="institutionOfferings" aria-live="polite">Loading course catalog…</div><div id="institutionAdminNew"></div><div id="schoolManagementArea"></div>';
  const membership=memberships.get(inst.id);const statusEl=$("#institutionMemberStatus");if(statusEl)statusEl.innerHTML=membership?'<p class="page-subtitle">School membership: <strong>'+escapeHTML(membership.status)+'</strong></p>' :'<p class="page-subtitle">You have not joined this '+(inst.kind==="district"?'district':'school')+' yet.</p><button class="primary-btn" data-inst-join="'+escapeHTML(inst.id)+'">Request to join '+(inst.kind==="district"?'district':'school')+'</button>';
  try{
   const snap=await getDocs(query(collection(db,"institutions",inst.id,"offerings"),where("published","==",true)));
@@ -66,6 +66,7 @@ async function render(){
   }).join(""):'<p class="page-subtitle">No published offerings yet. Administrators can create the school catalog here.</p>';
  }catch(e){console.error(e);$("#institutionOfferings").textContent="Unable to load offerings. Check access and Firestore rules.";}
  window.TheoriaSchoolAdmin?.mount(inst,currentUser);
+ window.TheoriaInstitutionAdmin?.mount(inst,currentUser);
 }
 
 async function finishDistrictOnboarding(profile,name,title){
