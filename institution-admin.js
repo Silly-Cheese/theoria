@@ -53,12 +53,21 @@ async function load() {
   } catch (error) {
     if (key !== loadingKey) return;
     state = null;
+    const code = String(error.code || "");
+    const offline = ["functions/not-found", "functions/unavailable", "functions/internal",
+      "functions/deadline-exceeded"].includes(code);
     root.innerHTML = '<section class="ias-workspace"><h2>Institution administration</h2>' +
-      '<p class="ias-muted">This workspace is only available to authorized staff. ' +
-      'Students can use the school catalog above.</p>' +
-      '<p class="ias-notice">' + E(error.message || "Unable to load workspace.") + '</p>' +
+      '<p class="ias-muted">' + (offline ?
+      'The new institutional service is not available. Existing administration tools remain available below.' :
+      'The secure administration workspace is available to authorized staff. Students can use the school catalog above.') +
+      '</p><p class="ias-notice">' + E(error.message || "Unable to load workspace.") + '</p>' +
       '<div id="iasStudentTools"></div></section>';
-    await studentTools();
+    if (offline && !legacyMounted) {
+      legacyMounted = true;
+      document.body.classList.add("theoria-show-legacy");
+      window.TheoriaSchoolAdmin?.mount(institution, user);
+    }
+    if (!offline) await studentTools();
   }
 }
 async function studentTools() {
