@@ -1,7 +1,7 @@
 # Theoria 8 — Institutional management, section deletion and UI overhaul
 
 **Branch:** feature/institution-enrollment-overhaul-20261107  
-**Pull request:** https://github.com/Silly-Cheese/theoria/pull/7  
+**Pull request:** https://github.com/Silly-Cheese/theoria/pull/8  
 **Firebase project:** theoria-79433  
 **Frontend:** GitHub Pages, not Firebase Hosting
 
