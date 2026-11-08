@@ -237,3 +237,22 @@ body.theoria-institution-upgraded:not(.theoria-show-legacy) #campusOperations{di
  .ias-stat-grid{grid-template-columns:minmax(0,1fr)}
  #page-section-detail .detail-top>.inline-actions{grid-template-columns:1fr}
 }
+
+/* Mobile section navigation replaces the horizontal ten-tab strip. */
+#page-section-detail .section-tab-picker{display:none}
+@media(max-width:760px){
+ #page-section-detail .section-tab-picker{
+  display:flex;gap:12px;align-items:center;justify-content:space-between;
+  padding:13px 14px;margin:8px 0 18px;background:#fff;
+  border:1px solid var(--line);border-radius:11px
+ }
+ #page-section-detail .section-tab-picker label{
+  flex:1;font-size:11px;color:var(--slate);font-weight:700
+ }
+ #page-section-detail .section-tab-picker select{
+  flex:1.4;min-width:0;max-width:66%;padding:11px 13px;
+  border:1px solid var(--lineDark);border-radius:9px;
+  color:var(--ink);background:var(--paper);font:600 12px Inter,system-ui,sans-serif
+ }
+ #page-section-detail .tabs{display:none!important}
+}
