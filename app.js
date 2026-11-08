@@ -1755,7 +1755,10 @@ function sectionTabs(active){
   const tabs=instructor
     ? [["overview","Overview"],["framework","Course Guide"],["assignments","Assignments"],["resources","Resources"],["examinations","Assessments"],["students","Students"],["gradebook","Gradebook"],["grading","Grading Policy"],["analytics","Analytics"],["records","Records"]]
     : [["overview","Overview"],["framework","Course Guide"],["assignments","Assignments"],["resources","Resources"],["examinations","Assessments"],["grades","Grades"],["pathway","Grading Pathway"],["progress","Progress"],["record","Academic Record"]];
-  return '<div class="tabs">'+tabs.map(([id,label])=>'<button class="tab-btn '+(active===id?'active':'')+'" data-action="section-tab" data-tab="'+id+'">'+label+'</button>').join("")+'</div>';
+  return '<div class="section-tab-picker"><label for="sectionTabSelect">Section workspace</label><select id="sectionTabSelect" data-section-tab-select aria-label="Choose section workspace">'+
+    tabs.map(([id,label])=>'<option value="'+id+'" '+(active===id?'selected':'')+'>'+esc(label)+'</option>').join("")+
+    '</select></div><div class="tabs" aria-label="Section workspace navigation">'+
+    tabs.map(([id,label])=>'<button class="tab-btn '+(active===id?'active':'')+'" data-action="section-tab" data-tab="'+id+'">'+label+'</button>').join("")+'</div>';
 }
 
 function renderFrameworkReadOnly(){
@@ -2515,7 +2518,7 @@ function renderSectionDetail(tab="overview"){
 
   $("#sectionDetail").innerHTML =
     '<button class="text-btn" data-action="back-sections">← Sections</button>'+
-    '<div class="detail-hero"><div class="detail-top"><div><div class="eyebrow">'+esc(s.courseCode||"Section")+' • '+esc(s.term||"")+'</div><h1 class="detail-title">'+esc(s.courseTitle||s.sectionName||"Section")+'</h1><div class="detail-meta"><span>'+esc(s.sectionName||("Section "+(s.sectionNumber||"")))+'</span><span>'+esc(s.instructorName||"")+'</span><span>'+esc(s.startDate?formatDate(s.startDate)+" – "+formatDate(s.endDate):s.format||"")+'</span></div></div>'+(ownsSection?'<div class="inline-actions"><button class="secondary-btn small-btn" data-action="edit-section">Edit Section</button><button class="danger-btn small-btn" data-action="delete-section">Delete Section</button></div>':'<div class="inline-actions"></div>')+'</div></div>'+
+    '<div class="detail-hero"><div class="detail-top"><div><div class="eyebrow">'+esc(s.courseCode||"Section")+' • '+esc(s.term||"")+'</div><h1 class="detail-title">'+esc(s.courseTitle||s.sectionName||"Section")+'</h1><div class="detail-meta"><span>'+esc(s.sectionName||("Section "+(s.sectionNumber||"")))+'</span><span>'+esc(s.instructorName||"")+'</span><span>'+esc(s.startDate?formatDate(s.startDate)+" – "+formatDate(s.endDate):s.format||"")+'</span></div></div>'+(ownsSection?'<div class="inline-actions"><button class="secondary-btn small-btn" data-action="edit-section">Edit Section</button><button class="danger-btn small-btn" data-action="delete-section">Archive / Delete</button></div>':'<div class="inline-actions"></div>')+'</div></div>'+
     sectionTabs(tab)+'<div id="sectionTabBody">'+body+'</div>';
   if(["examinations","grading","pathway"].includes(tab) && window.TheoriaPhase3?.renderSectionTab){
     window.TheoriaPhase3.renderSectionTab(tab);
@@ -4326,6 +4329,10 @@ window.TheoriaCore = {
   }
 };
 
+document.addEventListener("change",event=>{
+  const selector=event.target.closest("[data-section-tab-select]");
+  if(selector && state.currentSection)renderSectionDetail(selector.value);
+});
 document.addEventListener("click",async event=>{
   const close=event.target.closest("[data-close-modal]");
   if(close){closeModal();return;}
