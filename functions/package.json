@@ -8,7 +8,7 @@
   },
   "scripts": {
     "test": "node --test academic-policy.test.js",
-    "check": "node --check index.js && node --check institution-operations.js && node --check section-lifecycle.js && npm test"
+    "check": "node --check index.js && node --check institution-operations.js && node --check section-lifecycle.js && node --check institution-deletion.js && npm test"
   },
   "dependencies": {
     "firebase-admin": "^13.4.0",
