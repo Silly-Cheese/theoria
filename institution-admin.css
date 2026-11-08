@@ -1,62 +1,239 @@
-/* Theoria institutional operations — unified layout, responsive and accessible. */
-#institutionAdminNew { min-width:0; margin:18px 0 24px; }
-.ias-workspace { border:1px solid var(--border, rgba(120,120,120,.25)); border-radius:20px;
-  background:var(--surface, #fff); padding:22px; box-shadow:0 8px 30px rgba(15,23,42,.04);
-  color:inherit; min-width:0; }
-.ias-head,.ias-tools,.ias-section-head,.ias-entry,.ias-entry-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-.ias-head { align-items:flex-start; flex-wrap:wrap; }
-.ias-head h2 { margin:4px 0 6px; font-size:clamp(1.25rem,2vw,1.8rem); line-height:1.3; }
-.ias-muted { opacity:.75; line-height:1.5; margin:5px 0 10px; }
-.ias-small { opacity:.73; line-height:1.5; font-size:.82rem; margin:12px 0; }
-.ias-tools,.ias-entry-actions { flex-wrap:wrap; justify-content:flex-start; }
-.ias-nav { display:flex; gap:7px; overflow-x:auto; border-bottom:1px solid var(--border,rgba(120,120,120,.25)); margin:20px 0;
-  padding:0 0 9px; max-width:100%; scrollbar-width:thin; }
-.ias-nav button { border:1px solid transparent; background:transparent; color:inherit;
-  padding:9px 12px; border-radius:10px; font:inherit; font-size:.88rem; cursor:pointer; white-space:nowrap; }
-.ias-nav button:hover,.ias-nav button:focus-visible { border-color:var(--border,rgba(120,120,120,.3)); background:rgba(100,116,139,.1); }
-.ias-nav button.active { background:var(--accent-soft,rgba(40,96,150,.12)); border-color:var(--border,rgba(120,120,120,.3)); font-weight:700; }
-.ias-stat-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:11px; }
-.ias-tile { border:1px solid var(--border,rgba(120,120,120,.2)); border-radius:13px;
-  background:var(--surface-alt,rgba(100,116,139,.05)); padding:18px 14px; min-width:0; }
-.ias-tile strong { display:block; font-size:clamp(1.25rem,2vw,1.75rem); line-height:1.25; }
-.ias-tile span { display:block; font-size:.78rem; opacity:.75; margin-top:5px; }
-.ias-two-column { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(250px,1fr); gap:24px; margin-top:20px; }
-.ias-workspace h3 { font-size:1.05rem; margin:12px 0; }
-.ias-workspace h4 { margin:22px 0 10px; font-size:.91rem; }
-.ias-entry { border-bottom:1px solid var(--border,rgba(120,120,120,.19)); align-items:center;
-  padding:13px 0; min-width:0; }
-.ias-entry:first-of-type { border-top:1px solid var(--border,rgba(120,120,120,.19)); }
-.ias-entry > div:first-child { min-width:0; overflow-wrap:anywhere; }
-.ias-entry strong { display:block; font-size:.92rem; }
-.ias-entry p { margin:5px 0 0; font-size:.83rem; opacity:.78; line-height:1.5; overflow-wrap:anywhere; }
-.ias-empty { padding:22px 15px; text-align:center; background:rgba(100,116,139,.06);
-  border-radius:12px; opacity:.76; font-size:.9rem; }
-.ias-notice { border-left:3px solid var(--accent,#475569); background:rgba(100,116,139,.07);
-  padding:12px 14px; border-radius:8px; margin:16px 0; overflow-wrap:anywhere; }
-.ias-notice[hidden] { display:none !important; }
-.ias-apply { margin-top:18px; border-top:1px solid var(--border,rgba(120,120,120,.2)); padding-top:15px; }
-.ias-form { display:grid; gap:14px; max-width:540px; margin-top:12px; }
-.ias-form label { display:grid; gap:7px; }
-.ias-form input,.ias-form textarea { border:1px solid var(--border,#cbd5e1);
-  border-radius:10px; background:var(--surface,#fff); color:inherit; font:inherit; padding:11px; width:100%; }
-#iasFormError:not(:empty) { margin:10px 0; color:#b91c1c; }
+/* Theoria institutional workspace — tailored to the native ivory, burgundy and ink palette. */
+#page-institutions{max-width:1480px}
+#page-institutions .inst-hero{
+ position:relative;display:flex;align-items:center;gap:24px;overflow:hidden;
+ background:linear-gradient(112deg,#191817 0%,#301f22 62%,#55212c 100%);
+ color:#f9f4ec;border:1px solid #4b3837;border-radius:18px;padding:30px 32px;margin-bottom:23px;
+ box-shadow:0 12px 28px rgba(27,16,20,.10)
+}
+#page-institutions .inst-hero-mark{
+ display:grid;place-items:center;flex:none;width:76px;height:76px;
+ border:1px solid rgba(225,202,163,.48);color:#ead2a6;border-radius:17px;
+ font:42px/1 "Libre Baskerville",Georgia,serif
+}
+#page-institutions .inst-hero-copy{position:relative;z-index:1;min-width:0}
+#page-institutions .inst-hero h1{font:400 clamp(1.7rem,3vw,2.5rem)/1.2 "Libre Baskerville",Georgia,serif;margin:7px 0 8px}
+#page-institutions .inst-hero .eyebrow{color:#d3b986}
+#page-institutions .inst-hero p{margin:0;max-width:670px;color:#e2d8cf;font-size:13px;line-height:1.7}
+#page-institutions .inst-layout{display:grid;grid-template-columns:minmax(230px,270px) minmax(0,1fr);align-items:start;gap:20px}
+#page-institutions .inst-directory{
+ background:#fff;border:1px solid var(--line);border-radius:16px;overflow:hidden;
+ box-shadow:0 7px 20px rgba(22,21,19,.025);min-width:0
+}
+#page-institutions .inst-directory-heading{padding:20px 18px 11px}
+#page-institutions .inst-directory-heading strong{display:block;font-size:13px;color:var(--ink)}
+#page-institutions .inst-directory-heading span{display:block;font-size:11px;color:var(--muted);margin-top:6px}
+#page-institutions .inst-directory-search{display:block;padding:1px 15px 13px}
+#page-institutions .inst-directory-search .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+#page-institutions .inst-directory-search input{
+ width:100%;min-width:0;background:var(--paper);border:1px solid var(--line);
+ border-radius:9px;padding:11px 13px;font:inherit;font-size:12px;color:var(--ink)
+}
+#page-institutions .inst-directory-search input:focus-visible{
+ outline:2px solid var(--burgundy);outline-offset:1px
+}
+#page-institutions #institutionList{padding:0 9px 13px;max-height:540px;overflow:auto;scrollbar-width:thin}
+#page-institutions #institutionList .institution-actions{padding:2px 6px 13px}
+#page-institutions #institutionList .institution-actions button{width:100%}
+#page-institutions .institution-list-item{
+ width:100%;padding:12px 10px;text-align:left;border:1px solid transparent;
+ background:transparent;color:var(--ink);border-radius:10px;
+ display:flex;align-items:center;gap:10px;margin:2px 0;min-width:0
+}
+#page-institutions .institution-list-item:hover{border-color:var(--line);background:var(--paper)}
+#page-institutions .institution-list-item.selected{background:#f6eff0;border-color:#c9afb5}
+#page-institutions .institution-list-item[hidden]{display:none}
+#page-institutions .inst-item-symbol{
+ display:grid;place-items:center;flex:none;width:32px;height:32px;border-radius:9px;
+ background:var(--paper2);color:var(--burgundy);font-size:17px
+}
+#page-institutions .inst-item-content{min-width:0;flex:1}
+#page-institutions .inst-item-content strong{display:block;font-size:12px;font-weight:700;overflow-wrap:anywhere}
+#page-institutions .inst-item-content small{display:block;font-size:10px;line-height:1.4;color:var(--slate);margin-top:5px}
+#page-institutions .inst-content{min-width:0}
+#page-institutions .inst-profile{
+ display:flex;gap:15px;align-items:center;min-width:0;padding:20px 22px;
+ background:#fff;border:1px solid var(--line);border-radius:16px;margin-bottom:17px
+}
+#page-institutions .inst-profile-avatar{
+ flex:none;display:grid;place-items:center;width:52px;height:52px;border-radius:14px;
+ background:#f4e9eb;color:var(--burgundy);
+ font:25px "Libre Baskerville",Georgia,serif
+}
+#page-institutions .inst-profile-detail{min-width:0;flex:1}
+#page-institutions .inst-profile-detail h2{
+ margin:6px 0 4px;font:400 clamp(18px,2.5vw,25px) "Libre Baskerville",Georgia,serif;
+ overflow-wrap:anywhere
+}
+#page-institutions .inst-profile-detail p{margin:0;font-size:11px;line-height:1.6;color:var(--slate)}
+#page-institutions .inst-profile-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:11px}
+#page-institutions .inst-profile-tags span{
+ font-size:10px;font-weight:600;border:1px solid var(--line);color:var(--slate);
+ border-radius:999px;padding:5px 9px;background:var(--paper)
+}
+#page-institutions .institution-member-status{padding:15px 18px;border:1px solid var(--line);background:#fff;border-radius:12px;margin-bottom:16px}
+#page-institutions .inst-catalog{
+ margin:18px 0;background:#fff;border:1px solid var(--line);
+ border-radius:14px;overflow:hidden
+}
+#page-institutions .inst-catalog summary{
+ display:flex;justify-content:space-between;align-items:center;gap:12px;
+ padding:17px 20px;cursor:pointer;list-style:none;user-select:none
+}
+#page-institutions .inst-catalog summary::-webkit-details-marker{display:none}
+#page-institutions .inst-catalog summary strong{display:block;font-size:13px}
+#page-institutions .inst-catalog summary small{display:block;color:var(--slate);font-size:11px;margin-top:5px}
+#page-institutions #institutionOfferings{padding:18px;border-top:1px solid var(--line)}
+#page-institutions #institutionOfferings .institution-offering{padding:16px;margin-bottom:12px;border-radius:12px;border:1px solid var(--line);background:var(--paper)}
+#page-institutions #institutionOfferings .institution-offering:last-child{margin-bottom:0}
+#page-institutions .institution-notice{margin-bottom:18px}
+#institutionAdminNew{min-width:0}
+.ias-workspace{
+ background:#fff;border:1px solid var(--line);border-radius:16px;
+ overflow:hidden;min-width:0;box-shadow:0 6px 22px rgba(25,24,23,.025)
+}
+.ias-head{
+ display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;
+ padding:20px 22px;border-bottom:1px solid var(--line);background:#fff
+}
+.ias-heading{min-width:0;flex:1}
+.ias-head h2{
+ font:400 clamp(19px,2vw,25px)/1.27 "Libre Baskerville",Georgia,serif;
+ margin:5px 0 12px;overflow-wrap:anywhere
+}
+.ias-head .eyebrow{font-size:9px}
+.ias-context{display:flex;gap:6px;flex-wrap:wrap}
+.ias-context-pill{
+ display:inline-flex;border-radius:999px;border:1px solid var(--line);
+ padding:5px 10px;font-size:10px;color:var(--slate);background:var(--paper)
+}
+.ias-tools,.ias-section-head,.ias-entry-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.ias-tools .secondary-btn{min-height:38px}
+.ias-shell{display:grid;grid-template-columns:minmax(170px,204px) minmax(0,1fr);min-width:0}
+.ias-nav{
+ position:sticky;top:var(--topbar,72px);align-self:start;display:flex;
+ flex-direction:column;gap:5px;padding:21px 12px;min-width:0;
+ background:#faf8f4;border-right:1px solid var(--line);
+ max-height:calc(100vh - var(--topbar,72px) - 18px);overflow:auto
+}
+.ias-nav-label{color:var(--muted);letter-spacing:.16em;font-size:9px;font-weight:700;padding:0 11px 12px}
+.ias-nav button{
+ display:flex;align-items:center;gap:10px;width:100%;background:transparent;
+ padding:11px 11px;border:1px solid transparent;border-radius:9px;
+ font:600 11px/1.3 Inter,system-ui,sans-serif;text-align:left;color:var(--slate);
+ white-space:normal;cursor:pointer;transition:background .15s,border .15s
+}
+.ias-nav button:hover{background:#eee9df;color:var(--ink)}
+.ias-nav button.active{background:#f1e5e8;border-color:#ddc3cb;color:var(--burgundy)}
+.ias-nav button:focus-visible{outline:2px solid var(--burgundy);outline-offset:1px}
+.ias-tab-icon{display:inline-flex;align-items:center;justify-content:center;flex:none;
+ width:22px;height:22px;font-size:17px;font-family:Georgia,serif}
+.ias-view{min-width:0;padding:22px 24px 30px}
+.ias-content-head{margin-bottom:19px;padding-bottom:15px;border-bottom:1px solid var(--line)}
+.ias-content-head .eyebrow{font-size:9px}
+.ias-content-head h3{font:400 23px/1.35 "Libre Baskerville",Georgia,serif;margin:6px 0 0}
+.ias-stat-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.ias-tile{
+ padding:20px 18px;background:#fcfaf5;border:1px solid var(--line);
+ border-radius:12px;min-width:0
+}
+.ias-tile strong{display:block;color:var(--burgundy);font:400 clamp(22px,3vw,32px)/1.2 "Libre Baskerville",Georgia,serif}
+.ias-tile span{display:block;font-size:11px;color:var(--slate);margin-top:8px;line-height:1.5}
+.ias-two-column{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:20px;margin-top:22px}
+.ias-workspace h3,.ias-workspace h4{color:var(--ink)}
+.ias-workspace h4{font-size:12px;letter-spacing:.05em;font-weight:700;margin:22px 0 12px}
+.ias-section-head{justify-content:space-between;align-items:center;margin-bottom:16px}
+.ias-section-head h3{font-size:15px;margin:0;line-height:1.5}
+.ias-entry{
+ display:flex;justify-content:space-between;align-items:center;gap:15px;
+ min-width:0;padding:14px 0;border-bottom:1px solid var(--line)
+}
+.ias-entry:first-of-type{border-top:1px solid var(--line)}
+.ias-entry>div:first-child{flex:1;min-width:0}
+.ias-entry strong{display:block;color:var(--ink);font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+.ias-entry p{font-size:11px;color:var(--slate);line-height:1.6;margin:3px 0 0;overflow-wrap:anywhere}
+.ias-entry-actions{justify-content:flex-end}
+.ias-entry-actions button{min-height:37px}
+.ias-muted,.ias-small{color:var(--slate);line-height:1.65}
+.ias-muted{font-size:12px}
+.ias-small{font-size:10px;margin:12px 0}
+.ias-empty{border:1px dashed var(--lineDark);padding:24px 16px;text-align:center;border-radius:12px;color:var(--muted);font-size:12px;background:var(--paper)}
+.ias-notice{margin:15px 22px;border:1px solid #d9bcc6;border-left:3px solid var(--burgundy);background:#fbf2f3;border-radius:9px;padding:12px 14px;font-size:11px;line-height:1.6}
+.ias-notice[hidden]{display:none}
+.ias-apply{padding:16px;margin-top:14px;border:1px solid var(--line);border-radius:12px}
+.ias-form{display:grid;gap:14px;margin:14px 0 0;max-width:580px}
+.ias-form label{font-size:12px;font-weight:600;display:grid;gap:7px}
+.ias-form input,.ias-form textarea{width:100%;border:1px solid var(--lineDark);border-radius:8px;padding:11px 12px;background:#fff;font:inherit}
+.ias-danger-copy{padding:15px 16px;margin:0 0 15px;border:1px solid #e5c4ca;border-left:4px solid var(--danger);
+ border-radius:9px;background:#fff7f7;color:var(--ink);line-height:1.6}
+#iasFormError:not(:empty){margin:10px 0;color:#9d202c;font-size:12px}
 body.theoria-institution-upgraded:not(.theoria-show-legacy) #schoolManagementArea,
 body.theoria-institution-upgraded:not(.theoria-show-legacy) #schoolRegistrarExpansion,
 body.theoria-institution-upgraded:not(.theoria-show-legacy) #theoriaExpansion,
-body.theoria-institution-upgraded:not(.theoria-show-legacy) #campusOperations { display:none !important; }
-#page-institutions .institution-grid { grid-template-columns:minmax(205px,265px) minmax(0,1fr); align-items:start; }
-#page-institutions .institution-grid>.panel { min-width:0; }
-#page-institutions .institution-list-item { width:100%; overflow-wrap:anywhere; }
-@media(max-width:950px) {
-  #page-institutions .institution-grid { grid-template-columns:minmax(0,1fr); }
-  .ias-stat-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+body.theoria-institution-upgraded:not(.theoria-show-legacy) #campusOperations{display:none!important}
+/* Section detail: fewer cramped controls and more legible tabs at narrow widths. */
+#page-section-detail .detail-hero{border-radius:15px;padding:23px 25px;box-shadow:0 7px 24px rgba(32,25,22,.03)}
+#page-section-detail .detail-title{font-size:clamp(22px,2.5vw,34px);line-height:1.3}
+#page-section-detail .detail-meta{font-size:11px;line-height:1.6;gap:8px 18px}
+#page-section-detail .detail-top>.inline-actions{gap:9px;display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end}
+#page-section-detail .detail-top>.inline-actions .danger-btn{background:#fff;color:var(--danger);border:1px solid #cb9aa5}
+#page-section-detail .tabs{scrollbar-width:thin;scroll-snap-type:x proximity;max-width:100%;border-bottom-color:var(--line)}
+#page-section-detail .tab-btn{min-height:46px;scroll-snap-align:start;padding:12px 16px;font-size:12px}
+#page-section-detail #sectionTabBody{min-width:0}
+#page-section-detail .join-display{border-radius:12px}
+#page-section-detail .section-summary{border-radius:12px;overflow:hidden}
+/* Tablet: keep institutional management primary and navigation accessible. */
+@media(max-width:1100px){
+ #page-institutions .inst-layout{grid-template-columns:minmax(0,1fr);gap:14px}
+ #page-institutions #institutionList{max-height:250px}
+ .ias-shell{grid-template-columns:minmax(0,1fr)}
+ .ias-nav{
+  position:static;display:flex;flex-direction:row;align-items:center;
+  overflow-x:auto;overflow-y:hidden;max-height:none;
+  white-space:nowrap;border-right:0;border-bottom:1px solid var(--line);
+  padding:10px 13px;gap:5px;scrollbar-width:thin;scroll-snap-type:x proximity
+ }
+ .ias-nav-label{display:none}
+ .ias-nav button{flex:none;width:auto;white-space:nowrap;min-height:42px;scroll-snap-align:start}
+ .ias-tab-icon{width:18px}
+ .ias-view{padding:22px 19px}
 }
-@media(max-width:650px) {
-  .ias-workspace { padding:15px 12px; border-radius:14px; }
-  .ias-two-column { grid-template-columns:minmax(0,1fr); }
-  .ias-head,.ias-section-head { align-items:stretch; flex-direction:column; }
-  .ias-entry { align-items:flex-start; flex-direction:column; }
-  .ias-entry-actions { gap:8px; }
-  .ias-tools button,.ias-entry-actions button { min-height:40px; }
-  .ias-tile { padding:12px; }
+@media(max-width:650px){
+ #page-institutions .inst-hero{padding:21px 17px;gap:12px;border-radius:12px;margin-bottom:15px}
+ #page-institutions .inst-hero-mark{width:42px;height:42px;border-radius:10px;font-size:23px}
+ #page-institutions .inst-hero h1{font-size:clamp(22px,6vw,29px)}
+ #page-institutions .inst-hero p{font-size:11px}
+ #page-institutions .inst-directory{border-radius:12px}
+ #page-institutions .inst-profile{padding:17px 14px;gap:10px;flex-wrap:wrap;border-radius:12px}
+ #page-institutions .inst-profile-avatar{width:43px;height:43px;font-size:21px}
+ #page-institutions .inst-profile-detail{min-width:180px}
+ #page-institutions .inst-profile>.secondary-btn{width:100%}
+ #page-institutions #institutionOfferings{padding:11px}
+ .ias-workspace{border-radius:12px}
+ .ias-head{padding:17px 14px;align-items:flex-start}
+ .ias-head h2{font-size:20px}
+ .ias-tools{width:100%}
+ .ias-tools button{flex:1;min-height:42px}
+ .ias-nav{padding:10px 11px}
+ .ias-nav button{font-size:11px;padding:10px 12px}
+ .ias-view{padding:18px 13px 25px}
+ .ias-content-head h3{font-size:21px}
+ .ias-stat-grid,.ias-two-column{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:9px}
+ .ias-two-column{grid-template-columns:minmax(0,1fr)}
+ .ias-tile{padding:15px 12px}
+ .ias-section-head{align-items:stretch;flex-direction:column}
+ .ias-section-head button{width:100%;min-height:42px}
+ .ias-entry{align-items:flex-start;flex-direction:column;gap:10px}
+ .ias-entry-actions{justify-content:flex-start;width:100%}
+ .ias-entry-actions button{min-height:43px;flex:1}
+ #page-section-detail .detail-hero{padding:18px 15px}
+ #page-section-detail .detail-top{gap:16px;flex-direction:column}
+ #page-section-detail .detail-top>.inline-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}
+ #page-section-detail .detail-top>.inline-actions>button{width:100%;min-height:44px}
+ #page-section-detail .tabs{margin-left:0;margin-right:0;padding:0;gap:4px}
+ #page-section-detail .tab-btn{font-size:12px}
+}
+@media(max-width:400px){
+ .ias-stat-grid{grid-template-columns:minmax(0,1fr)}
+ #page-section-detail .detail-top>.inline-actions{grid-template-columns:1fr}
 }
