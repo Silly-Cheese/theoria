@@ -37,23 +37,35 @@ async function refresh(){
  }
 }
 function shell(){
- return '<div class="page-head"><div><div class="eyebrow">Theoria Institutions</div><h1 class="page-title">Schools & Districts</h1><p class="page-subtitle">Create academic institutions, publish school catalogs, and manage defined course-registration windows. Independent courses remain unchanged.</p></div></div>'+
- '<div id="institutionNotice" class="institution-notice" role="status" hidden></div><div class="institution-grid">'+
- '<div class="panel"><div class="panel-head"><div class="panel-title">Institutions</div></div><div class="panel-body"><div id="institutionList"></div></div></div>'+
- '<div class="panel"><div class="panel-head"><div class="panel-title">Institution workspace</div></div><div class="panel-body"><div id="institutionWorkspace"></div></div></div></div>';
+ return '<header class="inst-hero"><div class="inst-hero-mark" aria-hidden="true">Θ</div>'+
+   '<div class="inst-hero-copy"><div class="eyebrow">THEORIA / INSTITUTIONAL OPERATIONS</div>'+
+   '<h1>Schools &amp; Districts</h1><p>Manage enrollment, people, schools and academic operations in one organized workspace.</p></div>'+
+   '</header><div id="institutionNotice" class="institution-notice" role="status" hidden></div>'+
+   '<div class="inst-layout"><aside class="inst-directory"><div class="inst-directory-heading">'+
+   '<div><strong>Institution directory</strong><span>Select your school or district</span></div></div>'+
+   '<label class="inst-directory-search"><span class="sr-only">Search institutions</span>'+
+   '<input type="search" id="institutionSearch" autocomplete="off" placeholder="Search institutions…"></label>'+
+   '<div id="institutionList"></div></aside><div class="inst-content" id="institutionWorkspace"></div></div>';
 }
 function institutionOptions(){return institutions.filter(i=>i.kind==="district"&&isManager(i)).map(i=>'<option value="'+escapeHTML(i.id)+'">'+escapeHTML(i.name)+'</option>').join("");}
 async function render(){
  const root=$("#institutionWorkspace"),list=$("#institutionList");if(!root||!list)return;
  list.innerHTML=(profileRole==="instructor"?'<div class="institution-actions"><button class="primary-btn" data-inst-action="new">Create school or district</button></div>':'')+
-  (institutions.length?institutions.map(i=>'<button class="institution-list-item '+(activeId===i.id?'selected':'')+'" data-inst-select="'+escapeHTML(i.id)+'"><strong>'+escapeHTML(i.name)+'</strong><small>'+escapeHTML(i.kind==="district"?"School district":"School / institution")+(i.verified?" · Verified":" · Unverified")+(isManager(i)?" · Managed by you":"")+'</small></button>').join(""):'<p class="page-subtitle">No available schools or districts have been published yet.</p>');
+  (institutions.length?institutions.map(i=>'<button class="institution-list-item '+(activeId===i.id?'selected':'')+'" data-inst-select="'+escapeHTML(i.id)+'" data-name="'+escapeHTML(i.name.toLowerCase())+'"><span class="inst-item-symbol" aria-hidden="true">'+escapeHTML(i.kind==="district"?"▣":"▤")+'</span><span class="inst-item-content"><strong>'+escapeHTML(i.name)+'</strong><small>'+escapeHTML(i.kind==="district"?"District":"School")+(i.verified?" · Verified":" · Unverified")+(isManager(i)?" · Your workspace":"")+'</small></span><span aria-hidden="true">›</span></button>').join(""):'<p class="page-subtitle">No available schools or districts have been published yet.</p>');
  const inst=institutions.find(i=>i.id===activeId);
  if(!inst){root.innerHTML='<div class="institution-empty"><h3>Find your school</h3><p>When your school appears here, request membership before registering for its courses.</p></div>';return;}
- root.innerHTML='<div class="institution-heading"><div><div class="eyebrow">'+escapeHTML(inst.kind==="district"?"District workspace":"School course catalog")+'</div><h2>'+escapeHTML(inst.name)+'</h2><p class="page-subtitle">'+escapeHTML(inst.description||"Academic programs and registration")+'</p></div>'+(isManager(inst)?'<button class="secondary-btn small-btn" data-inst-action="new-offering">Publish offering</button>':'')+'</div>'+
- (inst.parentDistrictId?'<p class="fineprint">Part of a school district</p>':'')+
- (profileRole==="student"?'<div class="institution-member-status" id="institutionMemberStatus"></div>':'')+'<div id="institutionOfferings" aria-live="polite">Loading course catalog…</div><div id="institutionAdminNew"></div><div id="schoolManagementArea"></div>';
+ root.innerHTML='<section class="inst-profile"><div class="inst-profile-avatar" aria-hidden="true">'+escapeHTML((inst.name||"T").trim().charAt(0).toUpperCase())+'</div>'+
+ '<div class="inst-profile-detail"><div class="eyebrow">'+escapeHTML(inst.kind==="district"?"District administration":"Institution administration")+'</div>'+
+ '<h2>'+escapeHTML(inst.name)+'</h2><p>'+escapeHTML(inst.description||"Academic programs, people and enrollment")+'</p>'+
+ '<div class="inst-profile-tags"><span>'+escapeHTML(inst.kind==="district"?"School district":"Academic institution")+'</span>'+
+ '<span>'+escapeHTML(inst.verified?"Verified":"Unverified")+'</span>'+(inst.parentDistrictId?'<span>District affiliate</span>':'')+'</div></div>'+
+ (isManager(inst)&&inst.kind==="school"?'<button class="secondary-btn small-btn" data-inst-action="new-offering">+ Publish course</button>':'')+'</section>'+
+ (profileRole==="student"?'<div class="institution-member-status" id="institutionMemberStatus"></div>':'')+
+ '<div id="institutionAdminNew"></div>'+
+ (inst.kind==="school"?'<details class="inst-catalog" '+(profileRole==="student"?'open':'')+'><summary><span><strong>Course catalog</strong><small>Browse available courses and registration windows</small></span><span aria-hidden="true">⌄</span></summary><div id="institutionOfferings" aria-live="polite">Loading course catalog…</div></details>':'')+
+ '<div id="schoolManagementArea"></div>';
  const membership=memberships.get(inst.id);const statusEl=$("#institutionMemberStatus");if(statusEl)statusEl.innerHTML=membership?'<p class="page-subtitle">School membership: <strong>'+escapeHTML(membership.status)+'</strong></p>' :'<p class="page-subtitle">You have not joined this '+(inst.kind==="district"?'district':'school')+' yet.</p><button class="primary-btn" data-inst-join="'+escapeHTML(inst.id)+'">Request to join '+(inst.kind==="district"?'district':'school')+'</button>';
- try{
+ if(inst.kind==="school")try{
   const snap=await getDocs(query(collection(db,"institutions",inst.id,"offerings"),where("published","==",true)));
   let own=[];
   if(isManager(inst)){const managers=await getDocs(collection(db,"institutions",inst.id,"offerings"));own=managers.docs.map(d=>({id:d.id,...d.data()}));}
@@ -64,7 +76,7 @@ async function render(){
    return '<article class="institution-offering"><div class="institution-offering-top"><div><div class="eyebrow">'+escapeHTML(o.code||"COURSE")+'</div><h3>'+escapeHTML(o.title)+'</h3></div><span class="badge '+(open?'live':'')+'">'+(open?"Registration open":o.published?"Registration closed":"Draft")+'</span></div><p>'+escapeHTML(o.description||"Institutional course offering")+'</p><p class="fineprint">Term: '+escapeHTML(o.term||"To be arranged")+' · '+escapeHTML(o.openDate||"—")+' to '+escapeHTML(o.closeDate||"—")+'</p>'+
    (profileRole==="student"&&membership?.status==="active"&&!isManager(inst)?(placements.get(inst.id+"_"+o.id)?.directEnrollment?'<span class="badge live">Enrolled · View in Sections</span>':placements.get(inst.id+"_"+o.id)?.sectionReference?'<a class="primary-btn small-btn" href="./index.html?join='+encodeURIComponent(placements.get(inst.id+"_"+o.id).sectionReference)+'">Join assigned section</a>':enrollmentRequests.get(inst.id+"_"+o.id)?'<span class="badge">'+escapeHTML("Request "+enrollmentRequests.get(inst.id+"_"+o.id).status)+'</span>':open?'<button class="primary-btn small-btn" data-inst-request="'+escapeHTML(o.id)+'">Request enrollment</button>':'<span class="fineprint">Enrollment unavailable</span>'):isManager(inst)?'<button class="secondary-btn small-btn" data-inst-requests="'+escapeHTML(o.id)+'">Review requests</button>':'')+'</article>';
   }).join(""):'<p class="page-subtitle">No published offerings yet. Administrators can create the school catalog here.</p>';
- }catch(e){console.error(e);$("#institutionOfferings").textContent="Unable to load offerings. Check access and Firestore rules.";}
+ }catch(e){console.error(e);const target=$("#institutionOfferings");if(target)target.textContent="Unable to load offerings. Check access and Firestore rules.";}
  if(window.TheoriaInstitutionAdmin)window.TheoriaInstitutionAdmin.mount(inst,currentUser);
  else window.TheoriaSchoolAdmin?.mount(inst,currentUser);
 }
@@ -161,6 +173,13 @@ async function reviewRequests(offeringId){
  const arr=snap.docs.map(d=>({id:d.id,...d.data()}));
  openModal("Enrollment requests",'<div class="institution-request-list">'+(arr.length?arr.map(r=>'<div class="institution-request"><span>Student: '+escapeHTML(r.studentName||'Student name unavailable')+'</span><span>'+escapeHTML(r.status)+'</span>'+(r.status==="pending"?'<button class="secondary-btn small-btn" data-inst-decision="'+escapeHTML(r.id)+'" data-status="approved">Approve request</button><button class="secondary-btn small-btn" data-inst-decision="'+escapeHTML(r.id)+'" data-status="declined">Decline</button>':'')+'</div>').join(""):'<p>No requests for this offering.</p>')+'</div>');
 }
+document.addEventListener("input",e=>{
+ if(e.target.id!=="institutionSearch")return;
+ const term=String(e.target.value||"").toLowerCase().trim();
+ document.querySelectorAll("#institutionList [data-inst-select]").forEach(row=>{
+  row.hidden=!String(row.dataset.name||"").includes(term);
+ });
+});
 document.addEventListener("click",async e=>{
  const join=e.target.closest("[data-inst-join]");if(join){await requestMembership(join.dataset.instJoin);return;}
  const select=e.target.closest("[data-inst-select]");if(select){activeId=select.dataset.instSelect;render();return;}
@@ -175,5 +194,6 @@ document.addEventListener("click",async e=>{
 onAuthStateChanged(auth,user=>{currentUser=user;if(!user){institutions=[];activeId="";onboardingShownFor="";return;}const root=$("#institutionWorkspace");if(root)refresh().catch(console.error);});
 window.addEventListener("theoria:ready",()=>{maybeOnboard().catch(console.error);});
 window.addEventListener("theoria:institution-admin-ready",()=>{if(currentUser)refresh().catch(console.error);});
+window.addEventListener("theoria:institution-admin-changed",()=>{if(currentUser)refresh().catch(console.error);});
 window.addEventListener("theoria:page",e=>{if(e.detail.page==="institutions"&&currentUser)refresh().catch(error=>notice(error.message));});
 const page=$("#page-institutions");if(page)page.innerHTML=shell();
