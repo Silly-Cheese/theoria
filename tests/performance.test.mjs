@@ -36,7 +36,7 @@ test("critical UI data loads no longer await every document serially",()=>{
   // whitespace snippet that used to match a different destructuring style.
   const sectionLoader = source.split("async function loadSectionData(section){")[1]
     ?.split("  const course=courseSnap.exists()")[0] ?? "";
-  assert.match(sectionLoader, /await Promise\\.all\\(\\[/);
+  assert.match(sectionLoader, /await Promise\s*\.\s*all\s*\(\s*\[/);
   assert.ok(sectionLoader.includes('getDoc(doc(db,"courses",section.courseId))'));
   assert.ok(sectionLoader.includes('getDocs(collection(db,"sections",section.id,"resources"))'));
   assert.ok(sectionLoader.includes('getDocs(collection(db,"sections",section.id,"assessmentRefs"))'));
