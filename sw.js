@@ -1,12 +1,19 @@
-const CACHE="theoria-shell-v20261031-assessment-folders1";
+const CACHE="theoria-shell-v20261108-institution-redesign2";
 const SHELL=[
   "./",
   "./index.html",
   "./styles.css",
   "./mobile.css",
   "./assessment-accordions.css",
+  "./institution-admin.css",
   "./favicon.svg",
   "./app.js",
+  "./institutions.js",
+  "./institution-admin.js",
+  "./school-admin.js",
+  "./registrar.js",
+  "./institution-suite.js",
+  "./campus.js",
   "./phase3.js",
   "./phase4.js",
   "./phase5.js",
