@@ -66,3 +66,4 @@ export const setAssessmentResultVisibility = onCall(
 
 export { institutionSnapshot, institutionCommand } from "./institution-operations.js";
 export { sectionLifecycle } from "./section-lifecycle.js";
+export { institutionDelete } from "./institution-deletion.js";
