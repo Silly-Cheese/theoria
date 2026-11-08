@@ -31,7 +31,15 @@ test("critical UI data loads no longer await every document serially",()=>{
   assert.ok(source.includes("mapConcurrent(active,6"));
   assert.ok(source.includes("mapConcurrent(unitsSnap.docs,6"));
   assert.ok(source.includes("mapConcurrent(assignments,6"));
-  assert.ok(source.includes("Promise.all([\n    getDoc(doc(db,\"courses\",section.courseId))"));
+  // The section loader fetches the course, assignments, resources and assessment
+  // references concurrently. Test the structure instead of an obsolete exact
+  // whitespace snippet that used to match a different destructuring style.
+  const sectionLoader = source.split("async function loadSectionData(section){")[1]
+    ?.split("  const course=courseSnap.exists()")[0] ?? "";
+  assert.match(sectionLoader, /await Promise\s*\.\s*all\s*\(\s*\[/);
+  assert.ok(sectionLoader.includes('getDoc(doc(db,"courses",section.courseId))'));
+  assert.ok(sectionLoader.includes('getDocs(collection(db,"sections",section.id,"resources"))'));
+  assert.ok(sectionLoader.includes('getDocs(collection(db,"sections",section.id,"assessmentRefs"))'));
 });
 
 test("costly academic notification sweep is only scheduled on Communications",()=>{

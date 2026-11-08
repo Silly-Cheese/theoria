@@ -27,7 +27,7 @@ jobs:
         run: |
           $tokens = $null
           $parseErrors = $null
-          foreach ($script in @('scripts/deploy-theoria-backend.ps1', 'scripts/skip-unused-extensions-check.ps1')) {
+          foreach ($script in @('scripts/deploy-theoria-backend.ps1', 'scripts/skip-unused-extensions-check.ps1', 'scripts/deploy-theoria8-backend.ps1')) {
             $tokens = $null
             $parseErrors = $null
             [System.Management.Automation.Language.Parser]::ParseFile(

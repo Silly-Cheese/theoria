@@ -2,7 +2,7 @@ import {
   auth, db, onAuthStateChanged, createUserWithEmailAndPassword,
   signInWithEmailAndPassword, signOut, updateProfile,
   doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc,
-  collection, getDocs, query, where, writeBatch, serverTimestamp
+  collection, getDocs, query, where, writeBatch, serverTimestamp, functions, httpsCallable
 } from "./firebase.js";
 import {mapConcurrent} from "./modules/performance.js";
 import {createAcademicModal, clearAcademicModal} from "./modules/ui-modal.js";
@@ -1755,7 +1755,10 @@ function sectionTabs(active){
   const tabs=instructor
     ? [["overview","Overview"],["framework","Course Guide"],["assignments","Assignments"],["resources","Resources"],["examinations","Assessments"],["students","Students"],["gradebook","Gradebook"],["grading","Grading Policy"],["analytics","Analytics"],["records","Records"]]
     : [["overview","Overview"],["framework","Course Guide"],["assignments","Assignments"],["resources","Resources"],["examinations","Assessments"],["grades","Grades"],["pathway","Grading Pathway"],["progress","Progress"],["record","Academic Record"]];
-  return '<div class="tabs">'+tabs.map(([id,label])=>'<button class="tab-btn '+(active===id?'active':'')+'" data-action="section-tab" data-tab="'+id+'">'+label+'</button>').join("")+'</div>';
+  return '<div class="section-tab-picker"><label for="sectionTabSelect">Section workspace</label><select id="sectionTabSelect" data-section-tab-select aria-label="Choose section workspace">'+
+    tabs.map(([id,label])=>'<option value="'+id+'" '+(active===id?'selected':'')+'>'+esc(label)+'</option>').join("")+
+    '</select></div><div class="tabs" aria-label="Section workspace navigation">'+
+    tabs.map(([id,label])=>'<button class="tab-btn '+(active===id?'active':'')+'" data-action="section-tab" data-tab="'+id+'">'+label+'</button>').join("")+'</div>';
 }
 
 function renderFrameworkReadOnly(){
@@ -2515,7 +2518,7 @@ function renderSectionDetail(tab="overview"){
 
   $("#sectionDetail").innerHTML =
     '<button class="text-btn" data-action="back-sections">← Sections</button>'+
-    '<div class="detail-hero"><div class="detail-top"><div><div class="eyebrow">'+esc(s.courseCode||"Section")+' • '+esc(s.term||"")+'</div><h1 class="detail-title">'+esc(s.courseTitle||s.sectionName||"Section")+'</h1><div class="detail-meta"><span>'+esc(s.sectionName||("Section "+(s.sectionNumber||"")))+'</span><span>'+esc(s.instructorName||"")+'</span><span>'+esc(s.startDate?formatDate(s.startDate)+" – "+formatDate(s.endDate):s.format||"")+'</span></div></div>'+(ownsSection?'<div class="inline-actions"><button class="secondary-btn small-btn" data-action="edit-section">Edit Section</button><button class="danger-btn small-btn" data-action="delete-section">Delete Section</button></div>':'<div class="inline-actions"></div>')+'</div></div>'+
+    '<div class="detail-hero"><div class="detail-top"><div><div class="eyebrow">'+esc(s.courseCode||"Section")+' • '+esc(s.term||"")+'</div><h1 class="detail-title">'+esc(s.courseTitle||s.sectionName||"Section")+'</h1><div class="detail-meta"><span>'+esc(s.sectionName||("Section "+(s.sectionNumber||"")))+'</span><span>'+esc(s.instructorName||"")+'</span><span>'+esc(s.startDate?formatDate(s.startDate)+" – "+formatDate(s.endDate):s.format||"")+'</span></div></div>'+(ownsSection?'<div class="inline-actions"><button class="secondary-btn small-btn" data-action="edit-section">Edit Section</button><button class="danger-btn small-btn" data-action="delete-section">Archive / Delete</button></div>':'<div class="inline-actions"></div>')+'</div></div>'+
     sectionTabs(tab)+'<div id="sectionTabBody">'+body+'</div>';
   if(["examinations","grading","pathway"].includes(tab) && window.TheoriaPhase3?.renderSectionTab){
     window.TheoriaPhase3.renderSectionTab(tab);
@@ -3893,85 +3896,59 @@ async function deleteAssessmentTree(assessmentId){
 
 async function deleteSectionCompletely(){
   const section=state.currentSection;
-  if(state.role!=="instructor"||!section)return;
-  const members=state.sectionData?.members||[];
+  if(state.role!=="instructor"||!section||section.ownerId!==state.user?.uid)return;
+  let inspection;
+  try{
+    const call=httpsCallable(functions,"sectionLifecycle");
+    const response=await call({action:"inspect",sectionId:section.id});
+    inspection=response.data;
+  }catch(error){
+    showToast("Unable to inspect section. Deploy the sectionLifecycle Firebase Function before using this control: "+humanizeFirebaseError(error));
+    return;
+  }
+  const hasData=inspection.hasAcademicOrRelatedData;
+  const canDelete=inspection.canDelete;
+  const linked=inspection.linked;
+  const categories=(inspection.dataCategories||[]).slice(0,9);
+  const reason=linked
+    ?"This section is linked to an institution. Resolve its registration and retention requirements with the school registrar."
+    :hasData
+      ?"This section contains related data ("+categories.join(", ")+"). Archiving preserves those records and removes it from active teaching spaces."
+      :"No related academic data was detected. The section can be permanently deleted.";
   const modal=openModal({
     eyebrow:"Section Administration",
-    title:"Delete Section",
+    title:"Archive or Delete Section",
     wide:true,
-    body:'<div class="delete-assessment-warning"><div class="delete-warning-icon">!</div><div><strong>This permanently deletes the teaching section.</strong><p>Assignments, resources, section assessments, gradebook rows, academic records, entrance-exam candidates, and enrollment links tied to this section will be removed. This does not delete the master course or its Question Bank.</p></div></div>'+
-      '<div class="delete-impact-grid"><div><span>Section</span><strong>'+esc(section.sectionName||section.courseTitle||"Section")+'</strong></div><div><span>Students</span><strong>'+members.length+'</strong></div><div><span>Assignments</span><strong>'+esc(state.sectionData?.assignments?.length||0)+'</strong></div><div><span>Assessments</span><strong>'+esc(state.sectionData?.assessmentRefs?.length||0)+'</strong></div></div>'+
-      '<div class="field" style="margin-top:16px"><label>Type DELETE to confirm</label><input id="deleteSectionConfirmText" autocomplete="off" placeholder="DELETE"></div>',
-    footer:'<button class="secondary-btn" data-close-modal>Cancel</button><button class="danger-btn" id="confirmDeleteSection" disabled>Delete Section Permanently</button>'
+    body:'<div class="delete-assessment-warning"><div class="delete-warning-icon">!</div><div><strong>'+esc(section.sectionName||section.courseTitle||"Section")+'</strong><p>'+esc(reason)+'</p></div></div>'+
+      '<div class="delete-impact-grid"><div><span>Section</span><strong>'+esc(section.sectionName||section.courseTitle||"Section")+'</strong></div><div><span>Students</span><strong>'+esc(state.sectionData?.members?.length||0)+'</strong></div><div><span>Assignments</span><strong>'+esc(state.sectionData?.assignments?.length||0)+'</strong></div><div><span>Linked assessments</span><strong>'+esc(state.sectionData?.assessmentRefs?.length||0)+'</strong></div></div>'+
+      (canDelete?'<div class="field" style="margin-top:16px"><label for="deleteSectionConfirmText">Type DELETE to permanently remove this empty section</label><input id="deleteSectionConfirmText" autocomplete="off" placeholder="DELETE"></div>':'<p class="fineprint" style="margin-top:16px">Permanent deletion is unavailable because records or institutional associations were found. Academic records are retained.</p>'),
+    footer:'<button class="secondary-btn" data-close-modal>Cancel</button>'+
+      (!linked&&section.status!=="Archived"?'<button class="secondary-btn" id="confirmArchiveSection">Archive Section</button>':'')+
+      (canDelete?'<button class="danger-btn" id="confirmDeleteSection" disabled>Delete Empty Section</button>':'')
   });
-  const input=modal.querySelector("#deleteSectionConfirmText"),button=modal.querySelector("#confirmDeleteSection");
-  input.oninput=()=>button.disabled=input.value.trim().toUpperCase()!=="DELETE";
-  button.onclick=async()=>{
-    button.disabled=true;button.textContent="Deleting Section…";
+  const call=httpsCallable(functions,"sectionLifecycle");
+  const complete=async(action,button)=>{
+    button.disabled=true;
+    const original=button.textContent;button.textContent=action==="delete"?"Deleting…":"Archiving…";
     try{
-      // Remove every known student's personal enrollment pointer while the
-      // section still exists so section-owner authorization remains valid.
-      const enrollmentHistorySnap=await getDocs(collection(db,"sections",section.id,"enrollmentHistory"));
-      const knownStudentIds=new Set(members.map(member=>member.id));
-      enrollmentHistorySnap.docs.forEach(row=>{const id=row.data().studentId;if(id)knownStudentIds.add(id);});
-      const knownStudents=[...knownStudentIds];
-      for(let offset=0;offset<knownStudents.length;offset+=300){
-        const batch=writeBatch(db);
-        knownStudents.slice(offset,offset+300).forEach(studentId=>{
-          batch.delete(doc(db,"users",studentId,"enrollments",section.id));
-          batch.delete(doc(db,"users",studentId,"entranceAttempts",section.id));
-          batch.delete(doc(db,"sections",section.id,"members",studentId));
-        });
-        await batch.commit();
-      }
-
-      // Remove delegated staff pointers before deleting staff records.
-      const staffSnap=await getDocs(collection(db,"sections",section.id,"staff"));
-      for(let offset=0;offset<staffSnap.docs.length;offset+=300){
-        const batch=writeBatch(db);
-        staffSnap.docs.slice(offset,offset+300).forEach(staffDoc=>{
-          batch.delete(doc(db,"users",staffDoc.id,"staffSections",section.id));
-          batch.delete(staffDoc.ref);
-        });
-        await batch.commit();
-      }
-
-      // Assignments have nested student submissions, so clear those first.
-      const assignments=await getDocs(collection(db,"sections",section.id,"assignments"));
-      for(const assignment of assignments.docs){
-        await deleteCollectionDocuments(collection(db,"sections",section.id,"assignments",assignment.id,"submissions"));
-      }
-      await deleteCollectionDocuments(collection(db,"sections",section.id,"assignments"));
-
-      const simpleCollections=[
-        "resources","grades","assessmentRefs","gradingPathways","assessmentGrades",
-        "mastery","academicRecords","portfolios","appeals","recordHistory","entranceCandidates",
-        "enrollmentHistory","auditLog"
-      ];
-      for(const name of simpleCollections)await deleteCollectionDocuments(collection(db,"sections",section.id,name));
-
-      // Remove every assigned assessment owned by this instructor, including
-      // the special entrance examination which is intentionally not published
-      // into the normal section assessmentRefs collection.
-      const assignedAssessments=await getDocs(query(collection(db,"assessments"),where("sectionId","==",section.id)));
-      for(const assessment of assignedAssessments.docs)await deleteAssessmentTree(assessment.id);
-
-      if(section.joinCode){
-        try{await deleteDoc(doc(db,"joinCodes",section.joinCode));}catch(_){}
-      }
-      await deleteDoc(doc(db,"sections",section.id));
-
-      closeModal();
-      state.currentSection=null;state.sectionData=null;
-      await loadWorkspace();
-      setPage("sections");
-      showToast("Section deleted.");
+      await call({action,sectionId:section.id,confirmation:action==="delete"?"DELETE":undefined});
+      closeModal();state.currentSection=null;state.sectionData=null;
+      await loadWorkspace();setPage("sections");
+      showToast(action==="delete"?"Empty section deleted.":"Section archived. Academic records are preserved.");
     }catch(error){
-      console.error("Unable to delete section:",error);
-      button.disabled=false;button.textContent="Delete Section Permanently";
+      console.error("Section lifecycle operation failed:",error);
+      button.disabled=false;button.textContent=original;
       showToast(humanizeFirebaseError(error));
     }
   };
+  const archiveButton=modal.querySelector("#confirmArchiveSection");
+  if(archiveButton)archiveButton.onclick=()=>complete("archive",archiveButton);
+  const deleteButton=modal.querySelector("#confirmDeleteSection");
+  if(deleteButton){
+    const input=modal.querySelector("#deleteSectionConfirmText");
+    input.oninput=()=>deleteButton.disabled=input.value.trim()!=="DELETE";
+    deleteButton.onclick=()=>complete("delete",deleteButton);
+  }
 }
 
 async function beginEntranceExam(section,joinCode){
@@ -4352,6 +4329,10 @@ window.TheoriaCore = {
   }
 };
 
+document.addEventListener("change",event=>{
+  const selector=event.target.closest("[data-section-tab-select]");
+  if(selector && state.currentSection)renderSectionDetail(selector.value);
+});
 document.addEventListener("click",async event=>{
   const close=event.target.closest("[data-close-modal]");
   if(close){closeModal();return;}

@@ -152,3 +152,26 @@ test("institution audit events are callable-only",async()=>{
     createdBy:"owner-a",createdAt:new Date(),action:"fake"
   }));
 });
+
+
+test("a section owner must use the audited callable to delete even an empty section",async()=>{
+  await env.withSecurityRulesDisabled(async admin=>{
+    await setDoc(doc(admin.firestore(),"sections","empty-owner-section"),{
+      ownerId:"faculty-1",courseId:"course-1",joinOpen:false,status:"Active"
+    });
+  });
+  const owner=env.authenticatedContext("faculty-1");
+  await assertFails(deleteDoc(doc(owner.firestore(),"sections","empty-owner-section")));
+});
+
+test("an instructor cannot reopen archived section enrollment",async()=>{
+  await env.withSecurityRulesDisabled(async admin=>{
+    await setDoc(doc(admin.firestore(),"sections","archived-owner-section"),{
+      ownerId:"faculty-1",courseId:"course-1",joinOpen:false,status:"Archived"
+    });
+  });
+  const owner=env.authenticatedContext("faculty-1");
+  await assertFails(updateDoc(doc(owner.firestore(),"sections","archived-owner-section"),{
+    joinOpen:true
+  }));
+});

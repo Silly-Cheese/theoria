@@ -7,6 +7,7 @@ const E = value => String(value ?? "").replace(/[&<>"']/g, ch =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
 const api = httpsCallable(functions, "institutionCommand");
 const snapshotApi = httpsCallable(functions, "institutionSnapshot");
+const deleteApi = httpsCallable(functions, "institutionDelete");
 let institution = null, user = null, state = null, activeTab = "overview", loadingKey = 0, busy = false, legacyMounted = false;
 const flash = message => {
   const el = $("#institutionNewMessage");
@@ -53,12 +54,21 @@ async function load() {
   } catch (error) {
     if (key !== loadingKey) return;
     state = null;
+    const code = String(error.code || "");
+    const offline = ["functions/not-found", "functions/unavailable", "functions/internal",
+      "functions/deadline-exceeded"].includes(code);
     root.innerHTML = '<section class="ias-workspace"><h2>Institution administration</h2>' +
-      '<p class="ias-muted">This workspace is only available to authorized staff. ' +
-      'Students can use the school catalog above.</p>' +
-      '<p class="ias-notice">' + E(error.message || "Unable to load workspace.") + '</p>' +
+      '<p class="ias-muted">' + (offline ?
+      'The new institutional service is not available. Existing administration tools remain available below.' :
+      'The secure administration workspace is available to authorized staff. Students can use the school catalog above.') +
+      '</p><p class="ias-notice">' + E(error.message || "Unable to load workspace.") + '</p>' +
       '<div id="iasStudentTools"></div></section>';
-    await studentTools();
+    if (offline && !legacyMounted) {
+      legacyMounted = true;
+      document.body.classList.add("theoria-show-legacy");
+      window.TheoriaSchoolAdmin?.mount(institution, user);
+    }
+    if (!offline) await studentTools();
   }
 }
 async function studentTools() {
@@ -89,20 +99,33 @@ function render() {
   const root = $("#institutionAdminNew");
   if (!root || !state) return;
   document.body.classList.add("theoria-institution-upgraded");
+  const kind = state.institution.kind === "district" ? "District" : "School";
+  const role = (state.role || "").replaceAll("_", " ");
+  const activeName = tabs.find(([key]) => key === activeTab)?.[1] || "Overview";
+  const tabLabels = {
+    overview:"◈",admissions:"▤",students:"♙",registration:"▦",
+    academics:"◇",staff:"◉",district:"▣",reports:"▥",history:"◷"
+  };
   root.innerHTML = '<section class="ias-workspace">' +
-    '<div class="ias-head"><div><div class="eyebrow">Theoria · Institutional Operations</div>' +
-    '<h2>' + E(state.institution.name) + '</h2><p class="ias-muted">' +
-    E(state.institution.kind === "district" ? "District leadership workspace" : "School command center") +
-    ' · Role: ' + E(state.role.replaceAll("_", " ")) + '</p></div>' +
-    '<div class="ias-tools">' + action("Refresh", "refresh") +
-    action("Additional tools", "legacy") + '</div></div>' +
+    '<header class="ias-head"><div class="ias-heading"><div class="eyebrow">Theoria · ' + kind + ' operations</div>' +
+    '<h2>' + E(state.institution.name) + '</h2>' +
+    '<div class="ias-context"><span class="ias-context-pill">' + E(kind) + '</span>' +
+    '<span class="ias-context-pill">' + E(role) + '</span>' +
+    '<span class="ias-context-pill">' + E(state.institution.status || "active") + '</span></div></div>' +
+    '<div class="ias-tools">' + action("Refresh data", "refresh") +
+    action("Advanced tools", "legacy") + '</div></header>' +
     '<div id="institutionNewMessage" class="ias-notice" role="status" hidden></div>' +
-    '<div class="ias-nav" role="tablist" aria-label="Institution operations">' +
-    tabs.map(([key, name]) => '<button type="button" role="tab" aria-selected="' +
+    '<div class="ias-shell"><nav class="ias-nav" role="tablist" aria-label="Institution operations">' +
+    '<div class="ias-nav-label">MANAGEMENT</div>' +
+    tabs.map(([key,name]) => '<button type="button" role="tab" aria-selected="' +
       (activeTab === key) + '" class="' + (activeTab === key ? "active" : "") +
-      '" data-ias-tab="' + key + '">' + E(name) + '</button>').join("") + '</div>' +
-    '<div id="iasContent">' + body() + '</div></section>';
+      '" data-ias-tab="' + key + '"><span class="ias-tab-icon" aria-hidden="true">' +
+      E(tabLabels[key] || "•") + '</span>' + E(name) + '</button>').join("") +
+    '</nav><div class="ias-view" role="tabpanel"><div class="ias-content-head">' +
+    '<div class="eyebrow">Institution administration</div><h3>' + E(activeName) + '</h3>' +
+    '</div><div id="iasContent">' + body() + '</div></div></div></section>';
 }
+
 function tile(value, label) {
   return '<div class="ias-tile"><strong>' + E(value) + '</strong><span>' + E(label) + '</span></div>';
 }
@@ -119,7 +142,7 @@ function body() {
         "No outstanding admissions applications.") + '</section><section><h3>Institution essentials</h3>' +
       '<p class="ias-muted">School enrollment, course placement, academic years, faculty assignments, and student history share one workspace.</p>' +
       action("Edit institution", "editInstitution") + action("Enrollment policies", "policies") +
-      (state.role === "owner" ? action("Archive institution", "archiveInstitution") : "") +
+      (state.role === "owner" ?  (action("Archive institution", "archiveInstitution") + action("Delete empty institution", "deleteEntity", 'data-kind="institution" data-id="' + E(state.institution.id) + '"', "danger-btn small-btn")) : "") +
       '<p class="ias-small">All counts are limited to the first 80 records per category. Use reports/export tools for larger populations.</p></section></div>';
   }
   if (activeTab === "admissions") return '<div class="ias-section-head"><h3>Admissions & membership review</h3></div>' +
@@ -151,7 +174,8 @@ function body() {
         line((o.code || "") + " · " + o.title,
           "Term: " + (o.term || "Unassigned") + " · Seats: " + (o.seatsTaken || 0) +
           "/" + (o.capacity || "Unlimited") + " · Section: " + (o.sectionId || "Not linked"),
-          action("Link section", "linkOffering", 'data-offering="' + E(o.id) + '"')),
+          action("Link section", "linkOffering", 'data-offering="' + E(o.id) + '"') +
+          action("Delete", "deleteEntity", 'data-kind="offering" data-id="' + E(o.id) + '"', "danger-btn small-btn")),
         "No course offerings; publish one using the school catalog above.") +
       '<h4>Outstanding course requests</h4>' + list(records("requests").filter(r => r.status === "pending"),
         r => line(studentName(r.studentUid), offeringName(r.offeringId),
@@ -168,8 +192,12 @@ function body() {
   }
   if (activeTab === "academics") return '<div class="ias-section-head"><h3>Academic years & programs</h3>' +
     action("Add academic term", "newTerm") + action("Add department", "newDepartment") + '</div>' +
-    '<h4>Academic terms</h4>' + list(records("terms"), t => line(t.title, t.startDate + " – " + t.endDate), "No terms recorded.") +
-    '<h4>Departments</h4>' + list(records("departments"), d => line(d.name, d.description || ""), "No departments recorded.") +
+    '<h4>Academic terms</h4>' + list(records("terms"), t => line(t.title, t.startDate + " – " + t.endDate,
+      action("Delete", "deleteEntity", 'data-kind="term" data-id="' + E(t.id) + '"', "danger-btn small-btn")),
+      "No terms recorded.") +
+    '<h4>Departments</h4>' + list(records("departments"), d => line(d.name, d.description || "",
+      action("Delete", "deleteEntity", 'data-kind="department" data-id="' + E(d.id) + '"', "danger-btn small-btn")),
+      "No departments recorded.") +
     '<p class="ias-muted">Advanced scheduling, grade certification and guardian communication remain accessible under Additional tools.</p>';
   if (activeTab === "staff") return '<div class="ias-section-head"><h3>Faculty & staff access</h3>' +
     action("Invite staff", "inviteStaff") + '</div>' +
@@ -178,7 +206,9 @@ function body() {
       "No active staff assigned.") +
     '<h4>Pending invitations</h4>' +
     list(records("invitations").filter(x => x.status === "pending"),
-      inv => line(inv.email, "Role: " + inv.role), "No outstanding invitations.");
+      inv => line(inv.email, "Role: " + inv.role,
+        action("Delete", "deleteEntity", 'data-kind="invitation" data-id="' + E(inv.id) + '"', "danger-btn small-btn")),
+      "No outstanding invitations.");
   if (activeTab === "district") return '<div class="ias-section-head"><h3>District governance</h3>' +
     (state.institution.kind === "school" ? action("Request affiliation", "requestDistrict") :
       state.role === "owner" ? action("Create district school", "createSchool") : "") + '</div>' +
@@ -231,8 +261,12 @@ function modal(title, fields, save) {
       const values = Object.fromEntries(new FormData(event.currentTarget));
       const result = await save(values);
       root.innerHTML = "";
-      await load();
-      flash(result?.message || "Saved successfully.");
+      if (result?.reloadDirectory) {
+        window.dispatchEvent(new Event("theoria:institution-admin-changed"));
+      } else {
+        await load();
+        flash(result?.message || "Saved successfully.");
+      }
     } catch (error) {
       const el = $("#iasFormError"); if (el) el.textContent = error.message || "Unable to save.";
     } finally { busy = false; button.disabled = false; }
@@ -253,6 +287,40 @@ async function handle(button) {
     }
     button.textContent = document.body.classList.contains("theoria-show-legacy") ?
       "Hide additional tools" : "Additional tools";
+    return;
+  }
+  if (name === "deleteEntity") {
+    const kind = button.dataset.kind;
+    const targetId = button.dataset.id;
+    if (!kind || !targetId) return;
+    try {
+      const previewResult = await deleteApi({
+        action: "inspect", institutionId: institution.id, kind, targetId
+      });
+      const preview = previewResult.data;
+      if (!preview.canDelete) {
+        flash("Cannot permanently delete: " + (preview.blockers || []).join(", ") +
+          ". Archive or resolve dependent records instead.");
+        return;
+      }
+      const label = kind === "institution" ? institution.name :
+        kind === "offering" ? offeringName(targetId) :
+        kind === "term" ? records("terms").find(x => x.id === targetId)?.title :
+        kind === "department" ? records("departments").find(x => x.id === targetId)?.name :
+        targetId;
+      return modal("Permanently delete " + kind,
+        '<p class="ias-danger-copy">You are about to permanently delete <strong>' +
+        E(label) + '</strong>. This cannot be undone. All changes are audited.</p>' +
+        field("confirmation", "Type DELETE to confirm") +
+        '<p class="ias-small">The server rechecks dependent records before deleting. Historical student records cannot be deleted through this action.</p>',
+        async values => {
+          if (values.confirmation.trim() !== "DELETE") throw Error("Enter DELETE exactly.");
+          await deleteApi({action:"delete",institutionId:institution.id,
+            kind,targetId,confirmation:"DELETE"});
+          return kind === "institution" ? {reloadDirectory:true} :
+            {message: kind[0].toUpperCase() + kind.slice(1) + " deleted."};
+        });
+    } catch (error) { flash(error.message || "Unable to inspect this record."); }
     return;
   }
   if (name === "archiveInstitution") {
